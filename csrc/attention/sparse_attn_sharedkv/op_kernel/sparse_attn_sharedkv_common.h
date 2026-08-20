@@ -282,6 +282,7 @@ struct ConstInfo {
     uint32_t mmResUbSize = 0U;   // Matmul1输出结果GM上的大小
     uint32_t vec1ResUbSize = 0U; // Vector1输出结果GM上的大小
     uint32_t bmm2ResUbSize = 0U; // Matmul2输出结果GM上的大小
+    uint32_t usedCoreNum = 0U;
     uint64_t batchSize = 0ULL;
     uint64_t gSize = 0ULL;
     uint64_t qHeadNum = 0ULL;

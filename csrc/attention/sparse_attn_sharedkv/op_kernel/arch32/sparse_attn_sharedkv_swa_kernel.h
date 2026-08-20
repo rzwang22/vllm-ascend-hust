@@ -198,6 +198,7 @@ __aicore__ inline void SparseAttnSharedkvSwa<SAST>::InitTilingData()
     // singleCoreTensorSize
     constInfo.mmResUbSize = tilingData->baseParams.mmResUbSize;
     constInfo.bmm2ResUbSize = tilingData->baseParams.bmm2ResUbSize;
+    constInfo.usedCoreNum = tilingData->baseParams.usedCoreNum;
     // baseParams
     constInfo.batchSize = tilingData->baseParams.batchSize;
     constInfo.qHeadNum = constInfo.gSize = tilingData->baseParams.nNumOfQInOneGroup;
@@ -495,20 +496,20 @@ __aicore__ inline void SparseAttnSharedkvSwa<SAST>::Init(
     mm1ResGm.SetGlobalBuffer(
         (__gm__ MM1_OUT_T *)(workspace + offset +
                              aiCoreIdx * dbWorkspaceRatio * constInfo.mmResUbSize * sizeof(MM1_OUT_T)));
-    offset += GetBlockNum() * dbWorkspaceRatio * constInfo.mmResUbSize * sizeof(MM1_OUT_T);
+    offset += constInfo.usedCoreNum * dbWorkspaceRatio * constInfo.mmResUbSize * sizeof(MM1_OUT_T);
 
     vec1ResGm.SetGlobalBuffer(
         (__gm__ Q_T *)(workspace + offset + aiCoreIdx * dbWorkspaceRatio * constInfo.mmResUbSize * sizeof(KV_T)));
-    offset += GetBlockNum() * dbWorkspaceRatio * constInfo.mmResUbSize * sizeof(KV_T);
+    offset += constInfo.usedCoreNum * dbWorkspaceRatio * constInfo.mmResUbSize * sizeof(KV_T);
 
     mm2ResGm.SetGlobalBuffer(
         (__gm__ MM2_OUT_T *)(workspace + offset +
                              aiCoreIdx * dbWorkspaceRatio * constInfo.bmm2ResUbSize * sizeof(MM2_OUT_T)));
-    offset += GetBlockNum() * dbWorkspaceRatio * constInfo.bmm2ResUbSize * sizeof(MM2_OUT_T);
+    offset += constInfo.usedCoreNum * dbWorkspaceRatio * constInfo.bmm2ResUbSize * sizeof(MM2_OUT_T);
 
     vec2ResGm.SetGlobalBuffer(
         (__gm__ T *)(workspace + offset + aiCoreIdx * dbWorkspaceRatio * constInfo.bmm2ResUbSize * sizeof(T)));
-    offset += GetBlockNum() * dbWorkspaceRatio * constInfo.bmm2ResUbSize * sizeof(T);
+    offset += constInfo.usedCoreNum * dbWorkspaceRatio * constInfo.bmm2ResUbSize * sizeof(T);
 
     if ASCEND_IS_AIV {
         vectorBlock.InitParams(constInfo, tilingData);

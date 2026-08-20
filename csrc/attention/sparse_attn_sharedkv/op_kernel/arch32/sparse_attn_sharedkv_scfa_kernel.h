@@ -195,6 +195,7 @@ __aicore__ inline void SparseAttnSharedkvScfa<SAST>::InitTilingData()
     // singleCoreTensorSize
     constInfo.mmResUbSize = tilingData->baseParams.mmResUbSize;
     constInfo.bmm2ResUbSize = tilingData->baseParams.bmm2ResUbSize;
+    constInfo.usedCoreNum = tilingData->baseParams.usedCoreNum;
 
     // baseParams
     constInfo.batchSize = tilingData->baseParams.batchSize;
@@ -455,23 +456,23 @@ __aicore__ inline void SparseAttnSharedkvScfa<SAST>::Init(
     mm1ResGm.SetGlobalBuffer(
         (__gm__ MM1_OUT_T *)(workspace + offset +
                              aiCoreIdx * dbWorkspaceRatio * constInfo.mmResUbSize * sizeof(MM1_OUT_T)));
-    offset += GetBlockNum() * dbWorkspaceRatio * constInfo.mmResUbSize * sizeof(MM1_OUT_T);
+    offset += constInfo.usedCoreNum * dbWorkspaceRatio * constInfo.mmResUbSize * sizeof(MM1_OUT_T);
 
     vec1ResGm.SetGlobalBuffer(
         (__gm__ Q_T *)(workspace + offset + aiCoreIdx * dbWorkspaceRatio * constInfo.mmResUbSize * sizeof(KV_T)));
-    offset += GetBlockNum() * dbWorkspaceRatio * constInfo.mmResUbSize * sizeof(KV_T);
+    offset += constInfo.usedCoreNum * dbWorkspaceRatio * constInfo.mmResUbSize * sizeof(KV_T);
 
     mm2ResGm.SetGlobalBuffer(
         (__gm__ MM2_OUT_T *)(workspace + offset +
                              aiCoreIdx * dbWorkspaceRatio * constInfo.bmm2ResUbSize * sizeof(MM2_OUT_T)));
-    offset += GetBlockNum() * dbWorkspaceRatio * constInfo.bmm2ResUbSize * sizeof(MM2_OUT_T);
+    offset += constInfo.usedCoreNum * dbWorkspaceRatio * constInfo.bmm2ResUbSize * sizeof(MM2_OUT_T);
 
     vec2ResGm.SetGlobalBuffer(
         (__gm__ T *)(workspace + offset + aiCoreIdx * dbWorkspaceRatio * constInfo.bmm2ResUbSize * sizeof(T)));
-    offset += GetBlockNum() * dbWorkspaceRatio * constInfo.bmm2ResUbSize * sizeof(T);
+    offset += constInfo.usedCoreNum * dbWorkspaceRatio * constInfo.bmm2ResUbSize * sizeof(T);
 
     kvMergeGm_.SetGlobalBuffer((__gm__ KV_T *)(workspace + offset + aiCoreIdx * 512 * 512 * 4 * sizeof(KV_T)));
-    offset += GetBlockNum() * 512 * 512 * 4 * sizeof(KV_T);
+    offset += constInfo.usedCoreNum * 512 * 512 * 4 * sizeof(KV_T);
 
     kvValidSizeGm_.SetGlobalBuffer(
         (__gm__ int32_t *)(workspace + offset + (aiCoreIdx * 2) * 128 * 4 * sizeof(int32_t)));
