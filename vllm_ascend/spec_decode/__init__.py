@@ -19,17 +19,17 @@
 
 from typing import NoReturn
 
-DSPARK_PROPOSER_IDENTITY = "vllm_ascend.spec_decode.dspark_runtime_not_wired"
+DSPARK_PROPOSER_IDENTITY = "vllm_ascend.worker.v2.spec_decode.dspark.speculator.AscendDSparkSpeculator"
 
 
 class DSparkRuntimeNotWiredError(NotImplementedError):
     """Raised when DSpark reaches Ascend runtime before it is fully wired."""
 
 
-def dspark_runtime_not_wired() -> NoReturn:
-    """Reject DSpark execution without falling back to another proposer."""
+def dspark_runtime_not_wired(boundary: str = "runtime execution") -> NoReturn:
+    """Reject an unwired DSpark execution boundary without falling back."""
     raise DSparkRuntimeNotWiredError(
-        "Ascend DSpark is recognized, but its proposer runtime is not yet wired. "
+        f"Ascend DSpark {boundary} is not yet wired. "
         "Sparse-index metadata, model-runner tensor plumbing, and the DSpark "
         "draft model are required before execution."
     )

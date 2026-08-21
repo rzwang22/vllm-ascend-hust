@@ -14,6 +14,7 @@ from vllm_ascend.spec_decode import (
 from vllm_ascend.worker.v2.spec_decode import (
     init_speculator as init_v2_speculator,
 )
+from vllm_ascend.worker.v2.spec_decode.dspark import AscendDSparkSpeculator
 from vllm_ascend.worker.v2.spec_decode.eagle import (
     init_speculator as init_active_v2_speculator,
 )
@@ -116,13 +117,16 @@ def test_v1_dspark_selection_fails_without_fallback() -> None:
     "init_speculator",
     [init_v2_speculator, init_active_v2_speculator],
 )
-def test_v2_dspark_selection_fails_before_eagle_fallback(init_speculator) -> None:
+def test_v2_dspark_selection_constructs_dspark_speculator(init_speculator) -> None:
     speculative_config = SimpleNamespace(
         method="dspark",
+        draft_model_config=SimpleNamespace(hf_config=SimpleNamespace(dspark_noise_token_id=128799)),
+        num_speculative_tokens=3,
         use_dspark=lambda: True,
         use_eagle=lambda: True,
     )
     vllm_config = SimpleNamespace(speculative_config=speculative_config)
 
-    with pytest.raises(DSparkRuntimeNotWiredError, match="not yet wired"):
-        init_speculator(vllm_config, None)
+    speculator = init_speculator(vllm_config, None)
+
+    assert type(speculator) is AscendDSparkSpeculator
