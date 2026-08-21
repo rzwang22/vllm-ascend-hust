@@ -93,10 +93,10 @@ class AscendDSparkSpeculator(BaseSpeculator):
                 return
             raise RuntimeError("Ascend DSpark draft model is already loaded for a different target model.")
 
-        # This helper only performs config replacement, ModelRegistry loading,
-        # PP validation, and target embedding/lm-head sharing. It does not
-        # import or invoke the core CUDA/Triton DSpark speculator runtime.
-        from vllm.v1.worker.gpu.spec_decode.dspark.utils import (
+        # This plugin-local helper performs config replacement, ModelRegistry
+        # loading, PP validation, and target embedding/lm-head sharing without
+        # importing the core CUDA/Triton DSpark runtime package.
+        from vllm_ascend.worker.v2.spec_decode.dspark.model_loader import (
             load_dspark_model,
         )
 

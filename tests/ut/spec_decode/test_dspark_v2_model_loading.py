@@ -102,6 +102,10 @@ def test_dspark_registry_resolution_isolated_from_nvidia_runtime() -> None:
         model_cls = ModelRegistry._try_load_model_cls("DSparkDraftModel")
         if model_cls is None:
             raise RuntimeError("DSparkDraftModel did not resolve")
+        from vllm_ascend.worker.v2.spec_decode.dspark import model_loader
+
+        if not callable(model_loader.load_dspark_model):
+            raise RuntimeError("Ascend DSpark model loader did not resolve")
         new_modules = set(sys.modules) - before
 
         def referenced_module(value):
@@ -159,7 +163,7 @@ def test_dspark_registry_resolution_isolated_from_nvidia_runtime() -> None:
 def test_speculator_loads_draft_model_once_and_publishes_loader_identity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from vllm.v1.worker.gpu.spec_decode.dspark import utils as dspark_utils
+    from vllm_ascend.worker.v2.spec_decode.dspark import model_loader
 
     speculator = create_dspark_speculator(_dspark_config(), torch.device("cpu"))
     target_model = nn.Module()
@@ -172,7 +176,7 @@ def test_speculator_loads_draft_model_once_and_publishes_loader_identity(
         assert loaded_target is target_model
         return draft_model
 
-    monkeypatch.setattr(dspark_utils, "load_dspark_model", fake_loader)
+    monkeypatch.setattr(model_loader, "load_dspark_model", fake_loader)
 
     speculator.load_model(target_model)
     speculator.load_model(target_model)
@@ -184,7 +188,7 @@ def test_speculator_loads_draft_model_once_and_publishes_loader_identity(
 def test_speculator_rejects_reloading_for_different_target(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from vllm.v1.worker.gpu.spec_decode.dspark import utils as dspark_utils
+    from vllm_ascend.worker.v2.spec_decode.dspark import model_loader
 
     speculator = create_dspark_speculator(_dspark_config(), torch.device("cpu"))
     first_target = nn.Module()
@@ -196,7 +200,7 @@ def test_speculator_rejects_reloading_for_different_target(
         loader_calls += 1
         return draft_model
 
-    monkeypatch.setattr(dspark_utils, "load_dspark_model", fake_loader)
+    monkeypatch.setattr(model_loader, "load_dspark_model", fake_loader)
     speculator.load_model(first_target)
 
     with pytest.raises(RuntimeError, match="different target"):
@@ -209,14 +213,14 @@ def test_speculator_rejects_reloading_for_different_target(
 def test_failed_draft_load_leaves_speculator_uninitialized(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from vllm.v1.worker.gpu.spec_decode.dspark import utils as dspark_utils
+    from vllm_ascend.worker.v2.spec_decode.dspark import model_loader
 
     speculator = create_dspark_speculator(_dspark_config(), torch.device("cpu"))
 
     def failing_loader(_target, _config):
         raise ValueError("checkpoint failure")
 
-    monkeypatch.setattr(dspark_utils, "load_dspark_model", failing_loader)
+    monkeypatch.setattr(model_loader, "load_dspark_model", failing_loader)
 
     with pytest.raises(ValueError, match="checkpoint failure"):
         speculator.load_model(nn.Module())
@@ -227,11 +231,11 @@ def test_failed_draft_load_leaves_speculator_uninitialized(
 def test_non_ascend_loader_result_is_rejected_without_partial_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from vllm.v1.worker.gpu.spec_decode.dspark import utils as dspark_utils
+    from vllm_ascend.worker.v2.spec_decode.dspark import model_loader
 
     speculator = create_dspark_speculator(_dspark_config(), torch.device("cpu"))
     monkeypatch.setattr(
-        dspark_utils,
+        model_loader,
         "load_dspark_model",
         lambda _target, _config: nn.Module(),
     )
@@ -245,11 +249,11 @@ def test_non_ascend_loader_result_is_rejected_without_partial_state(
 def test_model_loading_does_not_import_core_dspark_runtime(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from vllm.v1.worker.gpu.spec_decode.dspark import utils as dspark_utils
+    from vllm_ascend.worker.v2.spec_decode.dspark import model_loader
 
     forbidden_prefixes = (
-        "vllm.models.deepseek_v4.nvidia.dspark",
-        "vllm.v1.worker.gpu.spec_decode.dspark.speculator",
+        "vllm.models.deepseek_v4.nvidia",
+        "vllm.v1.worker.gpu.spec_decode.dspark",
         "vllm_ascend.ops.triton.spec_decode",
     )
     import_attempts: list[str] = []
@@ -263,17 +267,20 @@ def test_model_loading_does_not_import_core_dspark_runtime(
         return original_import(name, *args, **kwargs)
 
     monkeypatch.setattr(
-        dspark_utils,
+        model_loader,
         "load_dspark_model",
         lambda _target, _config: draft_model,
     )
     monkeypatch.setattr(builtins, "__import__", import_spy)
 
+    before = set(sys.modules)
     speculator = create_dspark_speculator(_dspark_config(), torch.device("cpu"))
     speculator.load_model(nn.Module())
+    new_modules = set(sys.modules) - before
 
     assert speculator.model is draft_model
     assert import_attempts == []
+    assert not any(module.startswith(forbidden_prefixes) for module in new_modules)
 
 
 def _run_hardware_agnostic_loader(
@@ -283,7 +290,8 @@ def _run_hardware_agnostic_loader(
     target_model,
 ):
     from vllm.compilation import backends as compilation_backends
-    from vllm.v1.worker.gpu.spec_decode.dspark import utils as dspark_utils
+
+    from vllm_ascend.worker.v2.spec_decode.dspark import model_loader
 
     def fake_replace(value, **changes):
         fields = vars(value).copy()
@@ -301,9 +309,9 @@ def _run_hardware_agnostic_loader(
             backend=None,
         ),
     )
-    monkeypatch.setattr(dspark_utils, "replace", fake_replace)
+    monkeypatch.setattr(model_loader, "replace", fake_replace)
     monkeypatch.setattr(
-        dspark_utils,
+        model_loader,
         "get_model",
         lambda *, vllm_config, model_config: (
             draft_model
@@ -312,7 +320,7 @@ def _run_hardware_agnostic_loader(
         ),
     )
     monkeypatch.setattr(
-        dspark_utils,
+        model_loader,
         "get_pp_group",
         lambda: SimpleNamespace(world_size=1),
     )
@@ -321,7 +329,7 @@ def _run_hardware_agnostic_loader(
         "set_model_tag",
         lambda _tag: nullcontext(),
     )
-    return dspark_utils.load_dspark_model(target_model, config)
+    return model_loader.load_dspark_model(target_model, config)
 
 
 def _weighted_module(value: float) -> nn.Module:
@@ -390,9 +398,8 @@ def test_distinct_checkpoint_embedding_and_lm_head_are_preserved(
 def test_npu_runner_uses_core_post_target_load_point_for_dspark(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from vllm.v1.worker.gpu.spec_decode.dspark import utils as dspark_utils
-
     from vllm_ascend.worker.v2 import model_runner as ascend_model_runner
+    from vllm_ascend.worker.v2.spec_decode.dspark import model_loader
 
     config = _dspark_config()
     speculator = create_dspark_speculator(config, torch.device("cpu"))
@@ -402,7 +409,7 @@ def test_npu_runner_uses_core_post_target_load_point_for_dspark(
     core_load_calls = 0
 
     monkeypatch.setattr(
-        dspark_utils,
+        model_loader,
         "load_dspark_model",
         lambda loaded_target, _config: (
             draft_model if loaded_target is target_model else pytest.fail("wrong target model")
