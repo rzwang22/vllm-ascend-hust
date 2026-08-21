@@ -251,6 +251,15 @@ class NPUPlatform(Platform):
         "deepseek_v4_fp8",
     ]
 
+    @classmethod
+    def get_speculative_proposer_capabilities(cls) -> dict[str, str]:
+        """Return portable proposers plus Ascend's DSpark selector."""
+        capabilities = super().get_speculative_proposer_capabilities()
+        from vllm_ascend.spec_decode import DSPARK_PROPOSER_IDENTITY
+
+        capabilities["dspark"] = DSPARK_PROPOSER_IDENTITY
+        return capabilities
+
     def is_sleep_mode_available(self) -> bool:
         # Sleep mode is only usable when camem resolved an ACL memcpy entrypoint.
         from vllm_ascend.device_allocator import camem

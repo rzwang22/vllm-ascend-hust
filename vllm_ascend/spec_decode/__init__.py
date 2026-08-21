@@ -17,6 +17,24 @@
 # Adapted from vllm-project/vllm/vllm/worker/gpu_model_runner.py
 #
 
+from typing import NoReturn
+
+DSPARK_PROPOSER_IDENTITY = "vllm_ascend.spec_decode.dspark_runtime_not_wired"
+
+
+class DSparkRuntimeNotWiredError(NotImplementedError):
+    """Raised when DSpark reaches Ascend runtime before it is fully wired."""
+
+
+def dspark_runtime_not_wired() -> NoReturn:
+    """Reject DSpark execution without falling back to another proposer."""
+    raise DSparkRuntimeNotWiredError(
+        "Ascend DSpark is recognized, but its proposer runtime is not yet wired. "
+        "Sparse-index metadata, model-runner tensor plumbing, and the DSpark "
+        "draft model are required before execution."
+    )
+
+
 def get_spec_decode_method(method, vllm_config, device, runner):
     if method == "ngram":
         from vllm_ascend.spec_decode.ngram_proposer import AscendNgramProposer
@@ -38,6 +56,8 @@ def get_spec_decode_method(method, vllm_config, device, runner):
         from vllm_ascend.spec_decode.medusa_proposer import AscendMedusaProposer
 
         return AscendMedusaProposer(vllm_config, device)
+    elif method == "dspark":
+        dspark_runtime_not_wired()
     elif method in ("eagle", "eagle3", "mtp"):
         from vllm_ascend.spec_decode.eagle_proposer import AscendEagleProposer
         from vllm_ascend.spec_decode.step3p5 import AscendStep3p5MTPProposer
