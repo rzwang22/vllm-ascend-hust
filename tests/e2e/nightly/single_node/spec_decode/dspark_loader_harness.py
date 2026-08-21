@@ -5,7 +5,8 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Callable, Mapping, MutableMapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, MutableMapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -68,6 +69,15 @@ class LaunchContext:
     rank: int
     local_rank: int
     world_size: int
+
+
+@contextmanager
+def dspark_loader_config_context(vllm_config: Any) -> Iterator[None]:
+    """Keep the EngineArgs-derived config current for the worker lifecycle."""
+    from vllm.config import set_current_vllm_config
+
+    with set_current_vllm_config(vllm_config):
+        yield
 
 
 def enforce_offline_mode(

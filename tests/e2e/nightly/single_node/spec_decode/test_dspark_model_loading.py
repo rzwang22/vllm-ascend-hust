@@ -7,6 +7,7 @@ import gc
 import json
 import os
 import sys
+from contextlib import ExitStack
 from typing import Any
 
 import pytest
@@ -22,6 +23,7 @@ from tests.e2e.nightly.single_node.spec_decode.dspark_loader_harness import (
     TARGET_LOADED,
     HarnessNotConfigured,
     StageTracker,
+    dspark_loader_config_context,
     enforce_offline_mode,
     forbidden_import_delta,
     parse_launch_context,
@@ -115,6 +117,7 @@ def test_dspark_loader_only_npu() -> None:
     }
     cleanup_errors: list[str] = []
     primary_error: BaseException | None = None
+    config_context = ExitStack()
 
     try:
         import torch
@@ -148,6 +151,9 @@ def test_dspark_loader_only_npu() -> None:
         assert vllm_config.speculative_config is not None
         assert vllm_config.speculative_config.method == "dspark"
         assert vllm_config.parallel_config.pipeline_parallel_size == 1
+        config_context.enter_context(
+            dspark_loader_config_context(vllm_config),
+        )
         tracker.mark(
             CONFIG_READY,
             target=str(settings.target_model),
@@ -171,8 +177,11 @@ def test_dspark_loader_only_npu() -> None:
             model_class=f"{model_cls.__module__}.{model_cls.__name__}",
         )
 
+        from vllm.config import get_current_vllm_config
+
         from vllm_ascend.worker.worker import NPUWorker
 
+        assert get_current_vllm_config() is vllm_config
         worker = NPUWorker(
             vllm_config=vllm_config,
             local_rank=launch.local_rank,
@@ -181,7 +190,9 @@ def test_dspark_loader_only_npu() -> None:
             is_driver_worker=launch.rank == 0,
         )
         state["worker"] = worker
+        assert get_current_vllm_config() is vllm_config
         worker.init_device()
+        assert get_current_vllm_config() is vllm_config
         runner = worker.model_runner
         assert runner is not None
         from vllm_ascend.worker.v2.spec_decode.dspark import (
@@ -271,6 +282,7 @@ def test_dspark_loader_only_npu() -> None:
                 else:
                     setattr(owner, name, original)
             guarded_attributes.clear()
+        assert get_current_vllm_config() is vllm_config
 
         draft_model = runner.speculator.model
         target_model = runner.model
@@ -353,6 +365,7 @@ def test_dspark_loader_only_npu() -> None:
                 ("destroy_ascend_model_parallel", destroy_ascend_groups),
                 ("destroy_distributed_environment", destroy_vllm_groups),
                 ("torch.npu.empty_cache", clear_npu_cache),
+                ("vllm config context", config_context.close),
             ),
             tracker,
         )

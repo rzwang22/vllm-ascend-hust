@@ -2,6 +2,7 @@
 # Copyright (c) 2026 Huawei Technologies Co., Ltd. All Rights Reserved.
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -11,6 +12,7 @@ from tests.e2e.nightly.single_node.spec_decode.dspark_loader_harness import (
     LOAD_STAGES,
     HarnessNotConfigured,
     StageTracker,
+    dspark_loader_config_context,
     enforce_offline_mode,
     forbidden_import_delta,
     parse_launch_context,
@@ -155,6 +157,104 @@ def test_launch_context_requires_matching_torchrun_world() -> None:
             {"RANK": "0", "LOCAL_RANK": "0", "WORLD_SIZE": "1"},
             tp_size=8,
         )
+
+
+def test_loader_config_context_covers_worker_lifecycle_and_restores() -> None:
+    from vllm.config import (
+        get_current_vllm_config,
+        get_current_vllm_config_or_none,
+        set_current_vllm_config,
+    )
+
+    original_config = get_current_vllm_config_or_none()
+    previous_config = SimpleNamespace(name="previous")
+    dspark_config = SimpleNamespace(
+        speculative_config=SimpleNamespace(method="dspark"),
+    )
+    observed: list[tuple[str, object]] = []
+    tracker = StageTracker(rank=0, emit=lambda _message: None)
+
+    with set_current_vllm_config(previous_config):
+        with dspark_loader_config_context(dspark_config):
+            for phase in ("worker.__init__", "worker.init_device", "worker.load_model"):
+                observed.append((phase, get_current_vllm_config()))
+            cleanup_errors = run_cleanup_steps(
+                (
+                    (
+                        "worker.shutdown",
+                        lambda: observed.append(
+                            ("worker.shutdown", get_current_vllm_config()),
+                        ),
+                    ),
+                ),
+                tracker,
+            )
+            assert cleanup_errors == []
+
+        assert get_current_vllm_config() is previous_config
+
+    assert get_current_vllm_config_or_none() is original_config
+    assert [phase for phase, _config in observed] == [
+        "worker.__init__",
+        "worker.init_device",
+        "worker.load_model",
+        "worker.shutdown",
+    ]
+    assert all(config is dspark_config for _phase, config in observed)
+    assert tracker.stages == [CLEANUP_COMPLETE]
+
+
+@pytest.mark.parametrize("failing_phase", ["worker.init_device", "worker.load_model"])
+def test_loader_config_context_restores_after_failure_and_runs_cleanup(
+    failing_phase: str,
+) -> None:
+    from vllm.config import (
+        get_current_vllm_config,
+        get_current_vllm_config_or_none,
+        set_current_vllm_config,
+    )
+
+    original_config = get_current_vllm_config_or_none()
+    previous_config = SimpleNamespace(name="previous")
+    dspark_config = SimpleNamespace(
+        speculative_config=SimpleNamespace(method="dspark"),
+    )
+    tracker = StageTracker(rank=0, emit=lambda _message: None)
+    cleanup_observed: list[object] = []
+    lifecycle_error = RuntimeError(f"{failing_phase} failed")
+
+    def failing_cleanup() -> None:
+        cleanup_observed.append(get_current_vllm_config())
+        raise ValueError("cleanup failed")
+
+    with set_current_vllm_config(previous_config):
+        with (
+            pytest.raises(RuntimeError, match=f"{failing_phase} failed") as exc_info,
+            dspark_loader_config_context(dspark_config),
+        ):
+            try:
+                assert get_current_vllm_config() is dspark_config
+                raise lifecycle_error
+            finally:
+                cleanup_errors = run_cleanup_steps(
+                    (
+                        (
+                            "worker.shutdown",
+                            failing_cleanup,
+                        ),
+                    ),
+                    tracker,
+                )
+                assert cleanup_errors == [
+                    "worker.shutdown: ValueError: cleanup failed",
+                ]
+
+        assert exc_info.value is lifecycle_error
+        assert get_current_vllm_config() is previous_config
+
+    assert cleanup_observed == [dspark_config]
+    assert tracker.stages == [CLEANUP_COMPLETE]
+    assert get_current_vllm_config_or_none() is original_config
 
 
 def test_stage_tracker_records_order_and_failure_point() -> None:
