@@ -51,7 +51,10 @@ from vllm_ascend.worker.v2.aclgraph_utils import ModelAclGraphManager
 from vllm_ascend.worker.v2.attn_utils import build_attn_state
 from vllm_ascend.worker.v2.input_batch import AscendInputBatch, AscendInputBuffers
 from vllm_ascend.worker.v2.spec_decode.eagle import init_speculator
-from vllm_ascend.worker.v2.spec_decode.eagle.speculator import AscendEagleSpeculator
+from vllm_ascend.worker.v2.spec_decode.runner_init import (
+    initialize_ascend_speculator,
+    override_core_dspark_speculator_factory,
+)
 from vllm_ascend.worker.v2.states import AscendRequestState
 from vllm_ascend.worker.v2.utils import torch_cuda_wrapper
 
@@ -72,8 +75,14 @@ class NPUModelRunner(GPUModelRunner):
         if self.ascend_config.eplb_config.dynamic_eplb:
             raise NotImplementedError("dynamic_eplb is not supported by Ascend NPU model runner v2.")
 
-        with torch_cuda_wrapper():
+        with torch_cuda_wrapper(), override_core_dspark_speculator_factory(vllm_config, init_speculator):
             super().__init__(vllm_config, device)
+
+        core_initialized_speculator = (
+            self.speculator
+            if self.speculative_config is not None and self.speculative_config.method == "dspark"
+            else None
+        )
 
         # because we will override these attribute, delete these attribute to
         # make sure it's collected by python gc immediately.
@@ -81,12 +90,16 @@ class NPUModelRunner(GPUModelRunner):
         del self.input_buffers
         del self.speculator
 
-        # we define AscendEagleSpeculator in vllm_ascend.worker.v2.spec_decode.eagle.speculator
-        # init_speculator will return AscendEagleSpeculator when eagle is used.
-        # so here we just call init_speculator to reinitialize speculator.
-        self.speculator: AscendEagleSpeculator | None = None
-        if self.speculative_config is not None:
-            self.speculator = init_speculator(self.vllm_config, self.device)
+        # GPUModelRunner constructs DSpark with the temporarily installed
+        # Ascend factory. Reuse that instance instead of constructing a second
+        # speculator. Other methods keep the existing Ascend reinitialization.
+        self.speculator = initialize_ascend_speculator(
+            self.vllm_config,
+            self.device,
+            core_initialized_speculator,
+            init_speculator,
+        )
+        del core_initialized_speculator
 
         # AscendRequestState has extra `num_computed_tokens_cpu` attribute.
         # so reinitialize req_states here.
