@@ -37,11 +37,15 @@ if MISSING_MODULES:
         allow_module_level=True,
     )
 
-NUM_EXPERTS = 1
+NUM_EXPERTS = 2
 NUM_TOKENS = 4
 HIDDEN_SIZE = 256
 INTERMEDIATE_SIZE = 256
 TOP_K = 1
+EXPERT_GROUP_COUNT = 1
+TOPK_GROUP_COUNT = 1
+MOE_GATING_GROUP_SELECT_MODE = 1
+MIN_EXPERTS_PER_GROUP_FOR_TOP2_SUM = 2
 NPU_DEVICE = 0
 PEAK_ALLOCATED_LIMIT_BYTES = 64 * 1024 * 1024
 LAUNCH_ENV_KEYS = ("MASTER_ADDR", "MASTER_PORT", "RANK", "LOCAL_RANK", "WORLD_SIZE")
@@ -50,6 +54,18 @@ LAUNCH_ENV_KEYS = ("MASTER_ADDR", "MASTER_PORT", "RANK", "LOCAL_RANK", "WORLD_SI
 def _emit(stage: str, **details: Any) -> None:
     suffix = f" {json.dumps(details, default=str, sort_keys=True)}" if details else ""
     print(f"{stage}{suffix}", flush=True)
+
+
+def _validate_expert_group_fixture() -> None:
+    assert EXPERT_GROUP_COUNT > 0
+    assert NUM_EXPERTS % EXPERT_GROUP_COUNT == 0
+    experts_per_group = NUM_EXPERTS // EXPERT_GROUP_COUNT
+    assert MOE_GATING_GROUP_SELECT_MODE == 1
+    assert experts_per_group >= MIN_EXPERTS_PER_GROUP_FOR_TOP2_SUM, (
+        "MoeGatingTopK group_select_mode=1 ranks groups by their top-2 "
+        f"expert scores, but this fixture has only {experts_per_group} expert(s) per group"
+    )
+    assert 1 <= TOPK_GROUP_COUNT <= EXPERT_GROUP_COUNT
 
 
 def _require_910b2_npu() -> tuple[Any, Any]:
@@ -127,6 +143,8 @@ def _build_vllm_config(torch: Any) -> Any:
         hf_overrides={
             "n_routed_experts": NUM_EXPERTS,
             "num_experts_per_tok": TOP_K,
+            "n_group": EXPERT_GROUP_COUNT,
+            "topk_group": TOPK_GROUP_COUNT,
             "moe_quantize": "w8a8_dynamic",
         },
     )
@@ -299,11 +317,15 @@ def _construct_w8a8_routed_experts(torch: Any, torch_npu: Any, vllm_config: Any)
         top_k=TOP_K,
         global_num_experts=NUM_EXPERTS,
         num_redundant_experts=0,
-        num_expert_group=None,
+        num_expert_group=EXPERT_GROUP_COUNT,
         moe_parallel_config=parallel_config,
         placement_strategy="linear",
         enable_eplb=False,
     )
+    assert expert_map_manager.global_num_experts == NUM_EXPERTS
+    assert expert_map_manager.local_num_experts == NUM_EXPERTS
+    assert expert_map_manager.expert_map is None
+    assert expert_map_manager.get_local_expert_ids() == list(range(NUM_EXPERTS))
 
     # H=I=256 makes every INT8/NZ matrix dimension a multiple of 256,
     # satisfying the production FRACTAL_NZ and grouped-matmul alignment.
@@ -316,6 +338,8 @@ def _construct_w8a8_routed_experts(torch: Any, torch_npu: Any, vllm_config: Any)
             expert_map_manager=expert_map_manager,
             renormalize=True,
             use_grouped_topk=False,
+            num_expert_group=EXPERT_GROUP_COUNT,
+            topk_group=TOPK_GROUP_COUNT,
             scoring_func="softmax",
             routed_scaling_factor=1.0,
             swiglu_limit=0.0,
@@ -323,6 +347,8 @@ def _construct_w8a8_routed_experts(torch: Any, torch_npu: Any, vllm_config: Any)
 
     method = layer.quant_method
     scheme = method.quant_method
+    assert layer.local_num_experts == NUM_EXPERTS
+    assert layer.expert_map is None
     assert type(method) is AscendFusedMoEMethod
     assert isinstance(method, FusedMoEMethodBase)
     assert not isinstance(method, UnquantizedFusedMoEMethod)
@@ -336,6 +362,11 @@ def _construct_w8a8_routed_experts(torch: Any, torch_npu: Any, vllm_config: Any)
         method=type(method).__name__,
         scheme=type(scheme).__name__,
         quant_type=scheme.quant_type.name,
+        num_experts=NUM_EXPERTS,
+        expert_group_count=EXPERT_GROUP_COUNT,
+        experts_per_group=NUM_EXPERTS // EXPERT_GROUP_COUNT,
+        topk_group_count=TOPK_GROUP_COUNT,
+        group_select_mode=MOE_GATING_GROUP_SELECT_MODE,
         unquantized_fallback=False,
         mxfp=False,
     )
@@ -378,6 +409,11 @@ def _construct_w8a8_routed_experts(torch: Any, torch_npu: Any, vllm_config: Any)
     assert tuple(layer.w2_weight.shape) == (NUM_EXPERTS, INTERMEDIATE_SIZE, HIDDEN_SIZE)
     assert layer.w13_weight.dtype == torch.int8
     assert layer.w2_weight.dtype == torch.int8
+    assert tuple(layer.w13_weight_scale.shape) == (NUM_EXPERTS, 2 * INTERMEDIATE_SIZE)
+    assert tuple(layer.w13_weight_offset.shape) == (NUM_EXPERTS, 2 * INTERMEDIATE_SIZE)
+    assert tuple(layer.w2_weight_scale.shape) == (NUM_EXPERTS, HIDDEN_SIZE)
+    assert tuple(layer.w2_weight_offset.shape) == (NUM_EXPERTS, HIDDEN_SIZE)
+    assert tuple(layer.w13_weight_scale_fp32.shape) == (NUM_EXPERTS, 2 * INTERMEDIATE_SIZE)
     assert layer.w13_weight_scale_fp32.dtype == torch.float32
     assert int(torch_npu.get_npu_format(layer.w13_weight)) == ACL_FORMAT_FRACTAL_NZ
     assert int(torch_npu.get_npu_format(layer.w2_weight)) == ACL_FORMAT_FRACTAL_NZ
@@ -457,8 +493,8 @@ def _execute_production_w8a8_moe(torch: Any, layer: Any, vllm_config: Any) -> An
             use_grouped_topk=False,
             num_experts=NUM_EXPERTS,
             expert_map=layer.expert_map,
-            topk_group=None,
-            num_expert_group=None,
+            topk_group=TOPK_GROUP_COUNT,
+            num_expert_group=EXPERT_GROUP_COUNT,
             custom_routing_function=None,
             scoring_func="softmax",
             routed_scaling_factor=1.0,
@@ -621,6 +657,7 @@ def _cleanup_probe(
 
 
 def test_w8a8_moe_world_size_one_hccl_mc2() -> None:
+    _validate_expert_group_fixture()
     torch, torch_npu = _require_910b2_npu()
     vllm_config = _build_vllm_config(torch)
     previous_launch_env = _configure_single_rank_launch()
