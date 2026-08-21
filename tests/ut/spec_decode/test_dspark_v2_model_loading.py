@@ -1,7 +1,12 @@
 import builtins
 import importlib
+import json
+import os
+import subprocess
 import sys
+import textwrap
 from contextlib import nullcontext
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -65,35 +70,90 @@ def test_dspark_registry_resolves_to_ascend_model_without_touching_other_archite
     assert isolated_models[non_dspark_architecture] is non_dspark_registration
 
 
-def test_dspark_registry_resolution_does_not_import_cuda_runtime(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    forbidden_prefixes = (
-        "vllm.models.deepseek_v4.nvidia.dspark",
-        "vllm.v1.worker.gpu.spec_decode.dspark.speculator",
-        "vllm_ascend.ops.triton.spec_decode",
+def test_dspark_registry_resolution_isolated_from_nvidia_runtime() -> None:
+    conftest_path = Path(__file__).parents[1] / "conftest.py"
+    child_script = textwrap.dedent(
+        f"""
+        import json
+        import runpy
+        import sys
+        import types
+
+        build_info = types.ModuleType("vllm_ascend._build_info")
+        build_info.__device_type__ = "A2"
+        build_info.__soc_version__ = "ASCEND910B2"
+        sys.modules["vllm_ascend._build_info"] = build_info
+        runpy.run_path({str(conftest_path)!r})
+
+        import vllm_ascend
+        from vllm import ModelRegistry
+
+        vllm_ascend.register_model()
+        nvidia_prefix = "vllm.models.deepseek_v4.nvidia"
+        forbidden_prefixes = (
+            nvidia_prefix,
+            "vllm.v1.worker.gpu.spec_decode.dspark",
+            "vllm_ascend.ops.triton.spec_decode",
+        )
+        before = set(sys.modules)
+        preexisting_nvidia = sorted(
+            module for module in before if module.startswith(nvidia_prefix)
+        )
+        model_cls = ModelRegistry._try_load_model_cls("DSparkDraftModel")
+        if model_cls is None:
+            raise RuntimeError("DSparkDraftModel did not resolve")
+        new_modules = set(sys.modules) - before
+
+        def referenced_module(value):
+            if isinstance(value, types.ModuleType):
+                return value.__name__
+            return getattr(value, "__module__", "")
+
+        model_global_modules = (
+            model_cls.__module__,
+            "vllm_ascend.models.deepseek_v4",
+        )
+        nvidia_globals = sorted(
+            f"{{module_name}}.{{name}}"
+            for module_name in model_global_modules
+            for name, value in vars(sys.modules[module_name]).items()
+            if referenced_module(value).startswith(nvidia_prefix)
+        )
+        payload = {{
+            "class_module": model_cls.__module__,
+            "class_name": model_cls.__name__,
+            "preexisting_nvidia": preexisting_nvidia,
+            "new_forbidden": sorted(
+                module
+                for module in new_modules
+                if module.startswith(forbidden_prefixes)
+            ),
+            "mro_modules": [base.__module__ for base in model_cls.__mro__],
+            "nvidia_globals": nvidia_globals,
+        }}
+        print("DSPARK_IMPORT_AUDIT=" + json.dumps(payload, sort_keys=True))
+        """
     )
-    import_attempts: list[str] = []
-    original_import = builtins.__import__
+    child_env = os.environ.copy()
+    child_env["PYTHONPATH"] = os.pathsep.join(entry for entry in sys.path if entry)
+    result = subprocess.run(
+        [sys.executable, "-c", child_script],
+        cwd=Path(__file__).parents[3],
+        env=child_env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    audit_line = next(line for line in result.stdout.splitlines() if line.startswith("DSPARK_IMPORT_AUDIT="))
+    audit = json.loads(audit_line.removeprefix("DSPARK_IMPORT_AUDIT="))
 
-    def import_spy(name, *args, **kwargs):
-        if name.startswith(forbidden_prefixes):
-            import_attempts.append(name)
-            raise AssertionError(f"unexpected CUDA/Triton DSpark import: {name}")
-        return original_import(name, *args, **kwargs)
-
-    isolated_models = dict(ModelRegistry.models)
-    monkeypatch.setattr(ModelRegistry, "models", isolated_models)
-    for module_name in forbidden_prefixes:
-        monkeypatch.delitem(sys.modules, module_name, raising=False)
-    monkeypatch.setattr(builtins, "__import__", import_spy)
-
-    register_dspark_model()
-    resolved_type = ModelRegistry._try_load_model_cls(DSPARK_MODEL_ARCHITECTURE)
-
-    assert resolved_type is not None
-    assert resolved_type.__module__ == "vllm_ascend.models.deepseek_v4_dspark"
-    assert import_attempts == []
+    assert audit["class_module"] == "vllm_ascend.models.deepseek_v4_dspark"
+    assert audit["class_name"] == "DSparkDeepseekV4ForCausalLM"
+    assert audit["preexisting_nvidia"] == []
+    assert audit["new_forbidden"] == []
+    assert all(not module.startswith("vllm.models.deepseek_v4.nvidia") for module in audit["mro_modules"])
+    assert audit["nvidia_globals"] == []
 
 
 def test_speculator_loads_draft_model_once_and_publishes_loader_identity(

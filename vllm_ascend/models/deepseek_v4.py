@@ -35,7 +35,12 @@ from torch import nn
 from transformers import DeepseekV2Config, DeepseekV3Config
 from vllm._aiter_ops import rocm_aiter_ops
 from vllm.compilation.decorators import support_torch_compile
-from vllm.config import CacheConfig, ParallelConfig, VllmConfig
+from vllm.config import (
+    CacheConfig,
+    ParallelConfig,
+    VllmConfig,
+    get_current_vllm_config,
+)
 from vllm.distributed import (
     get_ep_group,
     get_pp_group,
@@ -44,6 +49,7 @@ from vllm.distributed import (
     tensor_model_parallel_all_gather,
 )
 from vllm.model_executor.layers.activation import SiluAndMul, SiluAndMulWithClamp
+from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
 from vllm.model_executor.layers.fused_moe import FusedMoE
 from vllm.model_executor.layers.layernorm import RMSNorm
 from vllm.model_executor.layers.linear import (
@@ -64,8 +70,6 @@ from vllm.model_executor.models.utils import (
     maybe_prefix,
     sequence_parallel_chunk,
 )
-from vllm.models.deepseek_v4.attention import DeepseekV4IndexerCache  # type: ignore[import-not-found,no-redef]
-from vllm.models.deepseek_v4.compressor import CompressorStateCache  # type: ignore[import-not-found,no-redef]
 from vllm.platforms import current_platform
 from vllm.sequence import IntermediateTensors
 from vllm.transformers_utils.configs.deepseek_v4 import DeepseekV4Config
@@ -105,7 +109,7 @@ def _dsv4_block_sizes():
     return DSV4_BLOCK_SIZES
 
 
-class AscendCompressorStateCache(CompressorStateCache):
+class AscendCompressorStateCache(nn.Module, AttentionLayerBase):
     def __init__(
         self,
         state_dim: int,
@@ -114,8 +118,20 @@ class AscendCompressorStateCache(CompressorStateCache):
         block_size: int,
         prefix: str,
     ):
-        super().__init__(state_dim, dtype, compress_ratio, prefix)
+        super().__init__()
+        self.state_dim = state_dim
+        self.dtype = dtype
+        self.prefix = prefix
+        self.kv_cache = torch.tensor([])
+        compilation_config = get_current_vllm_config().compilation_config
+        if prefix in compilation_config.static_forward_context:
+            raise ValueError(f"Duplicate layer name: {prefix}")
+        compilation_config.static_forward_context[prefix] = self
+
+        assert self.dtype == torch.float32
+        assert compress_ratio in [4, 128]
         self.compress_ratio = compress_ratio
+        self.sliding_window = (1 + (compress_ratio == 4)) * compress_ratio
         self.block_size = block_size
 
     def get_kv_cache_spec(self, vllm_config: VllmConfig) -> KVCacheSpec:
@@ -138,7 +154,7 @@ class AscendCompressorStateCache(CompressorStateCache):
         return _get_ascend_dsa_backend()
 
 
-class AscendDeepseekV4IndexerCache(DeepseekV4IndexerCache):
+class AscendDeepseekV4IndexerCache(nn.Module, AttentionLayerBase):
     def __init__(
         self,
         head_dim: int,
@@ -147,7 +163,17 @@ class AscendDeepseekV4IndexerCache(DeepseekV4IndexerCache):
         cache_config: CacheConfig,
         compress_ratio: int = 1,
     ):
-        super().__init__(head_dim, dtype, prefix, cache_config, compress_ratio)
+        super().__init__()
+        self.kv_cache = torch.tensor([])
+        self.head_dim = head_dim
+        self.prefix = prefix
+        self.cache_config = cache_config
+        self.dtype = dtype
+        self.compress_ratio = compress_ratio
+        compilation_config = get_current_vllm_config().compilation_config
+        if prefix in compilation_config.static_forward_context:
+            raise ValueError(f"Duplicate layer name: {prefix}")
+        compilation_config.static_forward_context[prefix] = self
 
     def get_kv_cache_spec(self, vllm_config: VllmConfig) -> KVCacheSpec:
         if get_ascend_device_type() in {AscendDeviceType.A5}:
