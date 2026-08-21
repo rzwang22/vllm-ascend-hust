@@ -36,6 +36,30 @@ def override_core_dspark_speculator_factory(
         vllm_model_runner.init_speculator = core_factory
 
 
+@contextmanager
+def include_ascend_dspark_in_core_load_lifecycle(
+    vllm_config: VllmConfig,
+) -> Iterator[None]:
+    """Let core's existing post-target load point call the Ascend loader."""
+    if not _uses_dspark(vllm_config):
+        yield
+        return
+
+    from vllm_ascend.worker.v2.spec_decode.dspark import (
+        AscendDSparkSpeculator,
+    )
+
+    core_draft_speculator_type = vllm_model_runner.DraftModelSpeculator
+    try:
+        vllm_model_runner.DraftModelSpeculator = (
+            core_draft_speculator_type,
+            AscendDSparkSpeculator,
+        )
+        yield
+    finally:
+        vllm_model_runner.DraftModelSpeculator = core_draft_speculator_type
+
+
 def initialize_ascend_speculator(
     vllm_config: VllmConfig,
     device: torch.device,

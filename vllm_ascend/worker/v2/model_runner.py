@@ -52,6 +52,7 @@ from vllm_ascend.worker.v2.attn_utils import build_attn_state
 from vllm_ascend.worker.v2.input_batch import AscendInputBatch, AscendInputBuffers
 from vllm_ascend.worker.v2.spec_decode.eagle import init_speculator
 from vllm_ascend.worker.v2.spec_decode.runner_init import (
+    include_ascend_dspark_in_core_load_lifecycle,
     initialize_ascend_speculator,
     override_core_dspark_speculator_factory,
 )
@@ -154,6 +155,10 @@ class NPUModelRunner(GPUModelRunner):
         # we need to use input_batch to set forward_context in run_fullgraph.
         # so we can inherit `execute_model` method.
         self.input_batch: AscendInputBatch | None = None
+
+    def load_model(self, load_dummy_weights: bool = False, *args, **kwargs) -> None:
+        with include_ascend_dspark_in_core_load_lifecycle(self.vllm_config):
+            super().load_model(load_dummy_weights, *args, **kwargs)
 
     def initialize_kv_cache(self, kv_cache_config: KVCacheConfig) -> None:
         with graph_manager_wrapper(self):

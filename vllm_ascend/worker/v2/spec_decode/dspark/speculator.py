@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # Copyright (c) 2026 Huawei Technologies Co., Ltd. All Rights Reserved.
 
-from typing import Any, NoReturn
+from typing import Any
 
 import torch
 from vllm.config import VllmConfig
@@ -23,10 +23,9 @@ from vllm_ascend.spec_decode import dspark_runtime_not_wired
 class AscendDSparkSpeculator(BaseSpeculator):
     """Ascend V2 DSpark construction and runtime-boundary contract.
 
-    This construction layer stops before draft-model loading, sparse-index
-    metadata generation, and proposal execution. It implements the V2
-    speculator interface so selection and construction are real and type-safe,
-    while every unwired execution boundary fails closed.
+    The target model and the registered Ascend draft model are loaded before
+    execution. Sparse-index metadata generation and proposal execution remain
+    explicit fail-closed boundaries until their tensor plumbing is connected.
     """
 
     def __init__(self, vllm_config: VllmConfig, device: torch.device):
@@ -66,6 +65,9 @@ class AscendDSparkSpeculator(BaseSpeculator):
         self.draft_model_config = draft_model_config
         self.num_speculative_steps = num_speculative_steps
         self.parallel_drafting_token_id = parallel_drafting_token_id
+        self._model: torch.nn.Module | None = None
+        self._loaded_target_model: torch.nn.Module | None = None
+        self.eplb_state: Any | None = None
 
         # These fields are consumed directly by GPUModelRunner's generic V2
         # speculator path before proposal execution.
@@ -78,9 +80,46 @@ class AscendDSparkSpeculator(BaseSpeculator):
         self.cudagraph_mode = CUDAGraphMode.NONE
 
     @property
-    def model(self) -> NoReturn:
-        """Fail when the runner first requests the unwired draft model."""
-        dspark_runtime_not_wired("V2 draft-model loading")
+    def model(self) -> torch.nn.Module:
+        """Return the loaded Ascend draft model or fail before loading."""
+        if self._model is None:
+            dspark_runtime_not_wired("V2 draft-model loading")
+        return self._model
+
+    def load_model(self, target_model: torch.nn.Module) -> None:
+        """Load the Ascend DSpark model once, then publish it atomically."""
+        if self._model is not None:
+            if target_model is self._loaded_target_model:
+                return
+            raise RuntimeError("Ascend DSpark draft model is already loaded for a different target model.")
+
+        # This helper only performs config replacement, ModelRegistry loading,
+        # PP validation, and target embedding/lm-head sharing. It does not
+        # import or invoke the core CUDA/Triton DSpark speculator runtime.
+        from vllm.v1.worker.gpu.spec_decode.dspark.utils import (
+            load_dspark_model,
+        )
+
+        draft_model = load_dspark_model(target_model, self.vllm_config)
+
+        from vllm_ascend.models.deepseek_v4_dspark import (
+            DSparkDeepseekV4ForCausalLM,
+        )
+
+        if not isinstance(draft_model, DSparkDeepseekV4ForCausalLM):
+            raise RuntimeError(
+                "DSparkDraftModel resolved to a non-Ascend implementation: "
+                f"{type(draft_model).__module__}.{type(draft_model).__name__}."
+            )
+
+        # Commit state only after construction, checkpoint loading, sharing,
+        # and implementation validation all succeed.
+        self._loaded_target_model = target_model
+        self._model = draft_model
+
+    def set_eplb_state(self, eplb_state: Any) -> None:
+        """Accept the runner's EPLB state after a successful model load."""
+        self.eplb_state = eplb_state
 
     def init_cudagraph_manager(self, cudagraph_mode: CUDAGraphMode) -> None:
         """Record the requested mode while keeping DSpark execution eager."""
