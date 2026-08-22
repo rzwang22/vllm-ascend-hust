@@ -16,6 +16,7 @@ from vllm_ascend.attention.dsa_v1 import (
     AscendDSABackend,
     AscendDSAMetadataBuilder,
 )
+from vllm_ascend.attention.utils import split_decodes_and_prefills
 from vllm_ascend.core.kv_cache_interface import AscendMLAAttentionSpec
 from vllm_ascend.worker.v2 import attn_utils
 from vllm_ascend.worker.v2.model_states.default import AscendModelState
@@ -44,13 +45,11 @@ class _RecordingDSAMetadataBuilder(AscendDSAMetadataBuilder):
         self.decode_ratio_to_sas_metadata = kwargs["decode_ratio_to_sas_metadata"]
         self.common_ratio_to_sas_metadata = kwargs["common_ratio_to_sas_metadata"]
 
-        query_lens = (common_attn_metadata.query_start_loc_cpu[1:] - common_attn_metadata.query_start_loc_cpu[:-1])[
-            : common_attn_metadata.num_reqs
-        ]
-        num_decodes = int((query_lens <= self.decode_threshold).sum())
-        num_decode_tokens = int(query_lens[:num_decodes].sum())
-        num_prefills = common_attn_metadata.num_reqs - num_decodes
-        num_prefill_tokens = common_attn_metadata.num_actual_tokens - num_decode_tokens
+        num_decodes, num_prefills, num_decode_tokens, num_prefill_tokens = split_decodes_and_prefills(
+            common_attn_metadata,
+            decode_threshold=self.decode_threshold,
+            treat_short_extends_as_decodes=False,
+        )
         self.common_ratio_to_sas_metadata.setdefault("num_decodes", num_decodes)
         self.common_ratio_to_sas_metadata.setdefault("num_prefills", num_prefills)
         self.common_ratio_to_sas_metadata.setdefault(
@@ -128,6 +127,7 @@ def _metadata_groups(
     layer_names = (
         "model.layers.0.self_attn.swa_cache",
         "model.layers.0.self_attn.compressor.state_cache",
+        "model.layers.1.self_attn.attn",
     )
     specs = tuple(
         AscendMLAAttentionSpec(
@@ -137,7 +137,7 @@ def _metadata_groups(
             dtype=torch.bfloat16,
             compress_ratio=compress_ratio,
         )
-        for block_size, compress_ratio in ((32, 1), (64, 4))
+        for block_size, compress_ratio in ((32, 1), (64, 4), (128, 128))
     )
     calls: list[dict[str, Any]] = []
     builders: list[AscendDSAMetadataBuilder] = [
@@ -147,6 +147,7 @@ def _metadata_groups(
             if failing_second_group
             else _RecordingDSAMetadataBuilder(calls, 4, decode_threshold)
         ),
+        _RecordingDSAMetadataBuilder(calls, 128, decode_threshold),
     ]
     attn_groups = [
         [
@@ -181,6 +182,7 @@ def _build_metadata(
     attn_state: AscendAttentionState,
     num_input_tokens: int | None = None,
     decode_threshold: int = 1,
+    is_prefilling: list[bool] | None = None,
     failing_second_group: bool = False,
 ):
     layer_names, specs, calls, attn_groups, kv_cache_config = _metadata_groups(
@@ -191,6 +193,8 @@ def _build_metadata(
     num_actual_tokens = sum(query_lens)
     if num_input_tokens is None:
         num_input_tokens = num_actual_tokens
+    if is_prefilling is None:
+        is_prefilling = [False] * num_reqs
     query_start_loc = torch.zeros(num_reqs + 1, dtype=torch.int32)
     query_start_loc[1:] = torch.tensor(query_lens, dtype=torch.int32).cumsum(0)
     positions = torch.arange(num_input_tokens, dtype=torch.int64)
@@ -216,6 +220,7 @@ def _build_metadata(
         kv_cache_config=kv_cache_config,
         seq_lens_np=np.array(seq_lens, dtype=np.int32),
         positions=positions,
+        is_prefilling=torch.tensor(is_prefilling, dtype=torch.bool),
         attn_state=attn_state,
     )
     return SimpleNamespace(
@@ -268,6 +273,57 @@ def test_dsa_single_request_decode_metadata_is_complete() -> None:
     assert result.calls[0]["common_attn_metadata"].seq_lens.tolist() == [9]
 
 
+@pytest.mark.parametrize("query_len", [1, 4, 6])
+def test_dsa_dspark_fresh_short_request_uses_prefill_metadata(query_len: int) -> None:
+    result = _build_metadata(
+        [query_len],
+        [query_len],
+        attn_state=AscendAttentionState.PrefillNoCache,
+        decode_threshold=6,
+        is_prefilling=[True],
+    )
+
+    assert result.calls[0]["common"]["num_decodes"] == 0
+    assert result.calls[0]["common"]["num_prefills"] == 1
+    assert result.calls[0]["common"]["num_prefill_tokens"] == query_len
+    assert result.calls[0]["decode"] == {}
+    assert result.calls[0]["prefill"]
+    assert result.calls[0]["common_attn_metadata"].query_start_loc.tolist() == [0, query_len]
+    assert result.calls[0]["common_attn_metadata"].seq_lens.tolist() == [query_len]
+
+
+def test_dsa_non_dspark_fresh_first_token_uses_prefill_metadata() -> None:
+    result = _build_metadata(
+        [1],
+        [1],
+        attn_state=AscendAttentionState.PrefillNoCache,
+        is_prefilling=[True],
+    )
+
+    assert result.calls[0]["common"]["num_decodes"] == 0
+    assert result.calls[0]["common"]["num_prefills"] == 1
+    assert result.calls[0]["prefill"]
+
+
+@pytest.mark.parametrize(("query_len", "seq_len"), [(1, 2), (6, 7)])
+def test_dsa_dspark_cached_request_at_decode_threshold_uses_decode_metadata(
+    query_len: int,
+    seq_len: int,
+) -> None:
+    result = _build_metadata(
+        [query_len],
+        [seq_len],
+        attn_state=AscendAttentionState.DecodeOnly,
+        decode_threshold=6,
+        is_prefilling=[False],
+    )
+
+    assert result.calls[0]["common"]["num_decodes"] == 1
+    assert result.calls[0]["common"]["num_decode_tokens"] == query_len
+    assert result.calls[0]["prefill"] == {}
+    assert result.calls[0]["decode"]
+
+
 def test_dsa_mixed_prefill_decode_preserves_request_and_tensor_contract() -> None:
     result = _build_metadata(
         [1, 3],
@@ -311,14 +367,31 @@ def test_dsa_ratio_groups_share_metadata_but_keep_cache_layout_identity() -> Non
         attn_state=AscendAttentionState.ChunkedPrefill,
     )
 
-    assert [call["block_size"] for call in result.calls] == [32, 64]
-    assert [call["ratio_key"] for call in result.calls] == ["c1", "c4"]
+    assert [call["block_size"] for call in result.calls] == [32, 64, 128]
+    assert [call["ratio_key"] for call in result.calls] == ["c1", "c4", "c128"]
     for cache_name in ("prefill", "decode", "common"):
-        assert result.calls[0][cache_name] is result.calls[1][cache_name]
+        assert all(call[cache_name] is result.calls[0][cache_name] for call in result.calls[1:])
     for group_id, call in enumerate(result.calls):
         common_metadata = call["common_attn_metadata"]
         assert common_metadata.block_table_tensor is result.block_tables[group_id]
         assert common_metadata.slot_mapping.data_ptr() == (result.slot_mappings[group_id].data_ptr())
+
+
+def test_dsa_reorder_keeps_fresh_short_request_behind_true_decode() -> None:
+    swaps: list[tuple[int, int]] = []
+    input_batch = SimpleNamespace(
+        req_ids=["fresh", "decode"],
+        is_prefilling_np=np.array([True, False]),
+        swap_states=lambda left, right: swaps.append((left, right)),
+    )
+    scheduler_output = SimpleNamespace(
+        num_scheduled_tokens={"fresh": 1, "decode": 1},
+    )
+    builder = AscendDSAMetadataBuilder.__new__(AscendDSAMetadataBuilder)
+    builder.decode_threshold = 6
+
+    assert builder.reorder_batch(input_batch, scheduler_output)
+    assert swaps == [(0, 1)]
 
 
 def test_dsa_metadata_is_fresh_for_every_scheduler_step() -> None:
@@ -416,6 +489,7 @@ def test_model_state_distinguishes_actual_and_graph_padded_tokens() -> None:
         seq_lens_np=np.array([8, 3, 0], dtype=np.int32),
         dcp_local_seq_lens=None,
         positions=torch.arange(8, dtype=torch.int64),
+        is_prefilling_np=np.array([False, True, False], dtype=np.bool_),
         attn_state=AscendAttentionState.ChunkedPrefill,
     )
     block_tables = tuple(torch.zeros((3, 2), dtype=torch.int32) for _ in attn_groups)
@@ -434,6 +508,7 @@ def test_model_state_distinguishes_actual_and_graph_padded_tokens() -> None:
     assert [call["block_size"] for call in calls] == [spec.block_size for spec in specs]
     assert all(call["common_attn_metadata"].num_actual_tokens == 4 for call in calls)
     assert all(call["common_attn_metadata"].num_input_tokens == 8 for call in calls)
+    assert all(call["common_attn_metadata"].is_prefilling.tolist() == [False, True, False] for call in calls)
 
 
 def test_model_state_preserves_previous_metadata_on_builder_failure() -> None:
@@ -456,6 +531,7 @@ def test_model_state_preserves_previous_metadata_on_builder_failure() -> None:
         seq_lens_np=np.array([2], dtype=np.int32),
         dcp_local_seq_lens=None,
         positions=torch.arange(2, dtype=torch.int64),
+        is_prefilling_np=np.array([True], dtype=np.bool_),
         attn_state=AscendAttentionState.PrefillNoCache,
     )
 

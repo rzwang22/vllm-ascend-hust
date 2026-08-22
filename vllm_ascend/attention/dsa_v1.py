@@ -251,6 +251,7 @@ class AscendDSAPrefillMetadata:
     qli_metadata: torch.Tensor = None
     cu_c4_cmp_seqlen_list: torch.Tensor = None
     cu_c128_cmp_seqlen_list: torch.Tensor = None
+    sharedkv_contract_validated: bool = False
 
 
 @dataclass
@@ -281,6 +282,7 @@ class AscendDSADecodeMetadata:
     num_reqs_actual: int | None = None
     sas_metadata: torch.Tensor = None
     qli_metadata: torch.Tensor = None
+    sharedkv_contract_validated: bool = False
 
 
 @dataclass
@@ -348,6 +350,184 @@ def _require_prefill_metadata(metadata: AscendDSAMetadata) -> AscendDSAPrefillMe
 def _require_decode_metadata(metadata: AscendDSAMetadata) -> AscendDSADecodeMetadata:
     assert metadata.decode is not None
     return metadata.decode
+
+
+def _assert_dsa_tensor_range(predicate: torch.Tensor, message: str) -> None:
+    """Fail before DSA consumes an invalid device-side index.
+
+    CPU tests raise a regular ``ValueError``. On an accelerator, use the
+    asynchronous assertion primitive so the hot path does not copy index
+    tensors back to the host merely to validate them.
+    """
+    if predicate.device.type == "cpu":
+        if not bool(predicate):
+            raise ValueError(message)
+        return
+    torch._assert_async(predicate, message)
+
+
+def validate_dsa_sharedkv_page_contract(
+    *,
+    layer_name: str,
+    kv_cache: torch.Tensor,
+    block_table: torch.Tensor,
+    slot_mapping: torch.Tensor,
+    query_start_loc: torch.Tensor,
+    seqused_kv: torch.Tensor,
+    sas_metadata: torch.Tensor,
+    sinks: torch.Tensor,
+    block_size: int,
+    num_query_tokens: int,
+    num_reqs_actual: int | None,
+) -> None:
+    """Validate the PA_ND inputs shared by DSA KV scatter and attention.
+
+    The custom kernel accepts page-strided views, so stride(0) may exceed one
+    logical page when DeepSeek V4 caches share a backing allocation. Inner
+    dimensions must still be dense, and every view must remain inside that
+    backing storage.
+    """
+    prefix = f"DSA shared-KV contract for {layer_name}:"
+    if kv_cache.ndim != 4:
+        raise ValueError(f"{prefix} ori_kv must be rank 4, got {tuple(kv_cache.shape)}.")
+    if block_size <= 0 or block_size % 16:
+        raise ValueError(f"{prefix} block_size must be a positive multiple of 16, got {block_size}.")
+    if kv_cache.shape[1] != block_size:
+        raise ValueError(
+            f"{prefix} ori_kv block dimension {kv_cache.shape[1]} does not match metadata block_size {block_size}."
+        )
+    if kv_cache.shape[0] <= 0 or kv_cache.shape[2] <= 0 or kv_cache.shape[3] <= 0:
+        raise ValueError(f"{prefix} ori_kv has an empty PA_ND dimension: {tuple(kv_cache.shape)}.")
+    if any(stride < 0 for stride in kv_cache.stride()):
+        raise ValueError(f"{prefix} ori_kv cannot use negative strides, got {kv_cache.stride()}.")
+    expected_inner_strides = (
+        kv_cache.shape[2] * kv_cache.shape[3],
+        kv_cache.shape[3],
+        1,
+    )
+    if kv_cache.stride()[1:] != expected_inner_strides:
+        raise ValueError(
+            f"{prefix} ori_kv inner PA_ND layout must be dense; got stride {kv_cache.stride()}, "
+            f"expected (*, {expected_inner_strides[0]}, {expected_inner_strides[1]}, 1)."
+        )
+    logical_page_stride = block_size * expected_inner_strides[0]
+    if kv_cache.stride(0) < logical_page_stride:
+        raise ValueError(
+            f"{prefix} ori_kv page stride {kv_cache.stride(0)} is smaller than one page {logical_page_stride}."
+        )
+    maximum_storage_index = kv_cache.storage_offset() + sum(
+        (size - 1) * stride for size, stride in zip(kv_cache.shape, kv_cache.stride())
+    )
+    storage_elements = kv_cache.untyped_storage().nbytes() // kv_cache.element_size()
+    if maximum_storage_index >= storage_elements:
+        raise ValueError(
+            f"{prefix} ori_kv view exceeds backing storage: last element {maximum_storage_index}, "
+            f"capacity {storage_elements}."
+        )
+    if kv_cache.data_ptr() % 32:
+        raise ValueError(f"{prefix} ori_kv data pointer must be 32-byte aligned.")
+
+    tensors = {
+        "ori_block_table": block_table,
+        "slot_mapping": slot_mapping,
+        "cu_seqlens_q": query_start_loc,
+        "seqused_kv": seqused_kv,
+        "metadata": sas_metadata,
+        "sinks": sinks,
+    }
+    wrong_device = {name: str(tensor.device) for name, tensor in tensors.items() if tensor.device != kv_cache.device}
+    if wrong_device:
+        raise ValueError(f"{prefix} all inputs must be on {kv_cache.device}, got {wrong_device}.")
+    if block_table.dtype != torch.int32 or block_table.ndim != 2 or not block_table.is_contiguous():
+        raise ValueError(f"{prefix} ori_block_table must be contiguous int32 rank 2.")
+    if slot_mapping.dtype != torch.int32 or slot_mapping.ndim != 2 or slot_mapping.shape[1] != 2:
+        raise ValueError(f"{prefix} slot_mapping must be int32 [T, 2], got {slot_mapping.dtype} {slot_mapping.shape}.")
+    if query_start_loc.dtype != torch.int32 or query_start_loc.ndim != 1 or not query_start_loc.is_contiguous():
+        raise ValueError(f"{prefix} cu_seqlens_q must be contiguous int32 rank 1.")
+    if seqused_kv.dtype != torch.int32 or seqused_kv.ndim != 1 or not seqused_kv.is_contiguous():
+        raise ValueError(f"{prefix} seqused_kv must be contiguous int32 rank 1.")
+    if sas_metadata.dtype != torch.int32 or sas_metadata.numel() == 0:
+        raise ValueError(f"{prefix} SAS metadata must be a non-empty int32 tensor.")
+    if sinks.dtype != torch.float32 or sinks.ndim != 1:
+        raise ValueError(f"{prefix} sinks must be a float32 vector.")
+
+    num_reqs = seqused_kv.shape[0] if num_reqs_actual is None else num_reqs_actual
+    if num_reqs <= 0 or num_reqs > seqused_kv.shape[0]:
+        raise ValueError(f"{prefix} invalid actual request count {num_reqs} for {seqused_kv.shape[0]} rows.")
+    if query_start_loc.shape[0] < num_reqs + 1 or block_table.shape[0] < num_reqs:
+        raise ValueError(f"{prefix} request dimensions do not cover {num_reqs} actual requests.")
+    if slot_mapping.shape[0] != num_query_tokens:
+        raise ValueError(
+            f"{prefix} slot_mapping token count {slot_mapping.shape[0]} does not match query tokens {num_query_tokens}."
+        )
+
+    actual_query_start_loc = query_start_loc[: num_reqs + 1]
+    actual_seqused_kv = seqused_kv[:num_reqs]
+    actual_block_table = block_table[:num_reqs]
+    query_lens = actual_query_start_loc[1:] - actual_query_start_loc[:-1]
+    _assert_dsa_tensor_range(actual_query_start_loc[0] == 0, f"{prefix} cu_seqlens_q must start at zero.")
+    _assert_dsa_tensor_range(
+        torch.all(query_lens > 0),
+        f"{prefix} actual cu_seqlens_q rows must be strictly increasing.",
+    )
+    _assert_dsa_tensor_range(
+        actual_query_start_loc[-1] == num_query_tokens,
+        f"{prefix} cu_seqlens_q terminal value must equal the query token count.",
+    )
+    _assert_dsa_tensor_range(
+        torch.all(actual_seqused_kv >= query_lens),
+        f"{prefix} seqused_kv must include every current query token.",
+    )
+    _assert_dsa_tensor_range(
+        torch.all(actual_seqused_kv <= kv_cache.shape[0] * block_size),
+        f"{prefix} seqused_kv exceeds the physical cache capacity.",
+    )
+    _assert_dsa_tensor_range(
+        torch.all((actual_block_table >= 0) & (actual_block_table < kv_cache.shape[0])),
+        f"{prefix} ori_block_table contains a physical block outside ori_kv.",
+    )
+    _assert_dsa_tensor_range(
+        torch.all((slot_mapping[:, 0] >= 0) & (slot_mapping[:, 0] < kv_cache.shape[0])),
+        f"{prefix} slot_mapping contains a physical block outside ori_kv.",
+    )
+    _assert_dsa_tensor_range(
+        torch.all((slot_mapping[:, 1] >= 0) & (slot_mapping[:, 1] < block_size)),
+        f"{prefix} slot_mapping contains an offset outside the cache block.",
+    )
+
+
+def validate_dsa_sharedkv_query_contract(
+    *,
+    layer_name: str,
+    query: torch.Tensor,
+    kv_cache: torch.Tensor,
+    sinks: torch.Tensor,
+    num_query_tokens: int,
+) -> None:
+    prefix = f"DSA shared-KV contract for {layer_name}:"
+    if query.ndim != 3 or query.shape[0] != num_query_tokens:
+        raise ValueError(f"{prefix} query must be TND with {num_query_tokens} tokens, got {tuple(query.shape)}.")
+    if not query.is_contiguous():
+        raise ValueError(f"{prefix} query must be contiguous TND.")
+    if query.device != kv_cache.device or query.dtype != kv_cache.dtype:
+        raise ValueError(
+            f"{prefix} query and ori_kv must share device/dtype, got "
+            f"{query.device}/{query.dtype} and {kv_cache.device}/{kv_cache.dtype}."
+        )
+    if query.shape[-1] != kv_cache.shape[-1]:
+        raise ValueError(f"{prefix} query head dimension {query.shape[-1]} does not match ori_kv {kv_cache.shape[-1]}.")
+    if sinks.shape[0] != query.shape[1]:
+        raise ValueError(f"{prefix} sinks length {sinks.shape[0]} does not match query heads {query.shape[1]}.")
+
+
+def _should_validate_dspark_sharedkv_contract(vllm_config: VllmConfig) -> bool:
+    """Limit the new runtime checks to the arch32 DSpark path under repair."""
+    speculative_config = vllm_config.speculative_config
+    return (
+        get_ascend_device_type() not in {AscendDeviceType.A5}
+        and speculative_config is not None
+        and speculative_config.method == "dspark"
+    )
 
 
 class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
@@ -486,7 +666,7 @@ class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
 
         for i, req_id in enumerate(input_batch.req_ids):
             num_tokens = scheduler_output.num_scheduled_tokens[req_id]
-            if num_tokens <= self.decode_threshold:
+            if num_tokens <= self.decode_threshold and not input_batch.is_prefilling_np[i]:
                 decodes.append(i)
             else:
                 prefills.append(i)
@@ -563,7 +743,11 @@ class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
 
         if self.common_ratio_to_sas_metadata.get("num_decodes", None) is None:
             self.num_decodes, self.num_prefills, self.num_decode_tokens, self.num_prefill_tokens = (
-                split_decodes_and_prefills(common_attn_metadata, decode_threshold=self.decode_threshold)
+                split_decodes_and_prefills(
+                    common_attn_metadata,
+                    decode_threshold=self.decode_threshold,
+                    treat_short_extends_as_decodes=False,
+                )
             )
             self.common_ratio_to_sas_metadata["num_decodes"] = self.num_decodes
             self.common_ratio_to_sas_metadata["num_prefills"] = self.num_prefills
@@ -1105,7 +1289,9 @@ class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
     ) -> AscendDSADecodeMetadata:
         assert self.compressor_ratio <= 1, "vLLM-Ascend only support SWA-layer for Deepseek-V4 now."
         num_decodes, num_prefills, num_decode_tokens, num_prefill_tokens = split_decodes_and_prefills(
-            common_attn_metadata, decode_threshold=self.decode_threshold
+            common_attn_metadata,
+            decode_threshold=self.decode_threshold,
+            treat_short_extends_as_decodes=False,
         )
         num_input_tokens = common_attn_metadata.num_input_tokens
         input_positions = common_attn_metadata.positions[:num_input_tokens].long()
@@ -1412,6 +1598,7 @@ class AscendDSAImpl(DSAAttentionImpl):
         ascend_config = get_ascend_config()
         self.multistream_dsv4_dsa_overlap = ascend_config.multistream_dsv4_dsa_overlap
         self.vllm_config = get_current_vllm_config()
+        self.validate_dspark_sharedkv_contract = _should_validate_dspark_sharedkv_contract(self.vllm_config)
 
         # indexer param
         if self.indexer is not None:
@@ -1857,6 +2044,23 @@ class AscendDSAImpl(DSAAttentionImpl):
         actual_seq_lengths_query = common_prefill_metadata.query_start_loc
         actual_seq_lengths_key = common_prefill_metadata.seq_lens
 
+        if self.validate_dspark_sharedkv_contract and not swa_prefill_metadata.sharedkv_contract_validated:
+            assert swa_prefill_metadata.slot_mapping is not None
+            validate_dsa_sharedkv_page_contract(
+                layer_name=layer_name,
+                kv_cache=swa_kv_cache,
+                block_table=swa_prefill_metadata.block_table,
+                slot_mapping=swa_prefill_metadata.slot_mapping,
+                query_start_loc=actual_seq_lengths_query,
+                seqused_kv=actual_seq_lengths_key,
+                sas_metadata=common_prefill_metadata.sas_metadata,
+                sinks=self.attn_sink,
+                block_size=swa_prefill_metadata.block_size,
+                num_query_tokens=hidden_states.shape[0],
+                num_reqs_actual=swa_prefill_metadata.num_reqs_actual,
+            )
+            swa_prefill_metadata.sharedkv_contract_validated = True
+
         if self.multistream_dsv4_dsa_overlap:
             # mla prolog: q + kv dual-stream parallel
             q, qr, _ = self._mla_prolog_multistream(
@@ -1934,6 +2138,14 @@ class AscendDSAImpl(DSAAttentionImpl):
         attn_op = DeviceOperator.get_dsa_sparse_attn_op()
         extra_attn_kwargs: dict = DeviceOperator.get_dsa_sparse_attn_base_kwargs()
         DeviceOperator.add_dsa_sparse_attn_extra_kwargs(extra_attn_kwargs, cu_seqlens_ori_kv=actual_seq_lengths_query)
+        if self.validate_dspark_sharedkv_contract:
+            validate_dsa_sharedkv_query_contract(
+                layer_name=layer_name,
+                query=q,
+                kv_cache=swa_kv_cache,
+                sinks=self.attn_sink,
+                num_query_tokens=hidden_states.shape[0],
+            )
 
         if self.compress_ratio <= 1:
             return attn_op(
@@ -2159,6 +2371,23 @@ class AscendDSAImpl(DSAAttentionImpl):
         actual_seq_lengths_query = common_decode_metadata.query_start_loc
         actual_seq_lengths_key = common_decode_metadata.seq_lens
 
+        if self.validate_dspark_sharedkv_contract and not swa_decode_metadata.sharedkv_contract_validated:
+            assert swa_decode_metadata.slot_mapping is not None
+            validate_dsa_sharedkv_page_contract(
+                layer_name=layer_name,
+                kv_cache=swa_kv_cache,
+                block_table=swa_decode_metadata.block_table,
+                slot_mapping=swa_decode_metadata.slot_mapping,
+                query_start_loc=actual_seq_lengths_query,
+                seqused_kv=actual_seq_lengths_key,
+                sas_metadata=common_decode_metadata.sas_metadata,
+                sinks=self.attn_sink,
+                block_size=swa_decode_metadata.block_size,
+                num_query_tokens=hidden_states.shape[0],
+                num_reqs_actual=swa_decode_metadata.num_reqs_actual,
+            )
+            swa_decode_metadata.sharedkv_contract_validated = True
+
         if self.multistream_dsv4_dsa_overlap:
             # mla prolog: q + kv dual-stream parallel
             q, qr, qr_pertoken_scale = self._mla_prolog_multistream(
@@ -2366,6 +2595,14 @@ class AscendDSAImpl(DSAAttentionImpl):
 
         attn_op = DeviceOperator.get_dsa_sparse_attn_op()
         extra_attn_kwargs: dict = DeviceOperator.get_dsa_sparse_attn_base_kwargs()
+        if self.validate_dspark_sharedkv_contract:
+            validate_dsa_sharedkv_query_contract(
+                layer_name=layer_name,
+                query=q,
+                kv_cache=swa_kv_cache,
+                sinks=self.attn_sink,
+                num_query_tokens=hidden_states.shape[0],
+            )
 
         if self.compress_ratio <= 1:
             attn_output = attn_op(

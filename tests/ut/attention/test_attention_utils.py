@@ -12,9 +12,12 @@ def build_common_attention_metadata(
     query_lens: list[int],
     seq_lens: list[int] | None = None,
     pcp_full_query_lens: list[int] | None = None,
+    is_prefilling: list[bool] | None = None,
 ) -> AscendCommonAttentionMetadata:
     if seq_lens is None:
         seq_lens = [max(query_len, 1) + 8 for query_len in query_lens]
+    if is_prefilling is None:
+        is_prefilling = [False] * len(query_lens)
 
     query_start_loc = torch.tensor(
         [0, *torch.tensor(query_lens, dtype=torch.int32).cumsum(dim=0).tolist()],
@@ -40,6 +43,7 @@ def build_common_attention_metadata(
         actual_seq_lengths_q=torch.arange(max(sum(query_lens), 1), dtype=torch.int32),
         positions=torch.arange(max(sum(query_lens), 1), dtype=torch.int32),
         attn_state=AscendAttentionState.PrefillNoCache,
+        is_prefilling=torch.tensor(is_prefilling, dtype=torch.bool),
         num_computed_tokens_cpu=None,
         seq_lens=None,
         max_seq_len=max(seq_lens, default=0),
@@ -94,3 +98,35 @@ def test_split_decodes_and_prefills_uses_pcp_full_query_lens():
     assert num_prefills == 2
     assert num_decode_tokens == 1
     assert num_prefill_tokens == 2
+
+
+def test_split_decodes_and_prefills_keeps_fresh_short_request_in_prefill():
+    common_attn_metadata = build_common_attention_metadata(
+        query_lens=[1],
+        seq_lens=[1],
+        is_prefilling=[True],
+    )
+
+    result = split_decodes_and_prefills(
+        common_attn_metadata,
+        decode_threshold=6,
+        treat_short_extends_as_decodes=False,
+    )
+
+    assert result == (0, 1, 0, 1)
+
+
+def test_split_decodes_and_prefills_keeps_true_decode_at_k_plus_one():
+    common_attn_metadata = build_common_attention_metadata(
+        query_lens=[6],
+        seq_lens=[7],
+        is_prefilling=[False],
+    )
+
+    result = split_decodes_and_prefills(
+        common_attn_metadata,
+        decode_threshold=6,
+        treat_short_extends_as_decodes=False,
+    )
+
+    assert result == (1, 0, 6, 0)
