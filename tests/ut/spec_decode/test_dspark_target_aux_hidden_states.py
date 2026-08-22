@@ -13,6 +13,7 @@ from types import SimpleNamespace
 import pytest
 import torch
 import torch.nn as nn
+from vllm.forward_context import ForwardContext, override_forward_context
 from vllm.model_executor.models.interfaces import supports_eagle, supports_eagle3
 from vllm.v1.worker.gpu.spec_decode.eagle.eagle3_utils import (
     set_eagle3_aux_hidden_state_layers,
@@ -92,6 +93,18 @@ def _forward_backbone(*, capture_boundaries: tuple[int, ...]):
     return backbone
 
 
+def _target_forward_context() -> ForwardContext:
+    return ForwardContext(
+        no_compile_layers={},
+        attn_metadata={},
+        slot_mapping={},
+        additional_kwargs={
+            "flash_comm_v1_enabled": False,
+            "pad_size": 0,
+        },
+    )
+
+
 def test_ascend_deepseek_v4_satisfies_real_eagle3_interface() -> None:
     from vllm.model_executor.models.interfaces import EagleModelMixin
 
@@ -157,17 +170,22 @@ def test_target_forward_returns_requested_real_aux_hidden_states(
     )
     pp_group = SimpleNamespace(is_first_rank=True, is_last_rank=True)
     monkeypatch.setattr(model_module, "get_pp_group", lambda: pp_group)
-    monkeypatch.setattr(forward_context, "get_forward_context", lambda: None)
+    monkeypatch.setattr(
+        forward_context.envs_vllm,
+        "VLLM_USE_V2_MODEL_RUNNER",
+        True,
+    )
     backbone = _forward_backbone(capture_boundaries=OUTPUT_BOUNDARIES)
     inputs_embeds = torch.zeros(2, 4)
     positions = torch.arange(2)
 
-    output = backbone.forward(
-        input_ids=torch.zeros(2, dtype=torch.long),
-        positions=positions,
-        intermediate_tensors=None,
-        inputs_embeds=inputs_embeds,
-    )
+    with override_forward_context(_target_forward_context()):
+        output = backbone.forward(
+            input_ids=torch.zeros(2, dtype=torch.long),
+            positions=positions,
+            intermediate_tensors=None,
+            inputs_embeds=inputs_embeds,
+        )
 
     assert isinstance(output, tuple)
     final_hidden_states, aux_hidden_states = output
@@ -189,15 +207,20 @@ def test_non_dspark_forward_shape_is_unchanged(
     )
     pp_group = SimpleNamespace(is_first_rank=True, is_last_rank=True)
     monkeypatch.setattr(model_module, "get_pp_group", lambda: pp_group)
-    monkeypatch.setattr(forward_context, "get_forward_context", lambda: None)
+    monkeypatch.setattr(
+        forward_context.envs_vllm,
+        "VLLM_USE_V2_MODEL_RUNNER",
+        True,
+    )
     backbone = _forward_backbone(capture_boundaries=())
 
-    output = backbone.forward(
-        input_ids=torch.zeros(2, dtype=torch.long),
-        positions=torch.arange(2),
-        intermediate_tensors=None,
-        inputs_embeds=torch.zeros(2, 4),
-    )
+    with override_forward_context(_target_forward_context()):
+        output = backbone.forward(
+            input_ids=torch.zeros(2, dtype=torch.long),
+            positions=torch.arange(2),
+            intermediate_tensors=None,
+            inputs_embeds=torch.zeros(2, 4),
+        )
 
     assert isinstance(output, torch.Tensor)
     assert output.shape == (2, 4)
