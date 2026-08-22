@@ -1,4 +1,5 @@
 import builtins
+import copy
 import importlib
 import json
 import os
@@ -14,6 +15,13 @@ import pytest
 import torch
 import torch.nn as nn
 from vllm import ModelRegistry
+from vllm.config import (
+    ModelConfig,
+    ParallelConfig,
+    SpeculativeConfig,
+    VllmConfig,
+    replace,
+)
 from vllm.config.compilation import CompilationMode
 from vllm.v1.worker.gpu import model_runner as vllm_model_runner
 
@@ -152,6 +160,183 @@ def _modelslim_loader_config(
             backend=None,
         ),
     )
+
+
+def _real_dspark_vllm_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> VllmConfig:
+    checkpoint = tmp_path / "dspark-w8a8"
+    checkpoint.mkdir()
+    hf_config = {
+        "architectures": ["DeepseekV4ForCausalLM"],
+        "attention_bias": False,
+        "attention_dropout": 0.0,
+        "bos_token_id": 1,
+        "dspark_block_size": 5,
+        "dspark_markov_rank": 16,
+        "dspark_noise_token_id": 127,
+        "dspark_target_layer_ids": [40, 41, 42],
+        "eos_token_id": 2,
+        "expert_dtype": "fp4",
+        "first_k_dense_replace": 0,
+        "hidden_size": 256,
+        "intermediate_size": 512,
+        "kv_lora_rank": 32,
+        "max_position_embeddings": 4096,
+        "model_type": "deepseek_v4",
+        "moe_intermediate_size": 256,
+        "moe_layer_freq": 1,
+        "n_group": 1,
+        "n_routed_experts": 2,
+        "n_shared_experts": 1,
+        "norm_topk_prob": True,
+        "num_attention_heads": 8,
+        "num_experts_per_tok": 1,
+        "num_hidden_layers": 61,
+        "num_key_value_heads": 8,
+        "num_nextn_predict_layers": 3,
+        "q_lora_rank": 32,
+        "qk_nope_head_dim": 16,
+        "qk_rope_head_dim": 16,
+        "rms_norm_eps": 1e-6,
+        "routed_scaling_factor": 1.0,
+        "topk_group": 1,
+        "torch_dtype": "bfloat16",
+        "transformers_version": "5.5.3",
+        "use_cache": True,
+        "v_head_dim": 16,
+        "vocab_size": 128,
+    }
+    (checkpoint / "config.json").write_text(
+        json.dumps(hf_config),
+        encoding="utf-8",
+    )
+    descriptor = _modelslim_dspark_descriptor()
+    (checkpoint / "quant_model_description.json").write_text(
+        json.dumps(descriptor),
+        encoding="utf-8",
+    )
+
+    isolated_models = dict(ModelRegistry.models)
+    monkeypatch.setattr(ModelRegistry, "models", isolated_models)
+    target_model_cls = importlib.import_module("vllm_ascend.models.deepseek_v4").AscendDeepseekV4ForCausalLM
+    draft_model_cls = importlib.import_module("vllm_ascend.models.deepseek_v4_dspark").DSparkDeepseekV4ForCausalLM
+    ModelRegistry.register_model("DeepseekV4ForCausalLM", target_model_cls)
+    ModelRegistry.register_model(DSPARK_MODEL_ARCHITECTURE, draft_model_cls)
+    from vllm.platforms import current_platform
+
+    from vllm_ascend.platform import NPUPlatform
+
+    monkeypatch.setattr(current_platform, "device_name", "npu")
+    monkeypatch.setattr(
+        current_platform,
+        "get_speculative_proposer_capabilities",
+        NPUPlatform.get_speculative_proposer_capabilities,
+    )
+    target_model_config = ModelConfig(
+        model=str(checkpoint),
+        tokenizer=str(checkpoint),
+        runner="generate",
+        tokenizer_mode="deepseek_v4",
+        skip_tokenizer_init=True,
+        dtype="bfloat16",
+        max_model_len=128,
+        quantization="ascend",
+        enforce_eager=True,
+        config_format="hf",
+        hf_overrides={},
+    )
+    parallel_config = ParallelConfig(
+        tensor_parallel_size=8,
+        pipeline_parallel_size=1,
+        enable_expert_parallel=True,
+    )
+    speculative_config = SpeculativeConfig(
+        method="dspark",
+        target_model_config=target_model_config,
+        target_parallel_config=parallel_config,
+        num_speculative_tokens=5,
+        attention_backend="CUSTOM",
+    )
+    return VllmConfig(
+        model_config=target_model_config,
+        parallel_config=parallel_config,
+        speculative_config=speculative_config,
+        quant_config=AscendModelSlimConfig(descriptor),
+    )
+
+
+def test_dspark_draft_vllm_config_handles_callable_hf_overrides(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from vllm_ascend.worker.v2.spec_decode.dspark.model_loader import (
+        _build_draft_quant_config,
+        _build_draft_vllm_config,
+    )
+
+    target_vllm_config = _real_dspark_vllm_config(tmp_path, monkeypatch)
+    target_model_config = target_vllm_config.model_config
+    speculative_config = target_vllm_config.speculative_config
+    assert speculative_config is not None
+    draft_model_config = speculative_config.draft_model_config
+
+    assert isinstance(target_model_config.hf_overrides, dict)
+    assert callable(draft_model_config.hf_overrides)
+    assert draft_model_config.hf_overrides is SpeculativeConfig.hf_config_override
+    assert draft_model_config.architectures == [DSPARK_MODEL_ARCHITECTURE]
+    assert draft_model_config.hf_config.model_type == "deepseek_v4"
+    assert draft_model_config.hf_config.dspark_block_size == 5
+    assert draft_model_config.hf_config.dspark_target_layer_ids == [40, 41, 42]
+
+    target_hf_config_before = copy.deepcopy(target_model_config.hf_config.to_dict())
+    target_hf_overrides_before = copy.deepcopy(target_model_config.hf_overrides)
+    target_quant_config = target_vllm_config.quant_config
+    assert isinstance(target_quant_config, AscendModelSlimConfig)
+    target_quant_description_before = copy.deepcopy(target_quant_config.quant_description)
+
+    # This is the former construction shape: once quant resolution runs for
+    # the draft ModelConfig, its callable override is not a supported source
+    # for quantization descriptor file/json options.
+    with pytest.raises(ValueError, match="hf_overrides must be a dict"):
+        replace(
+            target_vllm_config,
+            model_config=copy.deepcopy(draft_model_config),
+            quant_config=None,
+        )
+
+    draft_quant_config = _build_draft_quant_config(
+        target_vllm_config,
+        draft_model_config,
+    )
+    draft_vllm_config = _build_draft_vllm_config(
+        target_vllm_config,
+        draft_quant_config,
+    )
+
+    assert draft_vllm_config is not target_vllm_config
+    assert draft_vllm_config.model_config is target_model_config
+    assert draft_vllm_config.speculative_config is speculative_config
+    assert draft_vllm_config.speculative_config.draft_model_config is draft_model_config
+    assert draft_vllm_config.speculative_config.draft_model_config.architectures == [DSPARK_MODEL_ARCHITECTURE]
+    assert draft_vllm_config.quant_config is draft_quant_config
+    assert draft_vllm_config.quant_config is not target_quant_config
+    assert isinstance(draft_vllm_config.quant_config, AscendModelSlimConfig)
+    assert draft_vllm_config.attention_config.use_non_causal
+    assert draft_vllm_config.attention_config.backend is speculative_config.attention_backend
+    assert speculative_config.num_speculative_tokens == 5
+    assert draft_vllm_config.parallel_config.tensor_parallel_size == 8
+    assert draft_vllm_config.parallel_config.enable_expert_parallel
+    assert draft_vllm_config.parallel_config.pipeline_parallel_size == 1
+    assert draft_vllm_config.model_config.enforce_eager
+
+    assert target_vllm_config.model_config is target_model_config
+    assert target_model_config.hf_config.to_dict() == target_hf_config_before
+    assert target_model_config.hf_overrides == target_hf_overrides_before
+    assert target_vllm_config.quant_config is target_quant_config
+    assert target_quant_config.quant_description == target_quant_description_before
+    assert not target_vllm_config.attention_config.use_non_causal
 
 
 def test_dspark_registry_resolves_to_ascend_model_without_touching_other_architectures(
@@ -502,7 +687,7 @@ def test_modelslim_loader_uses_independent_draft_quant_config_and_own_heads(
 
     assert loaded is draft_model
     assert captured_config is not None
-    assert captured_config.model_config is draft_model_config
+    assert captured_config.model_config is config.model_config
     assert captured_config.quant_config is not target_quant_config
     assert target_quant_config.quant_description == target_quant_description
     assert target_quant_description.items() <= captured_config.quant_config.quant_description.items()

@@ -328,6 +328,38 @@ def _validate_w8a8_runtime_contract(
         raise NotImplementedError("DSpark does not support pipeline parallelism.")
 
 
+def _build_draft_vllm_config(
+    vllm_config: VllmConfig,
+    draft_quant_config: Any,
+) -> VllmConfig:
+    """Build the validated runtime config used to instantiate the draft.
+
+    ``SpeculativeConfig`` constructs its draft ``ModelConfig`` with a callable
+    ``hf_overrides``. Replacing ``VllmConfig.model_config`` with that object
+    makes ``VllmConfig`` validation resolve quantization from the callable,
+    while ``get_quant_config`` only accepts dict overrides for that lookup.
+
+    Keep the target ``ModelConfig`` while rebuilding ``VllmConfig``, matching
+    the core DSpark loader contract. ``get_model`` receives the draft
+    ``ModelConfig`` separately for registry resolution and weight loading. The
+    independently validated ModelSlim draft quant config is installed only
+    after the ordinary ``VllmConfig`` reconstruction has completed.
+    """
+    speculative_config = vllm_config.speculative_config
+    assert speculative_config is not None
+
+    draft_vllm_config = replace(
+        vllm_config,
+        attention_config=replace(
+            vllm_config.attention_config,
+            use_non_causal=True,
+            backend=speculative_config.attention_backend,
+        ),
+    )
+    draft_vllm_config.quant_config = draft_quant_config
+    return draft_vllm_config
+
+
 def load_dspark_model(
     target_model: nn.Module,
     vllm_config: VllmConfig,
@@ -348,15 +380,9 @@ def load_dspark_model(
 
     from vllm.compilation.backends import set_model_tag
 
-    draft_vllm_config = replace(
+    draft_vllm_config = _build_draft_vllm_config(
         vllm_config,
-        model_config=draft_model_config,
-        quant_config=draft_quant_config,
-        attention_config=replace(
-            vllm_config.attention_config,
-            use_non_causal=True,
-            backend=speculative_config.attention_backend,
-        ),
+        draft_quant_config,
     )
 
     with set_model_tag("dspark_head"):
