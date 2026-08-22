@@ -346,6 +346,11 @@ def test_dspark_draft_vllm_config_handles_callable_hf_overrides(
     assert draft_vllm_config.speculative_config is speculative_config
     assert draft_vllm_config.speculative_config.draft_model_config is draft_model_config
     assert draft_vllm_config.speculative_config.draft_model_config.architectures == [DSPARK_MODEL_ARCHITECTURE]
+    assert draft_vllm_config.compilation_config is target_vllm_config.compilation_config
+    assert (
+        draft_vllm_config.compilation_config.static_forward_context
+        is target_vllm_config.compilation_config.static_forward_context
+    )
     assert draft_vllm_config.quant_config is draft_quant_config
     assert draft_vllm_config.quant_config is not target_quant_config
     assert isinstance(draft_vllm_config.quant_config, AscendModelSlimConfig)

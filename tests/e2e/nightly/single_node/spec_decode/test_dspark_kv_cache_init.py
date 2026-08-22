@@ -195,11 +195,17 @@ def test_dspark_kv_cache_init_only_npu() -> None:
         assert draft_specs is not None
         assert set(draft_specs) == set(speculator.draft_attn_layer_names or ())
         assert all(kv_cache_specs[name] is draft_specs[name] for name in draft_specs)
+        forward_context = vllm_config.compilation_config.static_forward_context
+        assert runner.compilation_config is vllm_config.compilation_config
+        assert runner.compilation_config.static_forward_context is forward_context
+        missing_cache_owners = set(kv_cache_specs).difference(forward_context)
+        assert not missing_cache_owners
         tracker.mark(
             DRAFT_KV_SPEC_READY,
             total_spec_count=len(kv_cache_specs),
             draft_spec_count=len(draft_specs),
             draft_layers=sorted(draft_specs),
+            forward_context_count=len(forward_context),
         )
 
         available_memory = _kv_cache_budget(os.environ)

@@ -4,6 +4,7 @@
 import subprocess
 import sys
 import textwrap
+from collections import defaultdict
 from contextlib import nullcontext
 from copy import deepcopy
 from inspect import signature
@@ -15,6 +16,7 @@ import torch.nn as nn
 from vllm.config import set_current_vllm_config
 from vllm.config.compilation import CUDAGraphMode
 from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
+from vllm.model_executor.models.utils import extract_layer_index
 from vllm.v1.kv_cache_interface import (
     FullAttentionSpec,
     KVCacheConfig,
@@ -37,6 +39,13 @@ DRAFT_LAYERS = (
     "mtp.1.self_attn.swa_cache",
     "mtp.2.self_attn.swa_cache",
 )
+TARGET_LAYER_2_CACHES = (
+    "model.layers.2.self_attn.attn",
+    "model.layers.2.self_attn.compressor.state_cache",
+    "model.layers.2.self_attn.indexer.compressor.state_cache",
+    "model.layers.2.self_attn.indexer.k_cache",
+    "model.layers.2.self_attn.swa_cache",
+)
 
 
 class _FakeBackend:
@@ -56,6 +65,17 @@ class _FakeAttentionLayer(nn.Module, AttentionLayerBase):
 
     def get_kv_cache_spec(self, _vllm_config):
         return self.spec
+
+
+class _FailingAttentionLayer(_FakeAttentionLayer):
+    def __init__(self, spec: FullAttentionSpec) -> None:
+        self.rejected_cache = None
+        super().__init__(spec)
+
+    def __setattr__(self, name, value) -> None:
+        if name == "kv_cache" and value is getattr(self, "rejected_cache", None):
+            raise RuntimeError("cache installation failed")
+        super().__setattr__(name, value)
 
 
 def _spec() -> FullAttentionSpec:
@@ -140,6 +160,161 @@ def _kv_cache_config() -> KVCacheConfig:
         kv_cache_tensors=tensors,
         kv_cache_groups=groups,
     )
+
+
+def _official_target_cache_names() -> list[str]:
+    compress_ratios = [1, 1, *(4 if layer % 2 == 0 else 128 for layer in range(2, 43))]
+    layer_names: list[str] = []
+    for layer, compress_ratio in enumerate(compress_ratios):
+        prefix = f"model.layers.{layer}.self_attn"
+        layer_names.append(f"{prefix}.swa_cache")
+        if compress_ratio > 1:
+            layer_names.extend(
+                (
+                    f"{prefix}.attn",
+                    f"{prefix}.compressor.state_cache",
+                )
+            )
+        if compress_ratio == 4:
+            layer_names.extend(
+                (
+                    f"{prefix}.indexer.k_cache",
+                    f"{prefix}.indexer.compressor.state_cache",
+                )
+            )
+    return layer_names
+
+
+def test_official_0731_cache_inventory_and_numeric_collisions() -> None:
+    target_names = _official_target_cache_names()
+    all_names = [*target_names, *DRAFT_LAYERS]
+    collision_groups: dict[int, list[str]] = defaultdict(list)
+    for layer_name in all_names:
+        collision_groups[extract_layer_index(layer_name, 1)].append(layer_name)
+
+    assert len(target_names) == 167
+    assert len(all_names) == 170
+    assert sum(name.endswith(".swa_cache") for name in target_names) == 43
+    assert sum(name.endswith(".self_attn.attn") for name in target_names) == 41
+    assert sum(name.endswith(".self_attn.compressor.state_cache") for name in target_names) == 41
+    assert sum(name.endswith(".indexer.k_cache") for name in target_names) == 21
+    assert sum(name.endswith(".indexer.compressor.state_cache") for name in target_names) == 21
+    assert len(collision_groups) == 43
+    assert collision_groups[0] == [
+        "model.layers.0.self_attn.swa_cache",
+        DRAFT_LAYERS[0],
+    ]
+    assert set(collision_groups[2]) == {*TARGET_LAYER_2_CACHES, DRAFT_LAYERS[2]}
+    assert len(collision_groups[2]) == 6
+    assert all(len(collision_groups[layer]) == 5 for layer in range(4, 43, 2))
+    assert all(len(collision_groups[layer]) == 3 for layer in range(3, 42, 2))
+
+
+def test_bind_kv_cache_uses_full_names_and_target_before_draft() -> None:
+    config = _config()
+    names = (*reversed(TARGET_LAYER_2_CACHES), DRAFT_LAYERS[2])
+    context = config.compilation_config.static_forward_context
+    caches = {name: torch.tensor([index]) for index, name in enumerate(names)}
+    for name in names:
+        context[name] = _FakeAttentionLayer(_spec())
+    runner_caches = []
+
+    with set_current_vllm_config(config):
+        attn_utils.bind_kv_cache(caches, context, runner_caches)
+
+    expected_order = [*TARGET_LAYER_2_CACHES, DRAFT_LAYERS[2]]
+    assert len(runner_caches) == len(expected_order)
+    assert all(runner_cache is caches[layer_name] for runner_cache, layer_name in zip(runner_caches, expected_order))
+    assert all(context[name].kv_cache is caches[name] for name in names)
+    assert len({id(context[name].kv_cache) for name in names}) == len(names)
+
+
+@pytest.mark.parametrize("missing_count", [1, 2])
+def test_bind_kv_cache_rejects_incomplete_authoritative_registry(
+    missing_count: int,
+) -> None:
+    config = _config()
+    names = TARGET_LAYER_2_CACHES[:2]
+    context = config.compilation_config.static_forward_context
+    for name in names[missing_count:]:
+        context[name] = _FakeAttentionLayer(_spec())
+    caches = {name: torch.zeros(1) for name in names}
+    runner_caches = []
+
+    with (
+        set_current_vllm_config(config),
+        pytest.raises(RuntimeError, match="absent from static_forward_context"),
+    ):
+        attn_utils.bind_kv_cache(caches, context, runner_caches)
+
+    assert runner_caches == []
+
+
+def test_bind_kv_cache_rejects_non_authoritative_registry_object() -> None:
+    config = _config()
+    name = TARGET_LAYER_2_CACHES[0]
+    config.compilation_config.static_forward_context[name] = _FakeAttentionLayer(_spec())
+
+    with (
+        set_current_vllm_config(config),
+        pytest.raises(RuntimeError, match="authoritative"),
+    ):
+        attn_utils.bind_kv_cache(
+            {name: torch.zeros(1)},
+            dict(config.compilation_config.static_forward_context),
+            [],
+        )
+
+
+def test_bind_kv_cache_failure_restores_layers_and_runner() -> None:
+    config = _config()
+    names = TARGET_LAYER_2_CACHES[:2]
+    context = config.compilation_config.static_forward_context
+    first_layer = _FakeAttentionLayer(_spec())
+    failing_layer = _FailingAttentionLayer(_spec())
+    context[names[0]] = first_layer
+    context[names[1]] = failing_layer
+    previous_caches = {name: context[name].kv_cache for name in names}
+    caches = {name: torch.tensor([index]) for index, name in enumerate(names)}
+    failing_layer.rejected_cache = caches[names[1]]
+    runner_caches = []
+
+    with (
+        set_current_vllm_config(config),
+        pytest.raises(RuntimeError, match="cache installation failed"),
+    ):
+        attn_utils.bind_kv_cache(caches, context, runner_caches)
+
+    assert runner_caches == []
+    assert all(context[name].kv_cache is previous_caches[name] for name in names)
+
+
+def test_bind_kv_cache_preserves_non_dspark_numeric_order() -> None:
+    config = _config()
+    config.speculative_config = None
+    names = (
+        "model.layers.1.self_attn",
+        "model.layers.0.self_attn",
+    )
+    context = config.compilation_config.static_forward_context
+    caches = {name: torch.tensor([index]) for index, name in enumerate(names)}
+    for name in names:
+        context[name] = _FakeAttentionLayer(_spec())
+    runner_caches = []
+
+    with set_current_vllm_config(config):
+        attn_utils.bind_kv_cache(caches, context, runner_caches)
+
+    assert runner_caches[0] is caches[names[1]]
+    assert runner_caches[1] is caches[names[0]]
+
+
+def test_v2_patch_installs_full_name_binder_at_core_call_site() -> None:
+    from vllm.v1.worker.gpu import attn_utils as core_attn_utils
+
+    import vllm_ascend.patch.worker.patch_v2.patch_attn_utils  # noqa: F401
+
+    assert core_attn_utils.bind_kv_cache is attn_utils.bind_kv_cache
 
 
 def test_custom_dsv4_cache_layer_participates_in_kv_spec_discovery() -> None:
@@ -314,6 +489,69 @@ def test_dsv4_allocator_honors_packed_offset_and_block_stride() -> None:
     assert second_cache.data_ptr() - first_cache.data_ptr() == page_size
     assert first_cache.stride(0) * first_cache.element_size() == block_stride
     assert second_cache.stride(0) * second_cache.element_size() == block_stride
+    assert raw_caches[DRAFT_LAYERS[0]].untyped_storage().nbytes() == allocation_size
+    first_page_bytes = first_cache[0].numel() * first_cache.element_size()
+    second_page_bytes = second_cache[0].numel() * second_cache.element_size()
+    assert first_page_bytes == second_page_bytes == page_size
+    for block_index in range(kv_cache_config.num_blocks):
+        first_range = (
+            block_index * block_stride,
+            block_index * block_stride + page_size,
+        )
+        second_range = (
+            block_index * block_stride + page_size,
+            block_index * block_stride + 2 * page_size,
+        )
+        assert first_range[1] <= second_range[0]
+        assert second_range[1] <= allocation_size
+
+
+def test_dsv4_allocator_rejects_overlapping_packed_pages() -> None:
+    config = _config()
+    config.kv_transfer_config = None
+    spec = AscendSlidingWindowMLASpec(
+        block_size=16,
+        num_kv_heads=1,
+        head_size=64,
+        dtype=torch.bfloat16,
+        sliding_window=32,
+        model_version="deepseek_v4",
+    )
+    page_size = spec.page_size_bytes
+    block_stride = 2 * page_size
+    kv_cache_config = KVCacheConfig(
+        num_blocks=2,
+        kv_cache_tensors=[
+            KVCacheTensor(
+                size=2 * block_stride,
+                shared_by=[DRAFT_LAYERS[0]],
+                offset=0,
+                block_stride=block_stride,
+            ),
+            KVCacheTensor(
+                size=2 * block_stride,
+                shared_by=[DRAFT_LAYERS[1]],
+                offset=page_size // 2,
+                block_stride=block_stride,
+            ),
+        ],
+        kv_cache_groups=[
+            KVCacheGroupSpec(
+                layer_names=list(DRAFT_LAYERS[:2]),
+                kv_cache_spec=spec,
+            ),
+        ],
+    )
+
+    with (
+        set_current_vllm_config(config),
+        pytest.raises(ValueError, match="pages overlap"),
+    ):
+        attn_utils._allocate_kv_cache(
+            kv_cache_config,
+            {},
+            torch.device("cpu"),
+        )
 
 
 def test_draft_attention_layer_discovery_is_explicit_and_disjoint(

@@ -26,12 +26,14 @@ import torch
 from vllm.config import (
     VllmConfig,
     get_current_vllm_config,
+    get_current_vllm_config_or_none,
     get_layers_from_vllm_config,
     set_current_vllm_config,
 )
 from vllm.model_executor.layers.attention import Attention
 from vllm.model_executor.layers.attention.mla_attention import MLAAttention
 from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
+from vllm.model_executor.models.utils import extract_layer_index
 from vllm.utils.torch_utils import get_dtype_size
 from vllm.v1.attention.backend import AttentionBackend
 from vllm.v1.kv_cache_interface import (
@@ -71,6 +73,103 @@ def _uses_dspark_dsv4(vllm_config: VllmConfig) -> bool:
         and hasattr(hf_config, "compress_ratios")
         and getattr(speculative_config, "method", None) == "dspark"
     )
+
+
+def _dspark_cache_binding_key(layer_name: str) -> tuple[int, int, str]:
+    """Return a stable target-before-draft key without losing cache identity."""
+    parts = layer_name.split(".")
+    if len(parts) >= 2 and parts[0] == "mtp" and parts[1].isdigit():
+        return 1, int(parts[1]), layer_name
+
+    for index, part in enumerate(parts[:-1]):
+        if part == "layers" and parts[index + 1].isdigit():
+            return 0, int(parts[index + 1]), layer_name
+
+    # Preserve deterministic behavior for any auxiliary cache namespace that
+    # is not part of the DeepSeek target or MTP draft hierarchy.
+    return 2, 0, layer_name
+
+
+def _kv_cache_binding_order(
+    layer_names: Sequence[str],
+    num_attn_module: int,
+) -> list[str]:
+    """Order runner caches while retaining every full layer-name identity."""
+    vllm_config = get_current_vllm_config_or_none()
+    if vllm_config is not None and _uses_dspark_dsv4(vllm_config):
+        return sorted(layer_names, key=_dspark_cache_binding_key)
+
+    # Keep core's legacy primary ordering for non-DSpark models. The original
+    # dict order is the tie-breaker for multiple attention modules in one
+    # decoder layer.
+    indexed_names = [
+        (
+            extract_layer_index(layer_name, num_attn_module),
+            insertion_index,
+            layer_name,
+        )
+        for insertion_index, layer_name in enumerate(layer_names)
+    ]
+    indexed_names.sort(key=lambda item: (item[0], item[1]))
+    return [layer_name for _, _, layer_name in indexed_names]
+
+
+def bind_kv_cache(
+    kv_caches: dict[str, Any],
+    forward_context: dict[str, Any],
+    runner_kv_caches: list[Any],
+    num_attn_module: int = 1,
+) -> None:
+    """Bind every V2 KV cache by its authoritative full layer name.
+
+    DeepSeek V4 owns several independent caches in one decoder layer, while
+    DSpark MTP prefixes also reuse target decoder numbers. Numeric layer-index
+    grouping therefore cannot identify a cache. Validate the complete registry
+    before mutating either the layers or runner list, then publish atomically.
+    """
+    if runner_kv_caches:
+        raise RuntimeError("V2 runner KV caches must be empty before binding.")
+    if not kv_caches:
+        return
+
+    vllm_config = get_current_vllm_config_or_none()
+    uses_dspark_dsv4 = vllm_config is not None and _uses_dspark_dsv4(vllm_config)
+    if uses_dspark_dsv4:
+        assert vllm_config is not None
+        authoritative_context = vllm_config.compilation_config.static_forward_context
+        if forward_context is not authoritative_context:
+            raise RuntimeError(
+                "Ascend DSpark KV binding did not receive the authoritative VllmConfig static_forward_context."
+            )
+
+    missing_layers = sorted(set(kv_caches).difference(forward_context))
+    if missing_layers:
+        raise RuntimeError(f"Ascend V2 KV cache layers are absent from static_forward_context: {missing_layers}.")
+
+    invalid_layers = sorted(
+        layer_name
+        for layer_name in kv_caches
+        if not hasattr(forward_context[layer_name], "kv_cache")
+        or (uses_dspark_dsv4 and not isinstance(forward_context[layer_name], AttentionLayerBase))
+    )
+    if invalid_layers:
+        raise RuntimeError(f"Ascend V2 KV cache registry contains non-attention cache owners: {invalid_layers}.")
+
+    ordered_names = _kv_cache_binding_order(
+        list(kv_caches),
+        num_attn_module,
+    )
+    previous_caches = {layer_name: forward_context[layer_name].kv_cache for layer_name in ordered_names}
+
+    try:
+        for layer_name in ordered_names:
+            forward_context[layer_name].kv_cache = kv_caches[layer_name]
+        runner_kv_caches.extend(kv_caches[layer_name] for layer_name in ordered_names)
+    except BaseException:
+        runner_kv_caches.clear()
+        for layer_name, previous_cache in previous_caches.items():
+            forward_context[layer_name].kv_cache = previous_cache
+        raise
 
 
 def get_kv_cache_spec(vllm_config: VllmConfig) -> dict[str, KVCacheSpec]:
@@ -394,6 +493,56 @@ def _align_memory(tensor: torch.Tensor, alignment: int) -> torch.Tensor:
     return tensor[int(offset) :]
 
 
+def _validate_dsv4_packed_layout(kv_cache_config: KVCacheConfig) -> None:
+    """Validate every packed cache page before allocating its shared backing."""
+    layer_specs = _get_layer_kv_cache_specs(kv_cache_config)
+    packed_ranges: list[tuple[int, int, tuple[str, ...]]] = []
+    allocation_size: int | None = None
+    block_stride: int | None = None
+
+    for tensor in kv_cache_config.kv_cache_tensors:
+        if tensor.block_stride <= 0 or not tensor.shared_by:
+            continue
+
+        if allocation_size is None:
+            allocation_size = tensor.size
+            block_stride = tensor.block_stride
+        elif tensor.size != allocation_size or tensor.block_stride != block_stride:
+            raise ValueError("All packed DSA cache tensors must share one allocation size and block stride.")
+
+        if tensor.offset < 0:
+            raise ValueError(f"DSA cache offset must be non-negative, got {tensor.offset}.")
+        if tensor.size % tensor.block_stride:
+            raise ValueError("DSA cache allocation is not a whole number of packed blocks.")
+        if tensor.size // tensor.block_stride < kv_cache_config.num_blocks:
+            raise ValueError("DSA packed allocation has fewer physical blocks than KVCacheConfig.")
+
+        missing_specs = sorted(set(tensor.shared_by).difference(layer_specs))
+        if missing_specs:
+            raise ValueError(f"Packed DSA cache layers have no KV cache spec: {missing_specs}.")
+        page_sizes = {layer_specs[layer_name].page_size_bytes for layer_name in tensor.shared_by}
+        if len(page_sizes) != 1:
+            raise ValueError("Layers sharing one packed DSA cache tensor must have the same page size.")
+        page_size = page_sizes.pop()
+        range_end = tensor.offset + page_size
+        if range_end > tensor.block_stride:
+            raise ValueError(
+                "DSA cache page exceeds its packed per-block allocation: "
+                f"offset={tensor.offset}, page_size={page_size}, "
+                f"block_stride={tensor.block_stride}."
+            )
+        packed_ranges.append((tensor.offset, range_end, tuple(tensor.shared_by)))
+
+    packed_ranges.sort(key=lambda item: (item[0], item[1], item[2]))
+    for previous, current in zip(packed_ranges, packed_ranges[1:]):
+        if current[0] < previous[1]:
+            raise ValueError(
+                "Packed DSA cache pages overlap within a physical block: "
+                f"{previous[2]} uses [{previous[0]}, {previous[1]}) and "
+                f"{current[2]} uses [{current[0]}, {current[1]})."
+            )
+
+
 def _allocate_kv_cache(
     kv_cache_config: KVCacheConfig,
     shared_layers: dict[str, str],
@@ -416,6 +565,8 @@ def _allocate_kv_cache(
     """
     vllm_config = get_current_vllm_config()
     uses_dspark_dsv4 = _uses_dspark_dsv4(vllm_config)
+    if uses_dspark_dsv4:
+        _validate_dsv4_packed_layout(kv_cache_config)
 
     # init kv cache tensors
     kv_cache_raw_tensors: dict[
@@ -620,6 +771,8 @@ def _reshape_kv_cache_v2(
         raise ValueError("Reshape KV cache requires KVCacheConfig.")
     vllm_config = get_current_vllm_config()
     uses_dspark_dsv4 = _uses_dspark_dsv4(vllm_config)
+    if uses_dspark_dsv4:
+        _validate_dsv4_packed_layout(kv_cache_config)
     is_kv_consumer = (
         vllm_config.kv_transfer_config.is_kv_consumer if vllm_config.kv_transfer_config is not None else False
     )
