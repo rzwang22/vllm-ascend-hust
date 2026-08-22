@@ -21,6 +21,7 @@ from contextlib import contextmanager
 
 import numpy as np
 import torch
+from vllm import envs
 from vllm.config import VllmConfig
 from vllm.config.compilation import CUDAGraphMode
 from vllm.v1.core.sched.output import SchedulerOutput
@@ -265,6 +266,11 @@ class NPUModelRunner(GPUModelRunner):
         num_tokens = scheduler_output.total_num_scheduled_tokens
         num_tokens_after_padding = batch_desc.num_tokens
         assert num_tokens > 0
+        if envs.VLLM_MOE_SKIP_PADDING:
+            # Keep the token-level padding mask in sync with this execution
+            # descriptor. The input buffer is reused across steps.
+            self.input_buffers.is_padding[:num_tokens].fill_(False)
+            self.input_buffers.is_padding[num_tokens:num_tokens_after_padding].fill_(True)
         num_tokens_per_req = scheduler_output.num_scheduled_tokens
         num_reqs = len(num_tokens_per_req)
 
@@ -415,6 +421,13 @@ class NPUModelRunner(GPUModelRunner):
             # max_seq_len is only consumed by the PP `compute_need_sampled_mask`.
             max_seq_len_np = self.req_states.max_seq_len[idx_mapping_np]
 
+        prompt_lens = None
+        if self.model_config.rswa_window is not None:
+            # R-SWA consumes the original prompt length for each real request.
+            # Gather with the current request ordering rather than padded request
+            # slots, which are not initialized request state.
+            prompt_lens = self.req_states.prompt_len.gpu[idx_mapping]
+
         self.input_batch = AscendInputBatch(
             req_ids=req_ids,
             num_reqs=num_reqs,
@@ -440,10 +453,12 @@ class NPUModelRunner(GPUModelRunner):
             max_seq_len_np=max_seq_len_np,
             input_ids=input_ids,
             positions=positions,
+            is_padding=self.input_buffers.is_padding[:num_tokens_after_padding],
             logits_indices=logits_indices,
             cu_num_logits=cu_num_logits,
             cu_num_logits_np=cu_num_logits_np,
             has_structured_output_reqs=scheduler_output.has_structured_output_requests,
+            prompt_lens=prompt_lens,
             # extra attributes for ascend npus.
             seq_lens_np=self.input_buffers.seq_lens_np,
             attn_state=attn_state,
