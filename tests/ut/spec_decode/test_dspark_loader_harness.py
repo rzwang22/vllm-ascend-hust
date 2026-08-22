@@ -8,9 +8,19 @@ import pytest
 
 from tests.e2e.nightly.single_node.spec_decode.dspark_loader_harness import (
     CLEANUP_COMPLETE,
+    CONFIG_CREATED,
     CONFIG_READY,
+    DRAFT_MODEL_LOADED,
+    DRAFT_VLLM_CONFIG_BUILT,
+    EMBEDDING_CONTRACT_VERIFIED,
+    IMPORT_AUDIT_STAGES,
+    IMPORTS_COMPLETED,
     LOAD_STAGES,
+    REGISTRY_RESOLVED,
+    TARGET_MODEL_LOADED,
+    WORKER_INIT_DEVICE_COMPLETED,
     HarnessNotConfigured,
+    ImportStageTracker,
     StageTracker,
     dspark_loader_config_context,
     enforce_offline_mode,
@@ -312,3 +322,45 @@ def test_forbidden_import_delta_checks_only_new_modules() -> None:
     }
 
     assert forbidden_import_delta(preexisting, after) == ["vllm.v1.worker.gpu.spec_decode.dspark.utils"]
+
+
+def test_import_stage_tracker_attributes_first_appearance_and_draft_delta() -> None:
+    messages: list[str] = []
+    tracker = ImportStageTracker(
+        rank=3,
+        baseline_modules={"already.loaded"},
+        emit=messages.append,
+    )
+    modules = {"already.loaded"}
+    snapshots = {
+        IMPORTS_COMPLETED: set(),
+        CONFIG_CREATED: {"vllm.models.deepseek_v4.nvidia.model"},
+        REGISTRY_RESOLVED: set(),
+        WORKER_INIT_DEVICE_COMPLETED: {"vllm_ascend.ops.triton.spec_decode.utils"},
+        TARGET_MODEL_LOADED: set(),
+        DRAFT_VLLM_CONFIG_BUILT: set(),
+        DRAFT_MODEL_LOADED: set(),
+        EMBEDDING_CONTRACT_VERIFIED: set(),
+    }
+    for stage in IMPORT_AUDIT_STAGES:
+        modules.update(snapshots[stage])
+        tracker.mark(stage, modules)
+
+    assert tracker.first_seen == {
+        "vllm.models.deepseek_v4.nvidia.model": CONFIG_CREATED,
+        "vllm_ascend.ops.triton.spec_decode.utils": WORKER_INIT_DEVICE_COMPLETED,
+    }
+    assert tracker.delta(TARGET_MODEL_LOADED, EMBEDDING_CONTRACT_VERIFIED) == []
+    assert len(messages) == len(IMPORT_AUDIT_STAGES)
+    assert '"stage": "CONFIG_CREATED"' in messages[1]
+
+
+def test_import_stage_tracker_rejects_skipped_stage() -> None:
+    tracker = ImportStageTracker(
+        rank=0,
+        baseline_modules=set(),
+        emit=lambda _message: None,
+    )
+
+    with pytest.raises(RuntimeError, match="expected 'IMPORTS_COMPLETED'"):
+        tracker.mark(DRAFT_VLLM_CONFIG_BUILT, set())

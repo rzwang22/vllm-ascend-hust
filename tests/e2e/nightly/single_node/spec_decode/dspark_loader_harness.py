@@ -5,10 +5,12 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from collections.abc import Callable, Iterator, Mapping, MutableMapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 CONFIG_READY = "CONFIG_READY"
@@ -20,6 +22,24 @@ EMBEDDING_CONTRACT_VERIFIED = "EMBEDDING_CONTRACT_VERIFIED"
 CHECKPOINT_MAPPING_VERIFIED = "CHECKPOINT_MAPPING_VERIFIED"
 LOADER_ONLY_PASS = "LOADER_ONLY_PASS"
 CLEANUP_COMPLETE = "CLEANUP_COMPLETE"
+
+IMPORTS_COMPLETED = "IMPORTS_COMPLETED"
+CONFIG_CREATED = "CONFIG_CREATED"
+WORKER_INIT_DEVICE_COMPLETED = "WORKER_INIT_DEVICE_COMPLETED"
+TARGET_MODEL_LOADED = "TARGET_MODEL_LOADED"
+DRAFT_VLLM_CONFIG_BUILT = "DRAFT_VLLM_CONFIG_BUILT"
+DRAFT_MODEL_LOADED = "DRAFT_MODEL_LOADED"
+
+IMPORT_AUDIT_STAGES = (
+    IMPORTS_COMPLETED,
+    CONFIG_CREATED,
+    REGISTRY_RESOLVED,
+    WORKER_INIT_DEVICE_COMPLETED,
+    TARGET_MODEL_LOADED,
+    DRAFT_VLLM_CONFIG_BUILT,
+    DRAFT_MODEL_LOADED,
+    EMBEDDING_CONTRACT_VERIFIED,
+)
 
 LOAD_STAGES = (
     CONFIG_READY,
@@ -257,6 +277,108 @@ def forbidden_import_delta(
     after: set[str],
 ) -> list[str]:
     return sorted(module for module in after - before if module.startswith(FORBIDDEN_IMPORT_PREFIXES))
+
+
+def forbidden_class_references(model_cls: type[Any]) -> list[str]:
+    """Return forbidden modules referenced by a selected class or its module."""
+    references: set[str] = set()
+    for base in model_cls.__mro__:
+        if base.__module__.startswith(FORBIDDEN_IMPORT_PREFIXES):
+            references.add(f"mro:{base.__module__}.{base.__name__}")
+
+    defining_module = sys.modules.get(model_cls.__module__)
+    if defining_module is None:
+        return sorted(references)
+    for name, value in vars(defining_module).items():
+        if isinstance(value, ModuleType):
+            module_name = value.__name__
+        else:
+            module_name = getattr(value, "__module__", "")
+        if module_name.startswith(FORBIDDEN_IMPORT_PREFIXES):
+            references.add(f"global:{name}={module_name}")
+    return sorted(references)
+
+
+def forbidden_module_tree_types(model: Any) -> list[str]:
+    """Return forbidden implementation types held by a torch module tree."""
+    references: set[str] = set()
+    modules = model.modules() if hasattr(model, "modules") else (model,)
+    for module in modules:
+        module_type = type(module)
+        if module_type.__module__.startswith(FORBIDDEN_IMPORT_PREFIXES):
+            references.add(f"{module_type.__module__}.{module_type.__name__}")
+    return sorted(references)
+
+
+def forbidden_instance_attribute_types(instance: Any) -> list[str]:
+    """Return forbidden implementation objects held directly by an instance."""
+    references: set[str] = set()
+    for name, value in vars(instance).items():
+        value_type = type(value)
+        if value_type.__module__.startswith(FORBIDDEN_IMPORT_PREFIXES):
+            references.add(f"{name}:{value_type.__module__}.{value_type.__name__}")
+    return sorted(references)
+
+
+class ImportStageTracker:
+    """Attribute newly imported forbidden modules to loader lifecycle stages."""
+
+    def __init__(
+        self,
+        rank: int,
+        baseline_modules: set[str],
+        emit: Callable[[str], None] = print,
+    ) -> None:
+        self.rank = rank
+        self._baseline_modules = set(baseline_modules)
+        self._previous_modules = set(baseline_modules)
+        self._emit = emit
+        self.stages: list[str] = []
+        self.snapshots: dict[str, set[str]] = {}
+        self.first_seen: dict[str, str] = {}
+
+    def mark(
+        self,
+        stage: str,
+        modules: set[str] | None = None,
+    ) -> list[str]:
+        completed = len(self.stages)
+        expected = IMPORT_AUDIT_STAGES[completed] if completed < len(IMPORT_AUDIT_STAGES) else None
+        if stage != expected:
+            raise RuntimeError(f"Invalid import-audit stage transition: expected {expected!r}, got {stage!r}.")
+
+        current_modules = set(sys.modules) if modules is None else set(modules)
+        new_forbidden = forbidden_import_delta(
+            self._previous_modules,
+            current_modules,
+        )
+        for module in new_forbidden:
+            self.first_seen.setdefault(module, stage)
+        cumulative_forbidden = forbidden_import_delta(
+            self._baseline_modules,
+            current_modules,
+        )
+        self.stages.append(stage)
+        self.snapshots[stage] = current_modules
+        self._previous_modules = current_modules
+        payload = {
+            "rank": self.rank,
+            "stage": stage,
+            "new_forbidden_modules": new_forbidden,
+            "cumulative_forbidden_modules": cumulative_forbidden,
+        }
+        self._emit("DSPARK_IMPORT_STAGE=" + json.dumps(payload, sort_keys=True))
+        return new_forbidden
+
+    def delta(
+        self,
+        from_stage: str,
+        to_stage: str,
+    ) -> list[str]:
+        return forbidden_import_delta(
+            self.snapshots[from_stage],
+            self.snapshots[to_stage],
+        )
 
 
 def run_cleanup_steps(

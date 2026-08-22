@@ -77,7 +77,6 @@ from vllm_ascend.utils import (
     setup_ascend_local_comm_res,
     vllm_version_is,
 )
-from vllm_ascend.worker.model_runner_v1 import NPUModelRunner
 
 torch._dynamo.trace_rules.clear_lru_cache()  # noqa: E402
 from torch._dynamo.variables import TorchInGraphFunctionVariable  # noqa: E402
@@ -710,6 +709,11 @@ class NPUWorker(WorkerBase):
 
             self.model_runner = NPUModelRunnerV2(self.vllm_config, self.device)
         else:
+            # The V1 runner eagerly imports its proposer stack, including the
+            # Triton spec-decode helpers. Keep that stack out of a V2 worker's
+            # loader lifecycle and import it only when V1 is actually selected.
+            from vllm_ascend.worker.model_runner_v1 import NPUModelRunner
+
             self.model_runner = NPUModelRunner(self.vllm_config, self.device)
 
         if self.rank == 0:

@@ -14,18 +14,29 @@ import pytest
 
 from tests.e2e.nightly.single_node.spec_decode.dspark_loader_harness import (
     CHECKPOINT_MAPPING_VERIFIED,
+    CONFIG_CREATED,
     CONFIG_READY,
     DISTRIBUTED_READY,
     DRAFT_LOADED,
+    DRAFT_MODEL_LOADED,
+    DRAFT_VLLM_CONFIG_BUILT,
     EMBEDDING_CONTRACT_VERIFIED,
+    FORBIDDEN_IMPORT_PREFIXES,
+    IMPORTS_COMPLETED,
     LOADER_ONLY_PASS,
     REGISTRY_RESOLVED,
     TARGET_LOADED,
+    TARGET_MODEL_LOADED,
+    WORKER_INIT_DEVICE_COMPLETED,
     HarnessNotConfigured,
+    ImportStageTracker,
     StageTracker,
     dspark_loader_config_context,
     enforce_offline_mode,
+    forbidden_class_references,
     forbidden_import_delta,
+    forbidden_instance_attribute_types,
+    forbidden_module_tree_types,
     parse_launch_context,
     parse_loader_settings,
     run_cleanup_steps,
@@ -107,6 +118,11 @@ def test_dspark_loader_only_npu() -> None:
         pytest.skip(str(exc))
     launch = parse_launch_context(os.environ, settings.tp_size)
     tracker = StageTracker(launch.rank)
+    lifecycle_before_modules = set(sys.modules)
+    import_tracker = ImportStageTracker(
+        launch.rank,
+        lifecycle_before_modules,
+    )
     state: dict[str, Any] = {
         "worker": None,
         "target_model": None,
@@ -127,7 +143,7 @@ def test_dspark_loader_only_npu() -> None:
 
         import vllm_ascend
 
-        before_modules = set(sys.modules)
+        import_tracker.mark(IMPORTS_COMPLETED)
         engine_args = EngineArgs(
             model=str(settings.target_model),
             tokenizer=str(settings.target_model),
@@ -147,6 +163,7 @@ def test_dspark_loader_only_npu() -> None:
             },
         )
         vllm_config = engine_args.create_engine_config()
+        import_tracker.mark(CONFIG_CREATED)
         assert vllm_config.use_v2_model_runner
         assert vllm_config.speculative_config is not None
         assert vllm_config.speculative_config.method == "dspark"
@@ -172,6 +189,7 @@ def test_dspark_loader_only_npu() -> None:
         assert model_cls.__module__ == "vllm_ascend.models.deepseek_v4_dspark"
         assert model_cls.__name__ == "DSparkDeepseekV4ForCausalLM"
         assert all(not base.__module__.startswith("vllm.models.deepseek_v4.nvidia") for base in model_cls.__mro__)
+        import_tracker.mark(REGISTRY_RESOLVED)
         tracker.mark(
             REGISTRY_RESOLVED,
             model_class=f"{model_cls.__module__}.{model_cls.__name__}",
@@ -204,6 +222,7 @@ def test_dspark_loader_only_npu() -> None:
         assert get_tp_group().world_size == settings.tp_size
         assert get_tp_group().rank_in_group == launch.rank
         assert get_ep_group().world_size == settings.tp_size
+        import_tracker.mark(WORKER_INIT_DEVICE_COMPLETED)
         baseline_memory = _memory_snapshot(torch, worker.device)
         tracker.mark(
             DISTRIBUTED_READY,
@@ -221,10 +240,13 @@ def test_dspark_loader_only_npu() -> None:
         from vllm_ascend.worker.v2.spec_decode.dspark import model_loader
 
         original_loader = model_loader.load_dspark_model
+        original_build_draft_vllm_config = model_loader._build_draft_vllm_config
         original_load_weights = model_cls.load_weights
 
         def observed_loader(target_model, config):
             state["target_model"] = target_model
+            state["draft_import_baseline"] = set(sys.modules)
+            import_tracker.mark(TARGET_MODEL_LOADED)
             target_memory = _memory_snapshot(torch, worker.device)
             tracker.mark(
                 TARGET_LOADED,
@@ -235,6 +257,7 @@ def test_dspark_loader_only_npu() -> None:
             draft_model = original_loader(target_model, config)
             state["loader_result"] = draft_model
             state["draft_model"] = draft_model
+            import_tracker.mark(DRAFT_MODEL_LOADED)
             draft_memory = _memory_snapshot(torch, worker.device)
             tracker.mark(
                 DRAFT_LOADED,
@@ -244,6 +267,15 @@ def test_dspark_loader_only_npu() -> None:
             )
             return draft_model
 
+        def observed_build_draft_vllm_config(config, draft_quant_config):
+            draft_vllm_config = original_build_draft_vllm_config(
+                config,
+                draft_quant_config,
+            )
+            state["draft_vllm_config"] = draft_vllm_config
+            import_tracker.mark(DRAFT_VLLM_CONFIG_BUILT)
+            return draft_vllm_config
+
         def observed_load_weights(draft_model, weights):
             loaded_parameter_names = original_load_weights(draft_model, weights)
             state["checkpoint_load_calls"] += 1
@@ -251,6 +283,7 @@ def test_dspark_loader_only_npu() -> None:
             return loaded_parameter_names
 
         model_loader.load_dspark_model = observed_loader
+        model_loader._build_draft_vllm_config = observed_build_draft_vllm_config
         model_cls.load_weights = observed_load_weights
         execution_calls: list[str] = []
 
@@ -275,6 +308,7 @@ def test_dspark_loader_only_npu() -> None:
             worker.load_model()
         finally:
             model_loader.load_dspark_model = original_loader
+            model_loader._build_draft_vllm_config = original_build_draft_vllm_config
             model_cls.load_weights = original_load_weights
             for owner, name, original in reversed(guarded_attributes):
                 if original is missing_attribute:
@@ -290,11 +324,21 @@ def test_dspark_loader_only_npu() -> None:
         assert draft_model is state["draft_model"]
         assert target_model is state["target_model"]
         assert type(draft_model) is model_cls
+        target_cls = type(target_model)
+        assert target_cls.__module__ == "vllm_ascend.models.deepseek_v4"
+        assert target_cls.__name__ == "AscendDeepseekV4ForCausalLM"
+        assert type(runner.speculator) is AscendDSparkSpeculator
+        for selected_cls in (target_cls, model_cls, AscendDSparkSpeculator):
+            assert forbidden_class_references(selected_cls) == []
+        assert forbidden_module_tree_types(target_model) == []
+        assert forbidden_module_tree_types(draft_model) == []
+        assert forbidden_instance_attribute_types(runner.speculator) == []
         sharing = _assert_embedding_contract(
             target_model,
             draft_model,
             vllm_config.quant_config,
         )
+        import_tracker.mark(EMBEDDING_CONTRACT_VERIFIED)
         tracker.mark(EMBEDDING_CONTRACT_VERIFIED, contract=sharing)
 
         parameter_count = _assert_materialized_on_npu(draft_model)
@@ -302,9 +346,40 @@ def test_dspark_loader_only_npu() -> None:
         assert state["checkpoint_load_calls"] == 1
         assert isinstance(loaded_parameter_names, set)
         assert loaded_parameter_names
-        forbidden_modules = forbidden_import_delta(before_modules, set(sys.modules))
-        assert forbidden_modules == [], "Forbidden DSpark/CUDA/Triton modules were imported: " + json.dumps(
-            forbidden_modules
+        lifecycle_forbidden_modules = forbidden_import_delta(
+            lifecycle_before_modules,
+            set(sys.modules),
+        )
+        forbidden_core_dspark_or_triton = [
+            module for module in lifecycle_forbidden_modules if module.startswith(FORBIDDEN_IMPORT_PREFIXES[1:])
+        ]
+        assert forbidden_core_dspark_or_triton == [], (
+            "The V2 loader lifecycle imported a core DSpark or Ascend Triton "
+            "spec-decode runtime: " + json.dumps(forbidden_core_dspark_or_triton)
+        )
+        pre_draft_stages = {
+            IMPORTS_COMPLETED,
+            CONFIG_CREATED,
+            REGISTRY_RESOLVED,
+            WORKER_INIT_DEVICE_COMPLETED,
+            TARGET_MODEL_LOADED,
+        }
+        nvidia_first_seen = {
+            module: stage
+            for module, stage in import_tracker.first_seen.items()
+            if module.startswith(FORBIDDEN_IMPORT_PREFIXES[0])
+        }
+        assert all(stage in pre_draft_stages for stage in nvidia_first_seen.values()), (
+            "NVIDIA DeepSeek V4 modules first appeared during the isolated "
+            "draft lifecycle: " + json.dumps(nvidia_first_seen, sort_keys=True)
+        )
+        draft_forbidden_modules = forbidden_import_delta(
+            state["draft_import_baseline"],
+            set(sys.modules),
+        )
+        assert draft_forbidden_modules == [], (
+            "The target-to-draft loader boundary imported forbidden "
+            "NVIDIA/Core-DSpark/Triton modules: " + json.dumps(draft_forbidden_modules)
         )
         assert execution_calls == []
         tracker.mark(
@@ -315,7 +390,9 @@ def test_dspark_loader_only_npu() -> None:
             missing_weights=0,
             unexpected_weights=0,
             evidence="DSparkDeepseekV4ForCausalLM.load_weights strict success",
-            forbidden_import_delta=forbidden_modules,
+            lifecycle_forbidden_import_delta=lifecycle_forbidden_modules,
+            forbidden_import_first_seen=import_tracker.first_seen,
+            draft_forbidden_import_delta=draft_forbidden_modules,
         )
         torch.distributed.barrier()
         tracker.mark(LOADER_ONLY_PASS, execution_calls=execution_calls)

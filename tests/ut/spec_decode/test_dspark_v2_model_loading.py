@@ -403,6 +403,12 @@ def test_dspark_registry_resolution_isolated_from_nvidia_runtime() -> None:
         model_cls = ModelRegistry._try_load_model_cls("DSparkDraftModel")
         if model_cls is None:
             raise RuntimeError("DSparkDraftModel did not resolve")
+        target_cls = ModelRegistry._try_load_model_cls("DeepseekV4ForCausalLM")
+        if target_cls is None:
+            raise RuntimeError("DeepseekV4ForCausalLM did not resolve")
+        from vllm_ascend.worker.v2.spec_decode.dspark import (
+            AscendDSparkSpeculator,
+        )
         from vllm_ascend.worker.v2.spec_decode.dspark import model_loader
 
         if not callable(model_loader.load_dspark_model):
@@ -416,7 +422,8 @@ def test_dspark_registry_resolution_isolated_from_nvidia_runtime() -> None:
 
         model_global_modules = (
             model_cls.__module__,
-            "vllm_ascend.models.deepseek_v4",
+            target_cls.__module__,
+            AscendDSparkSpeculator.__module__,
         )
         nvidia_globals = sorted(
             f"{{module_name}}.{{name}}"
@@ -427,13 +434,24 @@ def test_dspark_registry_resolution_isolated_from_nvidia_runtime() -> None:
         payload = {{
             "class_module": model_cls.__module__,
             "class_name": model_cls.__name__,
+            "target_class_module": target_cls.__module__,
+            "target_class_name": target_cls.__name__,
+            "speculator_class_module": AscendDSparkSpeculator.__module__,
+            "speculator_class_name": AscendDSparkSpeculator.__name__,
             "preexisting_nvidia": preexisting_nvidia,
             "new_forbidden": sorted(
                 module
                 for module in new_modules
                 if module.startswith(forbidden_prefixes)
             ),
-            "mro_modules": [base.__module__ for base in model_cls.__mro__],
+            "mro_modules": {{
+                "draft": [base.__module__ for base in model_cls.__mro__],
+                "target": [base.__module__ for base in target_cls.__mro__],
+                "speculator": [
+                    base.__module__
+                    for base in AscendDSparkSpeculator.__mro__
+                ],
+            }},
             "nvidia_globals": nvidia_globals,
         }}
         print("DSPARK_IMPORT_AUDIT=" + json.dumps(payload, sort_keys=True))
@@ -455,10 +473,93 @@ def test_dspark_registry_resolution_isolated_from_nvidia_runtime() -> None:
 
     assert audit["class_module"] == "vllm_ascend.models.deepseek_v4_dspark"
     assert audit["class_name"] == "DSparkDeepseekV4ForCausalLM"
+    assert audit["target_class_module"] == "vllm_ascend.models.deepseek_v4"
+    assert audit["target_class_name"] == "AscendDeepseekV4ForCausalLM"
+    assert audit["speculator_class_module"] == ("vllm_ascend.worker.v2.spec_decode.dspark.speculator")
+    assert audit["speculator_class_name"] == "AscendDSparkSpeculator"
     assert audit["preexisting_nvidia"] == []
     assert audit["new_forbidden"] == []
-    assert all(not module.startswith("vllm.models.deepseek_v4.nvidia") for module in audit["mro_modules"])
+    assert all(
+        not module.startswith("vllm.models.deepseek_v4.nvidia")
+        for mro_modules in audit["mro_modules"].values()
+        for module in mro_modules
+    )
     assert audit["nvidia_globals"] == []
+
+
+def test_v2_worker_import_does_not_eagerly_import_v1_triton_spec_decode() -> None:
+    conftest_path = Path(__file__).parents[1] / "conftest.py"
+    child_script = textwrap.dedent(
+        f"""
+        import json
+        import runpy
+        import sys
+        import types
+
+        build_info = types.ModuleType("vllm_ascend._build_info")
+        build_info.__device_type__ = "A2"
+        build_info.__soc_version__ = "ASCEND910B2"
+        sys.modules["vllm_ascend._build_info"] = build_info
+        runpy.run_path({str(conftest_path)!r})
+
+        torch_npu = sys.modules["torch_npu"]
+        op_plugin = types.ModuleType("torch_npu.op_plugin")
+        op_plugin.__path__ = []
+        atb = types.ModuleType("torch_npu.op_plugin.atb")
+        atb.__path__ = []
+        atb_ops = types.ModuleType("torch_npu.op_plugin.atb._atb_ops")
+        atb_ops._register_atb_extensions = lambda: None
+        profiler = types.ModuleType("torch_npu.profiler")
+        profiler.dynamic_profile = types.SimpleNamespace()
+        torch_npu.op_plugin = op_plugin
+        torch_npu.profiler = profiler
+        sys.modules["torch_npu.op_plugin"] = op_plugin
+        sys.modules["torch_npu.op_plugin.atb"] = atb
+        sys.modules["torch_npu.op_plugin.atb._atb_ops"] = atb_ops
+        sys.modules["torch_npu.profiler"] = profiler
+
+        forbidden_prefix = "vllm_ascend.ops.triton.spec_decode"
+        v1_runner = "vllm_ascend.worker.model_runner_v1"
+        before = set(sys.modules)
+        if any(module.startswith(forbidden_prefix) for module in before):
+            raise RuntimeError("Triton spec-decode was already imported before NPUWorker")
+        if v1_runner in before:
+            raise RuntimeError("V1 runner was already imported before NPUWorker")
+
+        from vllm_ascend.worker.worker import NPUWorker
+
+        if NPUWorker.__module__ != "vllm_ascend.worker.worker":
+            raise RuntimeError("NPUWorker did not resolve to the Ascend worker")
+        new_modules = set(sys.modules) - before
+        payload = {{
+            "v1_runner_imported": v1_runner in new_modules,
+            "new_triton_spec_decode": sorted(
+                module
+                for module in new_modules
+                if module.startswith(forbidden_prefix)
+            ),
+        }}
+        print("DSPARK_V2_WORKER_IMPORT_AUDIT=" + json.dumps(payload, sort_keys=True))
+        """
+    )
+    child_env = os.environ.copy()
+    child_env["PYTHONPATH"] = os.pathsep.join(entry for entry in sys.path if entry)
+    result = subprocess.run(
+        [sys.executable, "-c", child_script],
+        cwd=Path(__file__).parents[3],
+        env=child_env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    audit_line = next(line for line in result.stdout.splitlines() if line.startswith("DSPARK_V2_WORKER_IMPORT_AUDIT="))
+    audit = json.loads(
+        audit_line.removeprefix("DSPARK_V2_WORKER_IMPORT_AUDIT="),
+    )
+
+    assert not audit["v1_runner_imported"]
+    assert audit["new_triton_spec_decode"] == []
 
 
 def test_speculator_loads_draft_model_once_and_publishes_loader_identity(
