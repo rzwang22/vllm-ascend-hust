@@ -10,6 +10,7 @@ draft layers emit a complete block.
 
 import typing
 from collections.abc import Iterable
+from typing import Any
 
 import regex as re
 import torch
@@ -42,8 +43,6 @@ from vllm_ascend.models.deepseek_v4 import (
 )
 from vllm_ascend.ops.rope_dsv4 import get_cos_and_sin_dsa
 
-_EXPERT_SCALE_RE = re.compile(r"\.experts\.\d+\.(gate_proj|up_proj|down_proj)\.scale$")
-
 
 def _apply_dsv4_rope(
     rotary_emb: nn.Module,
@@ -69,17 +68,24 @@ def _get_dspark_num_mtp_layers(config: PretrainedConfig) -> int:
 
 
 class DSparkMarkovHead(nn.Module):
-    def __init__(self, config: PretrainedConfig, prefix: str) -> None:
+    def __init__(
+        self,
+        config: PretrainedConfig,
+        prefix: str,
+        quant_config: Any,
+    ) -> None:
         super().__init__()
         self.markov_w1 = VocabParallelEmbedding(
             config.vocab_size,
             config.dspark_markov_rank,
+            quant_config=quant_config,
             prefix=f"{prefix}.markov_w1",
         )
         self.markov_w2 = ParallelLMHead(
             config.vocab_size,
             config.dspark_markov_rank,
             org_num_embeddings=config.vocab_size,
+            quant_config=quant_config,
             prefix=f"{prefix}.markov_w2",
         )
         self.logits_processor = LogitsProcessor(config.vocab_size)
@@ -89,6 +95,49 @@ class DSparkMarkovHead(nn.Module):
 
     def bias(self, markov_embed: torch.Tensor) -> torch.Tensor:
         return self.logits_processor(self.markov_w2, markov_embed)
+
+
+class DSparkConfidenceHead(nn.Module):
+    def __init__(
+        self,
+        config: PretrainedConfig,
+        prefix: str,
+        quant_config: Any,
+    ) -> None:
+        super().__init__()
+        self.proj = ReplicatedLinear(
+            config.hidden_size + config.dspark_markov_rank,
+            1,
+            bias=False,
+            return_bias=False,
+            quant_config=quant_config,
+            prefix=f"{prefix}.proj",
+        )
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        markov_embed: torch.Tensor,
+    ) -> torch.Tensor:
+        features = torch.cat(
+            [hidden_states, markov_embed.to(dtype=hidden_states.dtype)],
+            dim=-1,
+        )
+        return self.proj(features).squeeze(-1)
+
+
+def _has_checkpoint_weight(quant_config: Any, name: str) -> bool:
+    quant_description = getattr(quant_config, "quant_description", None)
+    if quant_description is None:
+        return quant_config is not None
+    return name in quant_description
+
+
+def _has_checkpoint_prefix(quant_config: Any, prefix: str) -> bool:
+    quant_description = getattr(quant_config, "quant_description", None)
+    if quant_description is None:
+        return False
+    return any(name.startswith(prefix) for name in quant_description)
 
 
 class DeepseekV4DSparkModel(nn.Module):
@@ -108,7 +157,7 @@ class DeepseekV4DSparkModel(nn.Module):
             config.vocab_size,
             config.hidden_size,
             quant_config=vllm_config.quant_config,
-            prefix=maybe_prefix(prefix, "embed_tokens"),
+            prefix="mtp.0.embed",
         )
         self.layers = nn.ModuleDict(
             {
@@ -127,11 +176,8 @@ class DeepseekV4DSparkModel(nn.Module):
             config.hidden_size,
             bias=False,
             return_bias=False,
-            quant_config=None,
-            prefix=maybe_prefix(
-                prefix,
-                f"layers.{self.mtp_start_layer_idx}.main_proj",
-            ),
+            quant_config=vllm_config.quant_config,
+            prefix="mtp.0.main_proj",
         )
         self.main_norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         first_layer.main_proj = self.main_proj
@@ -141,7 +187,21 @@ class DeepseekV4DSparkModel(nn.Module):
         last_layer_idx = self.mtp_start_layer_idx + self.num_dspark_layers - 1
         self.markov_head = DSparkMarkovHead(
             config,
-            maybe_prefix(prefix, f"layers.{last_layer_idx}.markov_head"),
+            f"mtp.{self.num_dspark_layers - 1}.markov_head",
+            vllm_config.quant_config,
+        )
+        confidence_prefix = f"mtp.{self.num_dspark_layers - 1}.confidence_head"
+        self.confidence_head = (
+            DSparkConfidenceHead(
+                config,
+                confidence_prefix,
+                vllm_config.quant_config,
+            )
+            if _has_checkpoint_prefix(
+                vllm_config.quant_config,
+                f"{confidence_prefix}.",
+            )
+            else None
         )
         hc_dim = self.hc_mult * config.hidden_size
         self.hc_head_fn = nn.Parameter(
@@ -298,6 +358,15 @@ class DeepseekV4DSparkModel(nn.Module):
     def markov_bias(self, markov_embed: torch.Tensor) -> torch.Tensor:
         return self.markov_head.bias(markov_embed)
 
+    def compute_confidence(
+        self,
+        hidden_states: torch.Tensor,
+        markov_embed: torch.Tensor,
+    ) -> torch.Tensor:
+        if self.confidence_head is None:
+            raise RuntimeError("The DSpark checkpoint does not contain a confidence head.")
+        return self.confidence_head(hidden_states, markov_embed)
+
     def compute_logits(
         self,
         hidden_states: torch.Tensor,
@@ -328,8 +397,16 @@ class DSparkDeepseekV4ForCausalLM(
         super().__init__()
         assert vllm_config.speculative_config is not None
         self.config = vllm_config.speculative_config.draft_model_config.hf_config
-        self.has_own_embed_tokens = vllm_config.quant_config is not None
-        self.has_own_lm_head = vllm_config.quant_config is not None
+        self.quant_config = vllm_config.quant_config
+        last_stage = _get_dspark_num_mtp_layers(self.config) - 1
+        self.has_own_embed_tokens = _has_checkpoint_weight(
+            self.quant_config,
+            "mtp.0.embed.weight",
+        )
+        self.has_own_lm_head = _has_checkpoint_weight(
+            self.quant_config,
+            f"mtp.{last_stage}.head.weight",
+        )
         self.model = DeepseekV4DSparkModel(
             vllm_config=vllm_config,
             prefix=maybe_prefix(prefix, "model"),
@@ -337,7 +414,8 @@ class DSparkDeepseekV4ForCausalLM(
         self.lm_head = ParallelLMHead(
             self.config.vocab_size,
             self.config.hidden_size,
-            prefix=maybe_prefix(prefix, "lm_head"),
+            quant_config=self.quant_config,
+            prefix=f"mtp.{last_stage}.head",
         )
         self.logits_processor = LogitsProcessor(self.config.vocab_size)
         self.set_moe_parameters()
@@ -390,6 +468,13 @@ class DSparkDeepseekV4ForCausalLM(
     def markov_bias(self, markov_embed: torch.Tensor) -> torch.Tensor:
         return self.model.markov_bias(markov_embed)
 
+    def confidence_logits(
+        self,
+        hidden_states: torch.Tensor,
+        markov_embed: torch.Tensor,
+    ) -> torch.Tensor:
+        return self.model.compute_confidence(hidden_states, markov_embed)
+
     def get_draft_kv_cache_layer_names(self) -> list[str]:
         return self.model.get_draft_kv_cache_layer_names()
 
@@ -417,9 +502,6 @@ class DSparkDeepseekV4ForCausalLM(
     ) -> set[str]:
         """Load and strictly validate the target checkpoint's DSpark weights."""
         expert_mapping = self.model.get_expert_mapping()
-        expert_scale_suffix = (
-            ".weight_scale" if getattr(self.config, "expert_dtype", "fp4") == "fp4" else ".weight_scale_inv"
-        )
         stacked_params_mapping = [
             ("mlp.gate_up_proj", "mlp.gate_proj", 0),
             ("mlp.gate_up_proj", "mlp.up_proj", 1),
@@ -429,7 +511,6 @@ class DSparkDeepseekV4ForCausalLM(
 
         params_dict = dict(self.named_parameters())
         loaded_params: set[str] = set()
-        ignored_confidence_weights = 0
 
         tp_size = get_tensor_model_parallel_world_size()
         tp_rank = get_tensor_model_parallel_rank()
@@ -444,11 +525,6 @@ class DSparkDeepseekV4ForCausalLM(
             elif name == "head.weight" and not self.has_own_lm_head:
                 name = "lm_head.weight"
             else:
-                if name.startswith("mtp.") and ".confidence_head." in name:
-                    # The 8fe122d9 checkpoint contract carries an optional
-                    # confidence head that this fixed-length stage does not use.
-                    ignored_confidence_weights += 1
-                    continue
                 mapped_name = self._remap_dspark_name(name)
                 if mapped_name is None:
                     # Same-checkpoint loading also yields all target-model
@@ -458,17 +534,22 @@ class DSparkDeepseekV4ForCausalLM(
                 name = mapped_name
 
             if name.endswith(".scale"):
-                suffix = expert_scale_suffix if _EXPERT_SCALE_RE.search(name) else ".weight_scale"
-                name = name.removesuffix(".scale") + suffix
+                name = name.removesuffix(".scale") + ".weight_scale"
 
             if ".experts." in name:
                 if "weight_scale" in name and loaded_weight.dtype == torch.float8_e8m0fnu:
                     loaded_weight = loaded_weight.view(torch.uint8)
                 expert_loaded = False
+                expert_recognized = False
                 for param_name, weight_name, expert_id, shard_id in expert_mapping:
                     if weight_name not in name:
                         continue
+                    expert_recognized = True
                     name_mapped = name.replace(weight_name, param_name)
+                    if name_mapped not in params_dict and name_mapped.endswith(".weight_scale"):
+                        fp8_scale_name = f"{name_mapped}_inv"
+                        if fp8_scale_name in params_dict:
+                            name_mapped = fp8_scale_name
                     param = self._get_checkpoint_parameter(
                         params_dict,
                         name_mapped,
@@ -490,8 +571,12 @@ class DSparkDeepseekV4ForCausalLM(
                         loaded_params.add(name_mapped)
                         expert_loaded = True
                         break
-                if not expert_loaded:
+                if not expert_recognized:
                     raise ValueError(f"Unexpected or unmapped DSpark expert checkpoint weight: {checkpoint_name}.")
+                if not expert_loaded:
+                    # The checkpoint contains every global expert, while an EP
+                    # rank owns only its local subset.
+                    continue
                 continue
 
             is_layer_param = name.startswith("model.layers.")
@@ -540,12 +625,6 @@ class DSparkDeepseekV4ForCausalLM(
         missing_params = params_dict.keys() - loaded_params - optional_shared_params
         if missing_params:
             raise ValueError(f"DSpark checkpoint did not initialize required parameters: {sorted(missing_params)}")
-        if ignored_confidence_weights:
-            logger.info_once(
-                "Ignored %d optional DSpark confidence-head weights; fixed-length "
-                "verification does not consume them in this model contract.",
-                ignored_confidence_weights,
-            )
         logger.info_once(
             "DSpark draft model loaded: %d params",
             len(loaded_params),
@@ -579,7 +658,14 @@ class DSparkDeepseekV4ForCausalLM(
                 f"DSpark checkpoint stage {stage} exceeds configured stage count {self.model.num_dspark_layers}."
             )
         if rest.startswith("confidence_head."):
-            return None
+            if stage != self.model.num_dspark_layers - 1:
+                raise ValueError("DSpark confidence-head weights must belong to the final MTP stage.")
+            if self.model.confidence_head is None:
+                raise ValueError(
+                    "The DSpark checkpoint contains confidence-head weights but "
+                    "the ModelSlim descriptor does not declare that head."
+                )
+            return f"model.{rest}"
         if stage == 0 and rest == "embed.weight":
             return "model.embed_tokens.weight"
         if stage == self.model.num_dspark_layers - 1 and rest == "head.weight":
