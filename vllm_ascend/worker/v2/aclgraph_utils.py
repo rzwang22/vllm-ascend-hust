@@ -47,12 +47,14 @@ class ModelAclGraphManager(ModelCudaGraphManager):
         cudagraph_mode: CUDAGraphMode,
         decode_query_len: int,
         model_runner: Any,
+        lora_capture_cases: list[int] | None = None,
     ):
         super().__init__(
             vllm_config,
             device,
             cudagraph_mode,
             decode_query_len,
+            lora_capture_cases=lora_capture_cases,
         )
         # set model runner attribute, so we can access attributes model runner
         # when call `run_fullgraph` method in CudaGraphManager,

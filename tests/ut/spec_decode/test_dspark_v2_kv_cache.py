@@ -6,12 +6,14 @@ import sys
 import textwrap
 from contextlib import nullcontext
 from copy import deepcopy
+from inspect import signature
 from types import MappingProxyType, SimpleNamespace
 
 import pytest
 import torch
 import torch.nn as nn
 from vllm.config import set_current_vllm_config
+from vllm.config.compilation import CUDAGraphMode
 from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
 from vllm.v1.kv_cache_interface import (
     FullAttentionSpec,
@@ -19,6 +21,8 @@ from vllm.v1.kv_cache_interface import (
     KVCacheGroupSpec,
     KVCacheTensor,
 )
+from vllm.v1.worker.gpu import model_runner as vllm_model_runner
+from vllm.v1.worker.gpu.cudagraph_utils import ModelCudaGraphManager
 
 from vllm_ascend.core.kv_cache_interface import AscendSlidingWindowMLASpec
 from vllm_ascend.worker.v2 import attn_utils
@@ -423,6 +427,311 @@ def test_set_attn_failure_does_not_publish_partial_lifecycle(
     assert speculator.attn_backends is None
     assert speculator.draft_kv_caches is None
     assert speculator._kv_cache_signature is None
+
+
+def test_acl_graph_manager_forwards_lora_capture_cases_to_core(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from vllm_ascend.worker.v2.aclgraph_utils import ModelAclGraphManager
+
+    core_parameters = signature(ModelCudaGraphManager).parameters
+    assert core_parameters["lora_capture_cases"].default is None
+
+    config = SimpleNamespace(
+        compilation_config=SimpleNamespace(cudagraph_capture_sizes=[]),
+    )
+    runner = object()
+    device = torch.device("cpu")
+    lora_capture_cases = [0, 2]
+    init_call = None
+
+    def core_init(
+        manager,
+        vllm_config,
+        graph_device,
+        cudagraph_mode,
+        decode_query_len,
+        lora_capture_cases=None,
+    ):
+        nonlocal init_call
+        init_call = (
+            vllm_config,
+            graph_device,
+            cudagraph_mode,
+            decode_query_len,
+            lora_capture_cases,
+        )
+        manager.compilation_config = vllm_config.compilation_config
+
+    monkeypatch.setattr(ModelCudaGraphManager, "__init__", core_init)
+    monkeypatch.setattr(ModelCudaGraphManager, "needs_capture", lambda _self: False)
+
+    manager = ModelAclGraphManager(
+        config,
+        device,
+        CUDAGraphMode.FULL,
+        6,
+        runner,
+        lora_capture_cases=lora_capture_cases,
+    )
+
+    assert init_call == (
+        config,
+        device,
+        CUDAGraphMode.FULL,
+        6,
+        lora_capture_cases,
+    )
+    assert init_call[-1] is lora_capture_cases
+    assert manager.model_runner is runner
+
+
+@pytest.mark.parametrize(
+    ("cudagraph_mode", "use_current_core_abi", "lora_capture_cases"),
+    [
+        pytest.param(CUDAGraphMode.NONE, False, None, id="eager-legacy"),
+        pytest.param(CUDAGraphMode.FULL, True, [0, 2], id="graph-current-lora"),
+    ],
+)
+def test_graph_manager_wrapper_matches_core_constructor_abi(
+    monkeypatch: pytest.MonkeyPatch,
+    cudagraph_mode: CUDAGraphMode,
+    use_current_core_abi: bool,
+    lora_capture_cases: list[int] | None,
+) -> None:
+    from vllm_ascend.worker.v2 import model_runner as ascend_model_runner
+
+    runner = object()
+    config = object()
+    device = torch.device("cpu")
+    manager = object()
+    calls = []
+
+    def create_manager(
+        vllm_config,
+        graph_device,
+        graph_mode,
+        decode_query_len,
+        model_runner,
+        lora_capture_cases=None,
+    ):
+        calls.append(
+            (
+                vllm_config,
+                graph_device,
+                graph_mode,
+                decode_query_len,
+                model_runner,
+                lora_capture_cases,
+            )
+        )
+        return manager
+
+    monkeypatch.setattr(ascend_model_runner, "ModelAclGraphManager", create_manager)
+    original_graph_manager = vllm_model_runner.ModelCudaGraphManager
+
+    with ascend_model_runner.graph_manager_wrapper(runner):
+        factory = vllm_model_runner.ModelCudaGraphManager
+        if use_current_core_abi:
+            actual = factory(
+                config,
+                device,
+                cudagraph_mode,
+                decode_query_len=6,
+                lora_capture_cases=lora_capture_cases,
+            )
+        else:
+            actual = factory(
+                config,
+                device,
+                cudagraph_mode,
+                decode_query_len=6,
+            )
+
+        assert actual is manager
+
+    assert vllm_model_runner.ModelCudaGraphManager is original_graph_manager
+    assert calls == [
+        (
+            config,
+            device,
+            cudagraph_mode,
+            6,
+            runner,
+            lora_capture_cases,
+        )
+    ]
+
+
+def test_graph_manager_wrapper_restores_constructor_after_exception() -> None:
+    from vllm_ascend.worker.v2 import model_runner as ascend_model_runner
+
+    original_graph_manager = vllm_model_runner.ModelCudaGraphManager
+
+    with (
+        pytest.raises(RuntimeError, match="graph initialization failed"),
+        ascend_model_runner.graph_manager_wrapper(object()),
+    ):
+        assert vllm_model_runner.ModelCudaGraphManager is not original_graph_manager
+        raise RuntimeError("graph initialization failed")
+
+    assert vllm_model_runner.ModelCudaGraphManager is original_graph_manager
+
+
+@pytest.mark.parametrize("use_dspark", [False, True], ids=["non-dspark", "dspark"])
+@pytest.mark.parametrize(
+    "lora_capture_cases",
+    [pytest.param([0], id="lora-disabled"), pytest.param([0, 2], id="lora-enabled")],
+)
+def test_runner_kv_initialization_forwards_lora_capture_cases(
+    monkeypatch: pytest.MonkeyPatch,
+    use_dspark: bool,
+    lora_capture_cases: list[int],
+) -> None:
+    from vllm.v1.worker.gpu.model_runner import GPUModelRunner
+
+    from vllm_ascend.worker.v2 import model_runner as ascend_model_runner
+
+    config, speculator, _target_model = _loaded_speculator(monkeypatch)
+    kv_cache_config = _kv_cache_config()
+    runner = object.__new__(ascend_model_runner.NPUModelRunner)
+    runner.speculator = speculator if use_dspark else None
+    runner.vllm_config = config
+    runner.compilation_config = config.compilation_config
+    runner.model_state = object()
+    runner.device = torch.device("cpu")
+    runner.decode_query_len = 6
+    runner.lora_capture_cases = lora_capture_cases
+    manager = object()
+    manager_calls = []
+    set_attn_calls = []
+
+    def create_manager(
+        vllm_config,
+        device,
+        cudagraph_mode,
+        decode_query_len,
+        model_runner,
+        lora_capture_cases=None,
+    ):
+        manager_calls.append(
+            (
+                vllm_config,
+                device,
+                cudagraph_mode,
+                decode_query_len,
+                model_runner,
+                lora_capture_cases,
+            )
+        )
+        return manager
+
+    def core_initialize(_runner, cache_config):
+        _runner.kv_cache_config = cache_config
+        _runner.block_tables = object()
+        _runner.cudagraph_manager = vllm_model_runner.ModelCudaGraphManager(
+            _runner.vllm_config,
+            _runner.device,
+            CUDAGraphMode.NONE,
+            decode_query_len=_runner.decode_query_len,
+            lora_capture_cases=_runner.lora_capture_cases,
+        )
+
+    monkeypatch.setattr(ascend_model_runner, "ModelAclGraphManager", create_manager)
+    monkeypatch.setattr(GPUModelRunner, "initialize_kv_cache", core_initialize)
+    if use_dspark:
+        monkeypatch.setattr(
+            speculator,
+            "set_attn",
+            lambda *args: set_attn_calls.append(args),
+        )
+    original_graph_manager = vllm_model_runner.ModelCudaGraphManager
+
+    ascend_model_runner.NPUModelRunner.initialize_kv_cache(
+        runner,
+        kv_cache_config,
+    )
+
+    assert vllm_model_runner.ModelCudaGraphManager is original_graph_manager
+    assert runner.cudagraph_manager is manager
+    assert manager_calls == [
+        (
+            config,
+            runner.device,
+            CUDAGraphMode.NONE,
+            6,
+            runner,
+            lora_capture_cases,
+        )
+    ]
+    assert manager_calls[0][-1] is lora_capture_cases
+    assert len(set_attn_calls) == int(use_dspark)
+
+
+def test_runner_restores_kv_state_when_graph_manager_factory_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config, speculator, _target_model = _loaded_speculator(monkeypatch)
+    kv_cache_config = _kv_cache_config()
+    context = config.compilation_config.static_forward_context
+    previous_caches = {name: layer.kv_cache for name, layer in context.items()}
+
+    from vllm.v1.worker.gpu.model_runner import GPUModelRunner
+
+    from vllm_ascend.worker.v2 import model_runner as ascend_model_runner
+
+    runner = object.__new__(ascend_model_runner.NPUModelRunner)
+    runner.speculator = speculator
+    runner.vllm_config = config
+    runner.compilation_config = config.compilation_config
+    runner.model_state = object()
+    runner.device = torch.device("cpu")
+    runner.decode_query_len = 6
+    runner.lora_capture_cases = [0]
+
+    def allocate_then_create_manager(_runner, cache_config):
+        _runner.kv_cache_config = cache_config
+        _runner.block_tables = object()
+        _runner.kv_caches = [torch.zeros(1)]
+        for layer in context.values():
+            layer.kv_cache = (torch.zeros(1), torch.zeros(1))
+        _runner.cudagraph_manager = vllm_model_runner.ModelCudaGraphManager(
+            _runner.vllm_config,
+            _runner.device,
+            CUDAGraphMode.NONE,
+            decode_query_len=_runner.decode_query_len,
+            lora_capture_cases=_runner.lora_capture_cases,
+        )
+
+    def fail_manager_creation(*_args, **_kwargs):
+        raise RuntimeError("graph manager factory failed")
+
+    monkeypatch.setattr(
+        GPUModelRunner,
+        "initialize_kv_cache",
+        allocate_then_create_manager,
+    )
+    monkeypatch.setattr(
+        ascend_model_runner,
+        "ModelAclGraphManager",
+        fail_manager_creation,
+    )
+    original_graph_manager = vllm_model_runner.ModelCudaGraphManager
+
+    with pytest.raises(RuntimeError, match="graph manager factory failed"):
+        ascend_model_runner.NPUModelRunner.initialize_kv_cache(
+            runner,
+            kv_cache_config,
+        )
+
+    assert vllm_model_runner.ModelCudaGraphManager is original_graph_manager
+    assert not hasattr(runner, "kv_cache_config")
+    assert not hasattr(runner, "block_tables")
+    assert not hasattr(runner, "cudagraph_manager")
+    assert not hasattr(runner, "kv_caches")
+    assert all(context[name].kv_cache is previous_caches[name] for name in previous_caches)
+    assert speculator.kv_cache_config is None
+    assert speculator.draft_kv_caches is None
 
 
 def test_runner_restores_kv_state_when_dspark_installation_fails(
