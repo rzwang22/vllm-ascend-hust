@@ -49,6 +49,7 @@ from vllm.v1.worker.utils import AttentionGroup
 
 from vllm_ascend.attention.attention_mask import AttentionMaskBuilder
 from vllm_ascend.attention.attention_v1 import AscendAttentionState
+from vllm_ascend.attention.dsa_v1 import AscendDSAMetadataBuilder
 from vllm_ascend.attention.utils import AscendCommonAttentionMetadata, AscendPrefillContextParallelMetadata
 from vllm_ascend.core.kv_cache_interface import (
     AscendMLAAttentionSpec,
@@ -252,7 +253,8 @@ def build_attn_metadata(
     positions: torch.Tensor | None = None,
     attn_state: Any | None = None,
     graph_pad_size: int = -1,
-    num_input_tokens: int = 0,
+    num_actual_tokens: int | None = None,
+    num_input_tokens: int | None = None,
     prefill_context_parallel_metadata: AscendPrefillContextParallelMetadata | None = None,
     model_specific_attn_metadata: ModelSpecificAttnMetadata | None = None,
     for_cudagraph_capture: bool = False,
@@ -268,7 +270,21 @@ def build_attn_metadata(
         seq_lens_np = np.full(num_reqs, max_seq_len, dtype=np.int32)
     seq_lens_cpu = torch.from_numpy(seq_lens_np)[:num_reqs]
 
+    # Callers predating separate scheduled-token and padded-input-token counts
+    # have only ``num_tokens``. It is the correct value for both in that ABI.
+    if num_actual_tokens is None:
+        num_actual_tokens = num_tokens
+    if num_input_tokens is None:
+        num_input_tokens = num_tokens
+
     attn_metadata: dict[str, Any] = {}
+    # DSA cache groups with different compression ratios share request-level
+    # split results and ratio-specific SAS metadata for one model execution.
+    # These dictionaries are deliberately batch-local so no state can leak to
+    # the next scheduler step.
+    prefill_ratio_to_sas_metadata: dict[Any, Any] = {}
+    decode_ratio_to_sas_metadata: dict[Any, Any] = {}
+    common_ratio_to_sas_metadata: dict[Any, Any] = {}
     kv_cache_groups = kv_cache_config.kv_cache_groups
     for i, kv_cache_spec in enumerate(kv_cache_groups):
         block_table = block_tables[i]
@@ -286,7 +302,7 @@ def build_attn_metadata(
             seq_lens_cpu_upper_bound=seq_lens_cpu,
             seq_lens=seq_lens[:num_reqs],
             num_reqs=num_reqs,
-            num_actual_tokens=num_tokens,
+            num_actual_tokens=num_actual_tokens,
             max_query_len=max_query_len,
             block_table_tensor=block_table,
             slot_mapping=slot_mapping,
@@ -313,11 +329,25 @@ def build_attn_metadata(
                     if model_specific_attn_metadata is not None
                     else {}
                 )
+                if isinstance(attn_metadata_builder, AscendDSAMetadataBuilder):
+                    attn_metadata_extra_kwargs.update(
+                        num_reqs_actual=num_reqs,
+                        prefill_ratio_to_sas_metadata=prefill_ratio_to_sas_metadata,
+                        decode_ratio_to_sas_metadata=decode_ratio_to_sas_metadata,
+                        common_ratio_to_sas_metadata=common_ratio_to_sas_metadata,
+                        block_size=attn_group.kv_cache_spec.block_size,
+                    )
                 metadata = attn_metadata_builder.build(
                     common_prefix_len=0,
                     common_attn_metadata=common_attn_metadata,
                     **attn_metadata_extra_kwargs,
                 )
+                if isinstance(attn_metadata_builder, AscendDSAMetadataBuilder):
+                    # Preserve the exact cache identities if a specialized
+                    # builder replaces a dictionary during construction.
+                    prefill_ratio_to_sas_metadata = attn_metadata_builder.prefill_ratio_to_sas_metadata  # type: ignore[assignment]
+                    decode_ratio_to_sas_metadata = attn_metadata_builder.decode_ratio_to_sas_metadata  # type: ignore[assignment]
+                    common_ratio_to_sas_metadata = attn_metadata_builder.common_ratio_to_sas_metadata  # type: ignore[assignment]
             for layer_name in attn_group.layer_names:
                 attn_metadata[layer_name] = metadata
     return attn_metadata
