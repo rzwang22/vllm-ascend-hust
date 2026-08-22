@@ -62,7 +62,14 @@ from vllm.model_executor.layers.logits_processor import LogitsProcessor
 from vllm.model_executor.layers.quantization import QuantizationConfig
 from vllm.model_executor.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
 from vllm.model_executor.model_loader.weight_utils import default_weight_loader, maybe_remap_kv_scale_name
-from vllm.model_executor.models.interfaces import MixtureOfExperts, SupportsEagle, SupportsLoRA, SupportsPP
+from vllm.model_executor.models.interfaces import (
+    EagleModelMixin,
+    MixtureOfExperts,
+    SupportsEagle,
+    SupportsEagle3,
+    SupportsLoRA,
+    SupportsPP,
+)
 from vllm.model_executor.models.utils import (
     PPMissingLayer,
     is_pp_missing_parameter,
@@ -1028,7 +1035,7 @@ class DeepseekV2DecoderLayer(nn.Module):
 
 
 @support_torch_compile
-class DeepseekV4Model(nn.Module):
+class DeepseekV4Model(nn.Module, EagleModelMixin):
     fall_back_to_pt_during_load = False
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
@@ -1130,7 +1137,7 @@ class DeepseekV4Model(nn.Module):
         positions: torch.Tensor,
         intermediate_tensors: IntermediateTensors | None,
         inputs_embeds: torch.Tensor | None = None,
-    ) -> torch.Tensor | IntermediateTensors:
+    ) -> torch.Tensor | IntermediateTensors | tuple[torch.Tensor, list[torch.Tensor]]:
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds
@@ -1156,8 +1163,14 @@ class DeepseekV4Model(nn.Module):
 
         if get_pp_group().is_first_rank:
             hidden_states = hidden_states.unsqueeze(1).repeat(1, self.hc_mult, 1)  # (b, s, h) -> (b, s, c, h)
+        aux_hidden_states: list[torch.Tensor] = []
         for layer in islice(self.layers, self.start_layer, self.end_layer):
             hidden_states, residual = layer(positions, hidden_states, residual, llama_4_scaling)
+            if layer.layer_idx + 1 in self.aux_hidden_state_layers:
+                # DSpark target layer IDs are zero-based decoder indices. Core
+                # converts them to one-based output boundaries before calling
+                # set_aux_hidden_state_layers(), so capture after this layer.
+                aux_hidden_states.append(hidden_states.mean(dim=1))
 
         # Stash pre-hc_head residual for the MTP draft (captured copy_).
         # When FlashComm1 (sequence parallelism) is enabled, tokens are
@@ -1190,6 +1203,8 @@ class DeepseekV4Model(nn.Module):
         hidden_states = self.hc_head(hidden_states, self.hc_head_fn, self.hc_head_scale, self.hc_head_base)
 
         hidden_states = self.norm(hidden_states)
+        if aux_hidden_states:
+            return hidden_states, aux_hidden_states
         return hidden_states
 
 
@@ -1233,7 +1248,14 @@ class DeepseekV2MixtureOfExperts(MixtureOfExperts):
             moe.experts.update_expert_map()
 
 
-class AscendDeepseekV4ForCausalLM(nn.Module, SupportsPP, DeepseekV2MixtureOfExperts, SupportsLoRA, SupportsEagle):
+class AscendDeepseekV4ForCausalLM(
+    nn.Module,
+    SupportsPP,
+    DeepseekV2MixtureOfExperts,
+    SupportsLoRA,
+    SupportsEagle,
+    SupportsEagle3,
+):
     packed_modules_mapping = {
         "gate_up_proj": ["gate_proj", "up_proj"],
     }
@@ -1292,7 +1314,7 @@ class AscendDeepseekV4ForCausalLM(nn.Module, SupportsPP, DeepseekV2MixtureOfExpe
         positions: torch.Tensor,
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
-    ) -> torch.Tensor | IntermediateTensors:
+    ) -> torch.Tensor | IntermediateTensors | tuple[torch.Tensor, list[torch.Tensor]]:
         hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
         return hidden_states
 
@@ -1332,6 +1354,31 @@ class AscendDeepseekV4ForCausalLM(nn.Module, SupportsPP, DeepseekV2MixtureOfExpe
         hc_mult * hidden_size) for the MTP draft model. Populated by
         forward(); valid after each target step."""
         return getattr(self.model, "_mtp_hidden_buffer", None)
+
+    def set_aux_hidden_state_layers(self, layers: tuple[int, ...]) -> None:
+        """Configure one-based decoder output boundaries for Eagle3/DSpark."""
+        if not isinstance(layers, tuple):
+            raise TypeError("Auxiliary hidden-state layers must be provided as a tuple.")
+        if not layers:
+            raise ValueError("At least one auxiliary hidden-state layer is required.")
+        if any(type(layer) is not int for layer in layers):
+            raise TypeError("Auxiliary hidden-state layer IDs must be integers.")
+        if len(set(layers)) != len(layers):
+            raise ValueError(f"Auxiliary hidden-state layer IDs must be unique, got {layers}.")
+        if tuple(sorted(layers)) != layers:
+            raise ValueError(f"Auxiliary hidden-state layer IDs must be strictly increasing, got {layers}.")
+
+        num_layers = int(self.config.num_hidden_layers)
+        invalid_layers = tuple(layer for layer in layers if layer < 1 or layer > num_layers)
+        if invalid_layers:
+            raise ValueError(
+                "Auxiliary hidden-state layer IDs are one-based decoder output "
+                f"boundaries in [1, {num_layers}], got {invalid_layers}."
+            )
+        if self.model.start_layer != 0 or self.model.end_layer != num_layers:
+            raise NotImplementedError("Ascend DeepSeek V4 auxiliary hidden states require pipeline parallel size 1.")
+
+        self.model._set_aux_hidden_state_layers(layers)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         rocm_aiter_moe_shared_expert_enabled = rocm_aiter_ops.is_fusion_moe_shared_experts_enabled()
