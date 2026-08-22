@@ -113,7 +113,10 @@ def test_factory_rejects_missing_dspark_configuration(vllm_config, error: str) -
 
 @pytest.mark.parametrize(
     ("dummy_run", "boundary"),
-    [(False, "V2 proposal"), (True, "V2 dummy-run proposal")],
+    [
+        (False, "V2 metadata/proposal"),
+        (True, "V2 dummy-run metadata/proposal"),
+    ],
 )
 def test_proposal_boundaries_fail_closed(dummy_run: bool, boundary: str) -> None:
     speculator = create_dspark_speculator(_dspark_config(), torch.device("cpu"))

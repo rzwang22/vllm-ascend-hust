@@ -23,6 +23,7 @@ from vllm.config import (
     replace,
 )
 from vllm.config.compilation import CompilationMode
+from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
 from vllm.v1.attention.backends.registry import AttentionBackendEnum
 from vllm.v1.worker.gpu import model_runner as vllm_model_runner
 
@@ -58,7 +59,18 @@ def _dspark_config(*, method: str = "dspark"):
         num_speculative_tokens=3,
         use_dspark=lambda: method == "dspark",
     )
-    return SimpleNamespace(speculative_config=speculative_config)
+    return SimpleNamespace(
+        speculative_config=speculative_config,
+        compilation_config=SimpleNamespace(static_forward_context={}),
+    )
+
+
+class _DraftKVCacheLayer(AttentionLayerBase):
+    def get_attn_backend(self):
+        return None
+
+    def get_kv_cache_spec(self, _vllm_config):
+        return None
 
 
 def _new_ascend_draft_model() -> nn.Module:
@@ -66,6 +78,12 @@ def _new_ascend_draft_model() -> nn.Module:
     model = object.__new__(model_type)
     nn.Module.__init__(model)
     return model
+
+
+def _register_fake_draft_kv_layer(config, draft_model: nn.Module) -> None:
+    layer_name = "mtp.0.self_attn.swa_cache"
+    config.compilation_config.static_forward_context[layer_name] = _DraftKVCacheLayer()
+    draft_model.get_draft_kv_cache_layer_names = lambda: [layer_name]
 
 
 def _modelslim_dspark_descriptor() -> dict[str, str]:
@@ -576,6 +594,7 @@ def test_speculator_loads_draft_model_once_and_publishes_loader_identity(
         nonlocal loader_calls
         loader_calls += 1
         assert loaded_target is target_model
+        _register_fake_draft_kv_layer(speculator.vllm_config, draft_model)
         return draft_model
 
     monkeypatch.setattr(model_loader, "load_dspark_model", fake_loader)
@@ -600,6 +619,7 @@ def test_speculator_rejects_reloading_for_different_target(
     def fake_loader(_target, _config):
         nonlocal loader_calls
         loader_calls += 1
+        _register_fake_draft_kv_layer(speculator.vllm_config, draft_model)
         return draft_model
 
     monkeypatch.setattr(model_loader, "load_dspark_model", fake_loader)
@@ -660,7 +680,12 @@ def test_model_loading_does_not_import_core_dspark_runtime(
     )
     import_attempts: list[str] = []
     original_import = builtins.__import__
+    config = _dspark_config()
     draft_model = _new_ascend_draft_model()
+
+    def fake_loader(_target, _config):
+        _register_fake_draft_kv_layer(config, draft_model)
+        return draft_model
 
     def import_spy(name, *args, **kwargs):
         if name.startswith(forbidden_prefixes):
@@ -671,12 +696,12 @@ def test_model_loading_does_not_import_core_dspark_runtime(
     monkeypatch.setattr(
         model_loader,
         "load_dspark_model",
-        lambda _target, _config: draft_model,
+        fake_loader,
     )
     monkeypatch.setattr(builtins, "__import__", import_spy)
 
     before = set(sys.modules)
-    speculator = create_dspark_speculator(_dspark_config(), torch.device("cpu"))
+    speculator = create_dspark_speculator(config, torch.device("cpu"))
     speculator.load_model(nn.Module())
     new_modules = set(sys.modules) - before
 
@@ -1267,12 +1292,16 @@ def test_npu_runner_uses_core_post_target_load_point_for_dspark(
     original_type = vllm_model_runner.DraftModelSpeculator
     core_load_calls = 0
 
+    def fake_loader(loaded_target, _config):
+        if loaded_target is not target_model:
+            pytest.fail("wrong target model")
+        _register_fake_draft_kv_layer(config, draft_model)
+        return draft_model
+
     monkeypatch.setattr(
         model_loader,
         "load_dspark_model",
-        lambda loaded_target, _config: (
-            draft_model if loaded_target is target_model else pytest.fail("wrong target model")
-        ),
+        fake_loader,
     )
 
     def fake_core_load(runner, _load_dummy_weights=False, *_args, **_kwargs):

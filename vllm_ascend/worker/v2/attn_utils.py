@@ -18,14 +18,21 @@
 #
 
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Any
 
 import numpy as np
 import torch
-from vllm.config import VllmConfig, get_current_vllm_config, get_layers_from_vllm_config
+from vllm.config import (
+    VllmConfig,
+    get_current_vllm_config,
+    get_layers_from_vllm_config,
+    set_current_vllm_config,
+)
 from vllm.model_executor.layers.attention import Attention
 from vllm.model_executor.layers.attention.mla_attention import MLAAttention
 from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
+from vllm.utils.torch_utils import get_dtype_size
 from vllm.v1.attention.backend import AttentionBackend
 from vllm.v1.kv_cache_interface import (
     AttentionSpec,
@@ -41,11 +48,29 @@ from vllm.v1.worker.utils import AttentionGroup
 from vllm_ascend.attention.attention_mask import AttentionMaskBuilder
 from vllm_ascend.attention.attention_v1 import AscendAttentionState
 from vllm_ascend.attention.utils import AscendCommonAttentionMetadata, AscendPrefillContextParallelMetadata
-from vllm_ascend.core.kv_cache_interface import AscendMLAAttentionSpec
+from vllm_ascend.core.kv_cache_interface import (
+    AscendMLAAttentionSpec,
+    AscendSlidingWindowMLASpec,
+)
 from vllm_ascend.quantization.utils import enable_fa_quant
-from vllm_ascend.utils import calc_split_factor
+from vllm_ascend.utils import (
+    AscendDeviceType,
+    calc_split_factor,
+    get_ascend_device_type,
+)
 
 _ATTENTION_MASK_BUILDER = None
+
+
+def _uses_dspark_dsv4(vllm_config: VllmConfig) -> bool:
+    model_config = getattr(vllm_config, "model_config", None)
+    hf_config = getattr(model_config, "hf_config", None)
+    speculative_config = getattr(vllm_config, "speculative_config", None)
+    return (
+        hf_config is not None
+        and hasattr(hf_config, "compress_ratios")
+        and getattr(speculative_config, "method", None) == "dspark"
+    )
 
 
 def get_kv_cache_spec(vllm_config: VllmConfig) -> dict[str, KVCacheSpec]:
@@ -79,6 +104,23 @@ def get_kv_cache_spec(vllm_config: VllmConfig) -> dict[str, KVCacheSpec]:
                 dtype=dtype,
                 cache_dtype_str=cache_dtype_str,
             )
+            continue
+
+        # DeepSeek V4 registers its indexer, compressor-state and sliding-
+        # window caches as platform-specific AttentionLayerBase modules. They
+        # are neither Attention nor MLAAttention, but they own real KV cache
+        # tensors and must participate in the same V2 cache lifecycle. Keep
+        # the generic AttentionLayerBase contract used by core while retaining
+        # the Ascend MLAAttention rewrite above.
+        if not _uses_dspark_dsv4(vllm_config):
+            continue
+        if spec := attn_module.get_kv_cache_spec(vllm_config):
+            if isinstance(spec, AttentionSpec):
+                backend = attn_module.get_attn_backend()
+                with set_current_vllm_config(vllm_config):
+                    indexes = backend.indexes_kv_by_block_stride()
+                spec = replace(spec, indexes_kv_by_block_stride=indexes)
+            kv_cache_spec[layer_name] = spec
 
     return kv_cache_spec
 
@@ -247,6 +289,104 @@ def _get_attention_kv_cache_dims(layer_name: str, kv_cache_spec: AttentionSpec) 
     return kv_cache_spec.head_size, head_size_v
 
 
+def _adjust_dsv4_kv_layout(
+    raw_tensor: torch.Tensor,
+    cache_shapes: list[tuple[int, ...]],
+    cache_dtypes: list[torch.dtype],
+    page_stride_bytes: int,
+    page_offset_bytes: int = 0,
+    overlap_full_kv_cache: bool = False,
+) -> list[torch.Tensor]:
+    caches: list[torch.Tensor] = []
+    base_offset_bytes = raw_tensor.storage_offset() * raw_tensor.element_size() + page_offset_bytes
+    offset_bytes = base_offset_bytes
+    for index, (shape, dtype) in enumerate(zip(cache_shapes, cache_dtypes)):
+        if overlap_full_kv_cache and index == 2:
+            offset_bytes = base_offset_bytes
+        dtype_size = get_dtype_size(dtype)
+        if offset_bytes % dtype_size:
+            raise ValueError(f"DSA cache offset {offset_bytes} is not aligned to {dtype}.")
+        if page_stride_bytes % dtype_size:
+            raise ValueError(f"DSA page stride {page_stride_bytes} is not aligned to {dtype}.")
+        page_stride = page_stride_bytes // dtype_size
+        stride = torch.empty(shape, device="meta").stride()
+        caches.append(
+            torch.as_strided(
+                raw_tensor.view(dtype),
+                size=shape,
+                stride=(page_stride, *stride[1:]),
+                storage_offset=offset_bytes // dtype_size,
+            )
+        )
+        offset_bytes += stride[0] * dtype_size
+    return caches
+
+
+def _view_dsv4_cache(
+    raw_tensor: torch.Tensor,
+    kv_cache_spec: AttentionSpec,
+    attn_backend: type[AttentionBackend],
+    kv_cache_config: KVCacheConfig,
+    packing: tuple[int, int] | None,
+) -> list[torch.Tensor]:
+    """Create the DSA page-strided views without generic K/V splitting."""
+    if packing is None:
+        page_offset_bytes = 0
+        page_stride_bytes = kv_cache_spec.page_size_bytes
+    else:
+        page_offset_bytes, page_stride_bytes = packing
+        if page_offset_bytes < 0 or page_stride_bytes <= 0:
+            raise ValueError(f"Invalid DSA packed layout {packing}.")
+        if page_offset_bytes + kv_cache_spec.page_size_bytes > page_stride_bytes:
+            raise ValueError("DSA cache page exceeds its packed per-block allocation.")
+    if raw_tensor.numel() % page_stride_bytes:
+        raise ValueError("DSA cache allocation is not a whole number of physical blocks.")
+    num_blocks = raw_tensor.numel() // page_stride_bytes
+    if num_blocks < kv_cache_config.num_blocks:
+        raise ValueError(f"DSA cache has {num_blocks} blocks, expected at least {kv_cache_config.num_blocks}.")
+
+    cache_shape = attn_backend.get_kv_cache_shape(
+        num_blocks,
+        kv_cache_spec.storage_block_size,
+        kv_cache_spec.num_kv_heads,
+        kv_cache_spec.head_size,
+    )
+    cache_shapes = [cache_shape]
+    cache_dtypes = [kv_cache_spec.dtype]
+    overlap_full_kv_cache = False
+
+    scale_dim = int(getattr(kv_cache_spec, "scale_dim", 0))
+    if scale_dim:
+        scale_dtype = kv_cache_spec.scale_dtype
+        scale_shape = attn_backend.get_kv_cache_shape(
+            num_blocks,
+            kv_cache_spec.storage_block_size,
+            kv_cache_spec.num_kv_heads,
+            scale_dim,
+        )
+        cache_shapes.append(scale_shape)
+        cache_dtypes.append(scale_dtype)
+        if get_ascend_device_type() == AscendDeviceType.A5:
+            full_shape = attn_backend.get_kv_cache_shape(
+                num_blocks,
+                kv_cache_spec.storage_block_size,
+                kv_cache_spec.num_kv_heads,
+                kv_cache_spec.head_size + scale_dim * get_dtype_size(scale_dtype),
+            )
+            cache_shapes.append(full_shape)
+            cache_dtypes.append(kv_cache_spec.dtype)
+            overlap_full_kv_cache = True
+
+    return _adjust_dsv4_kv_layout(
+        raw_tensor,
+        cache_shapes,
+        cache_dtypes,
+        page_stride_bytes,
+        page_offset_bytes,
+        overlap_full_kv_cache,
+    )
+
+
 def _align_memory(tensor: torch.Tensor, alignment: int) -> torch.Tensor:
     data_ptr = tensor.data_ptr()
     aligned_addr = (data_ptr + alignment - 1) // alignment * alignment
@@ -258,7 +398,7 @@ def _allocate_kv_cache(
     kv_cache_config: KVCacheConfig,
     shared_layers: dict[str, str],
     device: torch.device,
-) -> dict[str, tuple[torch.Tensor, torch.Tensor]]:
+) -> dict[str, torch.Tensor | tuple[torch.Tensor, torch.Tensor]]:
     """
     Initialize the KV cache buffer with the correct size. The buffer needs to be
     reshaped to the desired shape before being used by the models.
@@ -270,18 +410,55 @@ def _allocate_kv_cache(
         kv_cache_config: The KV cache config
         device: The device
     Returns:
-        dict[str, tuple[torch.Tensor, torch.Tensor]]: A map between layer names
-            to their corresponding memory buffer for K cache and V cache
+        A map from layer names to raw cache storage. Standard attention uses
+        separate K/V tensors; DeepSeek V4 DSA uses one (possibly packed)
+        physical shared-KV backing tensor.
     """
     vllm_config = get_current_vllm_config()
+    uses_dspark_dsv4 = _uses_dspark_dsv4(vllm_config)
 
     # init kv cache tensors
-    kv_cache_raw_tensors: dict[str, tuple[torch.Tensor, torch.Tensor]] = {}
+    kv_cache_raw_tensors: dict[
+        str,
+        torch.Tensor | tuple[torch.Tensor, torch.Tensor],
+    ] = {}
     # prefill disaggregation need the addr of cache tensor be aligned with 2M
     alignment = 2 * 1024 * 1024
     layer_kv_cache_spec = _get_layer_kv_cache_specs(kv_cache_config)
+    packed_backing: torch.Tensor | None = None
+    packed_block_stride: int | None = None
     for kv_cache_tensor in kv_cache_config.kv_cache_tensors:
         if len(kv_cache_tensor.shared_by) == 0:
+            continue
+
+        # DeepSeek V4 DSA owns a single physical shared-KV page per cache
+        # layer. Generic K/V splitting would halve that page and give the
+        # DSpark model a tuple it cannot pass to DSA cache operators.
+        if uses_dspark_dsv4:
+            if kv_cache_tensor.block_stride > 0 and packed_backing is not None:
+                if packed_backing.numel() != kv_cache_tensor.size:
+                    raise ValueError("All packed DSA cache tensors must share one allocation size.")
+                if packed_block_stride != kv_cache_tensor.block_stride:
+                    raise ValueError("All packed DSA cache tensors must share one block stride.")
+                raw_tensor = packed_backing
+            elif vllm_config.kv_transfer_config is None:
+                raw_tensor = torch.zeros(
+                    kv_cache_tensor.size,
+                    dtype=torch.int8,
+                    device=device,
+                )
+            else:
+                raw_tensor = torch.zeros(
+                    kv_cache_tensor.size + alignment,
+                    dtype=torch.int8,
+                    device=device,
+                )
+                raw_tensor = _align_memory(raw_tensor, alignment)[: kv_cache_tensor.size]
+            if kv_cache_tensor.block_stride > 0:
+                packed_backing = raw_tensor
+                packed_block_stride = kv_cache_tensor.block_stride
+            for layer_name in kv_cache_tensor.shared_by:
+                kv_cache_raw_tensors[layer_name] = raw_tensor
             continue
 
         # NOTE: We need to init k_cache tensor (nope cache tensor in mla) and
@@ -430,17 +607,32 @@ def _reshape_kv_cache(
 
 def _reshape_kv_cache_v2(
     attn_groups: Sequence[AttentionGroup],
-    kv_cache_raw_tensors: dict[str, tuple[torch.Tensor, torch.Tensor]],
+    kv_cache_raw_tensors: dict[
+        str,
+        torch.Tensor | tuple[torch.Tensor, torch.Tensor],
+    ],
     cache_dtype: str,
     kernel_block_sizes: list[int],
     shared_kv_cache_layers: dict[str, str],
-) -> dict[str, tuple[torch.Tensor, torch.Tensor]]:
+    kv_cache_config: KVCacheConfig | None = None,
+) -> dict[str, Any]:
+    if kv_cache_config is None:
+        raise ValueError("Reshape KV cache requires KVCacheConfig.")
     vllm_config = get_current_vllm_config()
+    uses_dspark_dsv4 = _uses_dspark_dsv4(vllm_config)
     is_kv_consumer = (
         vllm_config.kv_transfer_config.is_kv_consumer if vllm_config.kv_transfer_config is not None else False
     )
+    layer_packing: dict[str, tuple[int, int]] = {}
+    for tensor in kv_cache_config.kv_cache_tensors:
+        if tensor.block_stride > 0:
+            for layer_name in tensor.shared_by:
+                layer_packing[layer_name] = (
+                    tensor.offset,
+                    tensor.block_stride,
+                )
 
-    kv_caches: dict[str, tuple[torch.Tensor, torch.Tensor]] = {}
+    kv_caches: dict[str, Any] = {}
     for group in attn_groups:
         if group.kv_cache_group_id >= len(kernel_block_sizes):
             continue
@@ -457,7 +649,25 @@ def _reshape_kv_cache_v2(
 
             assert isinstance(kv_cache_spec, AttentionSpec)
 
-            raw_k_tensor, raw_v_tensor = kv_cache_raw_tensors[layer_name]
+            raw_cache = kv_cache_raw_tensors[layer_name]
+            if uses_dspark_dsv4 and isinstance(
+                kv_cache_spec,
+                (AscendMLAAttentionSpec, AscendSlidingWindowMLASpec),
+            ):
+                if not isinstance(raw_cache, torch.Tensor):
+                    raise ValueError(f"DSA cache for {layer_name} must use one raw tensor.")
+                kv_caches[layer_name] = _view_dsv4_cache(
+                    raw_cache,
+                    kv_cache_spec,
+                    group.backend,
+                    kv_cache_config,
+                    layer_packing.get(layer_name),
+                )
+                continue
+
+            if not isinstance(raw_cache, tuple):
+                raise ValueError(f"Generic attention cache for {layer_name} must use K/V tensors.")
+            raw_k_tensor, raw_v_tensor = raw_cache
             assert raw_k_tensor is not None
             assert raw_v_tensor is not None
             sum_page_size_bytes = raw_k_tensor.numel() + raw_v_tensor.numel()

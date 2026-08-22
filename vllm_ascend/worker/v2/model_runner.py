@@ -160,9 +160,80 @@ class NPUModelRunner(GPUModelRunner):
         with include_ascend_dspark_in_core_load_lifecycle(self.vllm_config):
             super().load_model(load_dummy_weights, *args, **kwargs)
 
+    def get_kv_cache_spec(self):
+        kv_cache_specs = super().get_kv_cache_spec()
+        from vllm_ascend.worker.v2.spec_decode.dspark import (
+            AscendDSparkSpeculator,
+        )
+
+        if isinstance(self.speculator, AscendDSparkSpeculator):
+            self.speculator.validate_kv_cache_specs(kv_cache_specs)
+        return kv_cache_specs
+
     def initialize_kv_cache(self, kv_cache_config: KVCacheConfig) -> None:
-        with graph_manager_wrapper(self):
-            super().initialize_kv_cache(kv_cache_config)
+        from vllm_ascend.worker.v2.spec_decode.dspark import (
+            AscendDSparkSpeculator,
+        )
+
+        speculator = self.speculator
+        if not isinstance(speculator, AscendDSparkSpeculator):
+            with graph_manager_wrapper(self):
+                super().initialize_kv_cache(kv_cache_config)
+            return
+
+        if speculator.is_kv_cache_initialized_for(kv_cache_config):
+            return
+        speculator.validate_kv_cache_config(kv_cache_config)
+
+        missing = object()
+        runtime_attributes = (
+            "kv_cache_config",
+            "attn_groups",
+            "kernel_block_sizes",
+            "block_tables",
+            "cudagraph_manager",
+            "kv_caches",
+            "kv_connector",
+        )
+        previous_attributes = {name: getattr(self, name, missing) for name in runtime_attributes}
+        forward_context = self.compilation_config.static_forward_context
+        previous_layer_caches = {
+            name: getattr(layer, "kv_cache", missing)
+            for name, layer in forward_context.items()
+            if hasattr(layer, "kv_cache")
+        }
+        previous_graph_mode = (
+            speculator.requested_cudagraph_mode,
+            speculator.cudagraph_mode,
+        )
+
+        try:
+            with graph_manager_wrapper(self):
+                super().initialize_kv_cache(kv_cache_config)
+            speculator.set_attn(
+                self.model_state,
+                self.kv_cache_config,
+                self.block_tables,
+            )
+        except BaseException:
+            for name, value in previous_attributes.items():
+                if value is missing:
+                    if hasattr(self, name):
+                        delattr(self, name)
+                else:
+                    setattr(self, name, value)
+            for name, value in previous_layer_caches.items():
+                layer = forward_context[name]
+                if value is missing:
+                    if hasattr(layer, "kv_cache"):
+                        delattr(layer, "kv_cache")
+                else:
+                    layer.kv_cache = value
+            (
+                speculator.requested_cudagraph_mode,
+                speculator.cudagraph_mode,
+            ) = previous_graph_mode
+            raise
 
     @torch.inference_mode()
     def profile_run(self) -> None:
