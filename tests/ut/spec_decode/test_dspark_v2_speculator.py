@@ -111,18 +111,17 @@ def test_factory_rejects_missing_dspark_configuration(vllm_config, error: str) -
         create_dspark_speculator(vllm_config, torch.device("cpu"))
 
 
-@pytest.mark.parametrize(
-    ("dummy_run", "boundary"),
-    [
-        (False, "V2 metadata/proposal"),
-        (True, "V2 dummy-run metadata/proposal"),
-    ],
-)
-def test_proposal_boundaries_fail_closed(dummy_run: bool, boundary: str) -> None:
+@pytest.mark.parametrize("flag", ("dummy_run", "is_profile"))
+def test_dummy_proposal_boundaries_fail_closed(flag: str) -> None:
     speculator = create_dspark_speculator(_dspark_config(), torch.device("cpu"))
+    kwargs = _proposal_kwargs(dummy_run=False)
+    kwargs[flag] = True
 
-    with pytest.raises(DSparkRuntimeNotWiredError, match=boundary):
-        speculator.propose(**_proposal_kwargs(dummy_run=dummy_run))
+    with pytest.raises(
+        DSparkRuntimeNotWiredError,
+        match="V2 draft execution.*dummy/profile",
+    ):
+        speculator.propose(**kwargs)
 
 
 def test_draft_model_boundary_fails_closed() -> None:
