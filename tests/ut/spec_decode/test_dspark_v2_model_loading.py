@@ -23,6 +23,7 @@ from vllm.config import (
     replace,
 )
 from vllm.config.compilation import CompilationMode
+from vllm.v1.attention.backends.registry import AttentionBackendEnum
 from vllm.v1.worker.gpu import model_runner as vllm_model_runner
 
 from vllm_ascend.models import (
@@ -229,6 +230,12 @@ def _real_dspark_vllm_config(
     from vllm_ascend.platform import NPUPlatform
 
     monkeypatch.setattr(current_platform, "device_name", "npu")
+    monkeypatch.setattr(current_platform, "device_type", NPUPlatform.device_type)
+    monkeypatch.setattr(
+        current_platform,
+        "check_and_update_config",
+        NPUPlatform.check_and_update_config,
+    )
     monkeypatch.setattr(
         current_platform,
         "get_speculative_proposer_capabilities",
@@ -289,6 +296,7 @@ def test_dspark_draft_vllm_config_handles_callable_hf_overrides(
     assert draft_model_config.hf_config.model_type == "deepseek_v4"
     assert draft_model_config.hf_config.dspark_block_size == 5
     assert draft_model_config.hf_config.dspark_target_layer_ids == [40, 41, 42]
+    assert speculative_config.attention_backend is AttentionBackendEnum.CUSTOM
 
     target_hf_config_before = copy.deepcopy(target_model_config.hf_config.to_dict())
     target_hf_overrides_before = copy.deepcopy(target_model_config.hf_overrides)
@@ -324,7 +332,9 @@ def test_dspark_draft_vllm_config_handles_callable_hf_overrides(
     assert draft_vllm_config.quant_config is not target_quant_config
     assert isinstance(draft_vllm_config.quant_config, AscendModelSlimConfig)
     assert draft_vllm_config.attention_config.use_non_causal
-    assert draft_vllm_config.attention_config.backend is speculative_config.attention_backend
+    # Ascend normalizes CUSTOM to None during VllmConfig validation. None is
+    # the exact post-validation marker for its registered plugin backend.
+    assert draft_vllm_config.attention_config.backend is None
     assert speculative_config.num_speculative_tokens == 5
     assert draft_vllm_config.parallel_config.tensor_parallel_size == 8
     assert draft_vllm_config.parallel_config.enable_expert_parallel
