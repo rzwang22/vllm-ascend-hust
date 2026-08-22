@@ -85,8 +85,10 @@ def _modelslim_dspark_descriptor() -> dict[str, str]:
                 f"{stage_prefix}.attn.wq_a.weight": "W8A8_DYNAMIC",
                 f"{stage_prefix}.attn.wq_b.weight": "W8A8_DYNAMIC",
                 f"{stage_prefix}.attn.wkv.weight": "W8A8_DYNAMIC",
-                f"{stage_prefix}.attn.wo_a.weight": "W8A8_DYNAMIC",
-                f"{stage_prefix}.attn.wo_b.weight": "W8A8_DYNAMIC",
+                f"{stage_prefix}.attn.q_norm.weight": "FLOAT",
+                f"{stage_prefix}.attn.kv_norm.weight": "FLOAT",
+                f"{stage_prefix}.attn.wo_a.weight": "FLOAT",
+                f"{stage_prefix}.attn.wo_b.weight": "FLOAT",
                 f"{stage_prefix}.ffn.experts.0.w1.weight": "W8A8_DYNAMIC",
                 f"{stage_prefix}.ffn.experts.0.w2.weight": "W8A8_DYNAMIC",
                 f"{stage_prefix}.ffn.experts.0.w3.weight": "W8A8_DYNAMIC",
@@ -520,6 +522,10 @@ def test_modelslim_descriptor_selects_w8a8_despite_fp4_hf_hint() -> None:
         "deepseek_v4",
         "mtp.0.self_attn.wq_a",
     )
+    float_output_prefix = quant_config.quant_prefix_mapper(
+        "deepseek_v4",
+        "mtp.0.self_attn.wo_a",
+    )
     expert_prefix = quant_config.quant_prefix_mapper(
         "deepseek_v4",
         "mtp.0.mlp.experts",
@@ -537,6 +543,23 @@ def test_modelslim_descriptor_selects_w8a8_despite_fp4_hf_hint() -> None:
     assert (
         get_quant_type_for_layer(
             quant_config.quant_description,
+            float_output_prefix,
+            "linear",
+            packed_mapping,
+        )
+        == "FLOAT"
+    )
+    assert not quant_config.is_layer_skipped_ascend(
+        attention_prefix,
+        packed_mapping,
+    )
+    assert quant_config.is_layer_skipped_ascend(
+        float_output_prefix,
+        packed_mapping,
+    )
+    assert (
+        get_quant_type_for_layer(
+            quant_config.quant_description,
             expert_prefix,
             "moe",
             packed_mapping,
@@ -549,6 +572,143 @@ def test_modelslim_descriptor_selects_w8a8_despite_fp4_hf_hint() -> None:
         for quant_type in quant_config.quant_description.values()
         if isinstance(quant_type, str)
     )
+
+
+@pytest.mark.parametrize("stage", range(3))
+def test_modelslim_descriptor_requires_w8a8_attention_projections_in_every_stage(
+    stage: int,
+) -> None:
+    from vllm_ascend.worker.v2.spec_decode.dspark.model_loader import (
+        _validate_w8a8_descriptor,
+    )
+
+    descriptor = _modelslim_dspark_descriptor()
+    descriptor[f"mtp.{stage}.attn.wq_a.weight"] = "FLOAT"
+    draft_hf_config = SimpleNamespace(n_mtp_layers=3)
+
+    with pytest.raises(ValueError, match=rf"wq_a.*W8A8_DYNAMIC.*stage {stage}"):
+        _validate_w8a8_descriptor(descriptor, draft_hf_config)
+
+
+@pytest.mark.parametrize("component", ("q_norm", "kv_norm"))
+def test_modelslim_descriptor_rejects_unknown_attention_norm_format(
+    component: str,
+) -> None:
+    from vllm_ascend.worker.v2.spec_decode.dspark.model_loader import (
+        _validate_w8a8_descriptor,
+    )
+
+    descriptor = _modelslim_dspark_descriptor()
+    descriptor[f"mtp.1.attn.{component}.weight"] = "UNKNOWN"
+
+    with pytest.raises(ValueError, match="unsupported quant types"):
+        _validate_w8a8_descriptor(
+            descriptor,
+            SimpleNamespace(n_mtp_layers=3),
+        )
+
+
+@pytest.mark.parametrize(
+    ("component", "quant_type"),
+    (("wo_a", "W4A8_MXFP"), ("wo_b", "FP4")),
+)
+def test_modelslim_descriptor_rejects_mxfp_output_components(
+    component: str,
+    quant_type: str,
+) -> None:
+    from vllm_ascend.worker.v2.spec_decode.dspark.model_loader import (
+        _validate_w8a8_descriptor,
+    )
+
+    descriptor = _modelslim_dspark_descriptor()
+    descriptor[f"mtp.2.attn.{component}.weight"] = quant_type
+
+    with pytest.raises(ValueError, match="forbids MXFP/FP4"):
+        _validate_w8a8_descriptor(
+            descriptor,
+            SimpleNamespace(n_mtp_layers=3),
+        )
+
+
+def test_modelslim_descriptor_rejects_unclassified_float_attention_weight() -> None:
+    from vllm_ascend.worker.v2.spec_decode.dspark.model_loader import (
+        _validate_w8a8_descriptor,
+    )
+
+    descriptor = _modelslim_dspark_descriptor()
+    descriptor["mtp.0.attn.unclassified_proj.weight"] = "FLOAT"
+
+    with pytest.raises(ValueError, match="outside the official FLOAT"):
+        _validate_w8a8_descriptor(
+            descriptor,
+            SimpleNamespace(n_mtp_layers=3),
+        )
+
+
+@pytest.mark.parametrize(
+    "expert_weight",
+    (
+        "mtp.0.ffn.experts.0.w1.weight",
+        "mtp.0.ffn.shared_experts.w1.weight",
+    ),
+)
+def test_modelslim_descriptor_requires_w8a8_experts(
+    expert_weight: str,
+) -> None:
+    from vllm_ascend.worker.v2.spec_decode.dspark.model_loader import (
+        _validate_w8a8_descriptor,
+    )
+
+    descriptor = _modelslim_dspark_descriptor()
+    descriptor[expert_weight] = "FLOAT"
+
+    with pytest.raises(ValueError, match="experts must use W8A8_DYNAMIC"):
+        _validate_w8a8_descriptor(
+            descriptor,
+            SimpleNamespace(n_mtp_layers=3),
+        )
+
+
+def test_modelslim_descriptor_rejects_attention_alias_quant_type_conflicts() -> None:
+    from vllm_ascend.worker.v2.spec_decode.dspark.model_loader import (
+        _build_draft_quant_config,
+    )
+
+    descriptor = _modelslim_dspark_descriptor()
+    descriptor["mtp.1.self_attn.wo_a.weight"] = "W8A8_DYNAMIC"
+    config = _modelslim_loader_config(
+        target_quant_config=AscendModelSlimConfig(descriptor),
+    )
+
+    with pytest.raises(ValueError, match="Conflicting DSpark ModelSlim quantization entries"):
+        _build_draft_quant_config(
+            config,
+            config.speculative_config.draft_model_config,
+        )
+
+
+def test_modelslim_descriptor_aliases_preserve_mixed_attention_quant_types() -> None:
+    from vllm_ascend.worker.v2.spec_decode.dspark.model_loader import (
+        _build_draft_quant_config,
+    )
+
+    config = _modelslim_loader_config()
+    quant_config = _build_draft_quant_config(
+        config,
+        config.speculative_config.draft_model_config,
+    )
+
+    for stage in range(3):
+        for component in ("wq_a", "wq_b", "wkv"):
+            source = f"mtp.{stage}.attn.{component}.weight"
+            alias = f"mtp.{stage}.self_attn.{component}.weight"
+            assert quant_config.quant_description[source] == "W8A8_DYNAMIC"
+            assert quant_config.quant_description[alias] == "W8A8_DYNAMIC"
+        for component in ("q_norm", "kv_norm", "wo_a", "wo_b"):
+            source = f"mtp.{stage}.attn.{component}.weight"
+            alias = f"mtp.{stage}.self_attn.{component}.weight"
+            assert quant_config.quant_description[source] == "FLOAT"
+            assert quant_config.quant_description[alias] == "FLOAT"
 
 
 @pytest.mark.parametrize(

@@ -18,6 +18,14 @@ _DSPARK_NUM_MTP_LAYERS = 3
 _DSPARK_TARGET_LAYER_IDS = (40, 41, 42)
 _MODELSLIM_FLOAT = "FLOAT"
 _MODELSLIM_W8A8_DYNAMIC = "W8A8_DYNAMIC"
+_DSPARK_ATTENTION_NAMESPACES = ("attn", "self_attn")
+_DSPARK_W8A8_ATTENTION_COMPONENTS = ("wq_a", "wq_b", "wkv")
+_DSPARK_FLOAT_ATTENTION_COMPONENTS = (
+    "q_norm",
+    "kv_norm",
+    "wo_a",
+    "wo_b",
+)
 _DSPARK_QUANT_PREFIX_REPLACEMENTS = (
     (".attn.", ".self_attn."),
     (".ffn_norm.", ".post_attention_layernorm."),
@@ -76,6 +84,86 @@ def _require_float_entries(
         raise ValueError(f"DSpark {description} must remain FLOAT in the ModelSlim descriptor, got {non_float}.")
 
 
+def _attention_component_entries(
+    quant_description: Mapping[str, Any],
+    *,
+    stage: int,
+    component: str,
+) -> dict[str, Any]:
+    return {
+        name: quant_description[name]
+        for namespace in _DSPARK_ATTENTION_NAMESPACES
+        if (name := f"mtp.{stage}.{namespace}.{component}.weight") in quant_description
+    }
+
+
+def _require_attention_component(
+    quant_description: Mapping[str, Any],
+    *,
+    stage: int,
+    component: str,
+    quant_type: str,
+) -> None:
+    entries = _attention_component_entries(
+        quant_description,
+        stage=stage,
+        component=component,
+    )
+    if not entries:
+        raise ValueError(
+            f"The DSpark ModelSlim descriptor is missing MTP stage {stage} attention component {component!r}."
+        )
+    invalid = {name: value for name, value in entries.items() if value != quant_type}
+    if invalid:
+        raise ValueError(
+            f"DSpark attention component {component!r} must use {quant_type} for MTP stage {stage}, got {invalid}."
+        )
+
+
+def _validate_attention_entries(
+    quant_description: Mapping[str, Any],
+    *,
+    stage: int,
+) -> None:
+    for component in _DSPARK_W8A8_ATTENTION_COMPONENTS:
+        _require_attention_component(
+            quant_description,
+            stage=stage,
+            component=component,
+            quant_type=_MODELSLIM_W8A8_DYNAMIC,
+        )
+    for component in _DSPARK_FLOAT_ATTENTION_COMPONENTS:
+        _require_attention_component(
+            quant_description,
+            stage=stage,
+            component=component,
+            quant_type=_MODELSLIM_FLOAT,
+        )
+
+    float_entry_names = {
+        f"mtp.{stage}.{namespace}.{component}.weight"
+        for namespace in _DSPARK_ATTENTION_NAMESPACES
+        for component in _DSPARK_FLOAT_ATTENTION_COMPONENTS
+    }
+    other_attention_weights = {
+        name: quant_type
+        for name, quant_type in quant_description.items()
+        if any(name.startswith(f"mtp.{stage}.{namespace}.") for namespace in _DSPARK_ATTENTION_NAMESPACES)
+        and name.endswith(".weight")
+        and name not in float_entry_names
+    }
+    invalid = {
+        name: quant_type
+        for name, quant_type in other_attention_weights.items()
+        if quant_type != _MODELSLIM_W8A8_DYNAMIC
+    }
+    if invalid:
+        raise ValueError(
+            "DSpark attention projections outside the official FLOAT "
+            f"q_norm/kv_norm/wo_a/wo_b set must use W8A8_DYNAMIC, got {invalid}."
+        )
+
+
 def _validate_w8a8_descriptor(
     quant_description: Mapping[str, Any],
     draft_hf_config: Any,
@@ -90,6 +178,16 @@ def _validate_w8a8_descriptor(
     }
     if forbidden:
         raise ValueError(f"Ascend DSpark 910B2 loading forbids MXFP/FP4 draft schemes; found {forbidden}.")
+
+    unknown_quant_types = {
+        name: quant_type
+        for name, quant_type in quant_description.items()
+        if name.startswith("mtp.")
+        and isinstance(quant_type, str)
+        and quant_type not in {_MODELSLIM_FLOAT, _MODELSLIM_W8A8_DYNAMIC}
+    }
+    if unknown_quant_types:
+        raise ValueError(f"The DSpark ModelSlim descriptor contains unsupported quant types: {unknown_quant_types}.")
 
     num_mtp_layers = int(
         getattr(draft_hf_config, "n_mtp_layers", None)
@@ -116,15 +214,9 @@ def _validate_w8a8_descriptor(
             for name, quant_type in stage_entries.items()
             if (".ffn.shared_experts." in name or ".mlp.shared_experts." in name) and name.endswith(".weight")
         }
-        attention_entries = {
-            name: quant_type
-            for name, quant_type in stage_entries.items()
-            if (".attn." in name or ".self_attn." in name) and name.endswith(".weight")
-        }
         for description, entries in (
             ("routed experts", expert_entries),
             ("shared experts", shared_expert_entries),
-            ("attention linears", attention_entries),
         ):
             if not entries:
                 raise ValueError(f"The DSpark ModelSlim descriptor is missing {description} for MTP stage {stage}.")
@@ -133,6 +225,11 @@ def _validate_w8a8_descriptor(
             }
             if invalid:
                 raise ValueError(f"DSpark {description} must use W8A8_DYNAMIC, got {invalid}.")
+
+        _validate_attention_entries(
+            quant_description,
+            stage=stage,
+        )
 
     last_stage = num_mtp_layers - 1
     required_float_weights = (
