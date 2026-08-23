@@ -73,9 +73,29 @@ def _assert_in_order(source: str, names: tuple[str, ...]) -> None:
         offset = next_offset + len(name)
 
 
-def test_tnd_query_extent_fingerprint_exposes_host_kernel_difference() -> None:
+def _expected_q_extent(values: list[int]) -> int:
+    return len(values)
+
+
+def test_single_batch_cu_seqlens_q_extent_includes_both_offsets() -> None:
+    assert _expected_q_extent([0, 1]) == 2
+
+
+def test_eight_batch_cu_seqlens_q_extent_includes_terminal_offset() -> None:
+    assert _expected_q_extent(list(range(9))) == 9
+
+
+def test_eight_batch_seq_used_q_extent_is_eight() -> None:
+    assert _expected_q_extent([1] * 8) == 8
+
+
+def test_tnd_query_extent_uses_full_tensor_element_count_at_both_assignments() -> None:
     host = _read(TILING_SOURCE)
-    assert host.count("actualLenDimsQ_ = opParamInfo_.cuSeqLensQ.tensor->GetShapeSize() - 1") == 2
+    cu_seqlens_assignment = "actualLenDimsQ_ = opParamInfo_.cuSeqLensQ.tensor->GetShapeSize();"
+    seq_used_assignment = "actualLenDimsQ_ = opParamInfo_.seqUsedQ.tensor->GetShapeSize();"
+    assert host.count(cu_seqlens_assignment) == 2
+    assert host.count(seq_used_assignment) == 2
+    assert "cuSeqLensQ.tensor->GetShapeSize() - 1" not in host
 
     for kernel_path in (SWA_KERNEL, SCFA_KERNEL):
         kernel = _read(kernel_path)

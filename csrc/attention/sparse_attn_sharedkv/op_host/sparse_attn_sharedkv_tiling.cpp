@@ -719,7 +719,7 @@ ge::graphStatus SASInfoParser::GetActualseqInfo()
                 OP_LOGE(opName_, "cu_seqlens_q's dimension should be equal to %u.", bSize_);
                 return ge::GRAPH_FAILED;
             }
-            actualLenDimsQ_ = opParamInfo_.cuSeqLensQ.tensor->GetShapeSize() - 1; // cuSeqLensQ shape is B+1
+            actualLenDimsQ_ = opParamInfo_.cuSeqLensQ.tensor->GetShapeSize(); // cuSeqLensQ shape is B+1
             OP_CHECK_IF(actualLenDimsQ_ == 0,
                         OP_LOGE(opName_, "cu_seqlens_q cannot be empty tensor."),
                         return ge::GRAPH_FAILED);
@@ -786,7 +786,7 @@ ge::graphStatus SASInfoParser::GetActualseqInfo()
     if (opParamInfo_.seqUsedQ.tensor != nullptr) {
         actualLenDimsQ_ = opParamInfo_.seqUsedQ.tensor->GetShapeSize();
     } else if (opParamInfo_.cuSeqLensQ.tensor != nullptr) {
-        actualLenDimsQ_ = opParamInfo_.cuSeqLensQ.tensor->GetShapeSize() - 1; // cuSeqLensQ shape is B+1
+        actualLenDimsQ_ = opParamInfo_.cuSeqLensQ.tensor->GetShapeSize(); // cuSeqLensQ shape is B+1
     }
     return ge::GRAPH_SUCCESS;
 }

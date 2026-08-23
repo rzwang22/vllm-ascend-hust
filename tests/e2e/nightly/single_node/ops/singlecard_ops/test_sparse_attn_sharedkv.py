@@ -697,7 +697,7 @@ def _run_sharedkv_address_diagnostic(
                 "template": "SWA",
                 "hasOriSparseIndices": ori_sparse_indices is not None,
                 "oriSparseIndexWidth": (int(ori_sparse_indices.shape[-1]) if ori_sparse_indices is not None else 0),
-                "host_serialized_actualLenDimsQ": 1,
+                "host_serialized_actualLenDimsQ": 2,
                 "kernel_cu_seqlens_q_entries_read": 2,
             },
             "ori_sparse_indices": (
@@ -873,7 +873,7 @@ def test_sharedkv_abi_a4_known_passing_operator_baseline() -> None:
                 "template": "SWA",
                 "hasOriSparseIndices": False,
                 "oriSparseIndexWidth": 0,
-                "host_serialized_actualLenDimsQ": 1,
+                "host_serialized_actualLenDimsQ": 2,
                 "kernel_cu_seqlens_q_entries_read": 2,
             },
         }
