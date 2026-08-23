@@ -37,11 +37,13 @@ V2_PLATFORM_EXTRA_FIELDS = {
     "flash_comm_v1_enabled",
     "flashcomm_v2_enabled",
     "in_profile_run",
+    "input_ids",
     "is_draft_model",
     "is_draft_model_prefill",
     "max_tokens_across_dp",
     "mc2_mask",
     "mmrs_fusion",
+    "model_instance",
     "moe_comm_method",
     "moe_comm_type",
     "num_tokens",
@@ -76,6 +78,12 @@ def _vllm_config(
     )
 
 
+def _model_with_layer_range() -> torch.nn.Module:
+    model = torch.nn.Module()
+    model.model = SimpleNamespace(start_layer=0)
+    return model
+
+
 @contextmanager
 def _npu_platform_runtime(
     monkeypatch: pytest.MonkeyPatch,
@@ -106,31 +114,31 @@ def _npu_platform_runtime(
     with ExitStack() as stack:
         stack.enter_context(
             patch(
-                "vllm_ascend.platform.is_moe_model",
+                "vllm_ascend.ascend_forward_context.is_moe_model",
                 return_value=is_moe,
             )
         )
         stack.enter_context(
             patch(
-                "vllm_ascend.platform.enable_sp",
+                "vllm_ascend.ascend_forward_context.enable_sp",
                 **mock_options(flashcomm1),
             )
         )
         stack.enter_context(
             patch(
-                "vllm_ascend.platform.flashcomm2_enable",
+                "vllm_ascend.ascend_forward_context.flashcomm2_enable",
                 **mock_options(flashcomm2),
             )
         )
         stack.enter_context(
             patch(
-                "vllm.distributed.get_tensor_model_parallel_world_size",
+                "vllm_ascend.ascend_forward_context.get_tensor_model_parallel_world_size",
                 return_value=tp_size,
             )
         )
         stack.enter_context(
             patch(
-                "vllm.distributed.get_dp_group",
+                "vllm_ascend.ascend_forward_context.get_dp_group",
                 return_value=SimpleNamespace(world_size=1),
             )
         )
@@ -160,6 +168,8 @@ def _set_forward_context(
     *,
     attn_metadata=None,
     num_tokens: int = 5,
+    input_ids: torch.Tensor | None = None,
+    model_instance: torch.nn.Module | None = None,
 ):
     if attn_metadata is None:
         attn_metadata = {"model.layers.0.self_attn": object()}
@@ -169,6 +179,8 @@ def _set_forward_context(
         num_tokens=num_tokens,
         cudagraph_runtime_mode=CUDAGraphMode.NONE,
         slot_mapping={"model.layers.0.self_attn": torch.arange(num_tokens)},
+        input_ids=input_ids,
+        model_instance=model_instance,
     )
 
 
@@ -184,6 +196,68 @@ def test_current_core_forward_context_uses_additional_kwargs_for_platform_data(
         assert context.additional_kwargs.keys() >= V2_PLATFORM_EXTRA_FIELDS
         assert _EXTRA_CTX.flash_comm_v1_enabled is False
         assert _EXTRA_CTX.flashcomm_v2_enabled is False
+
+
+def test_v2_context_bridges_current_model_input_identity_and_lifetime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    input_ids = torch.tensor([101, 202, -1], dtype=torch.int32)
+    model = _model_with_layer_range()
+
+    with (
+        _npu_platform_runtime(monkeypatch),
+        _set_forward_context(
+            _vllm_config(),
+            num_tokens=3,
+            input_ids=input_ids,
+            model_instance=model,
+        ),
+    ):
+        context = core_forward_context.get_forward_context()
+        assert context.additional_kwargs["input_ids"] is input_ids
+        assert context.additional_kwargs["model_instance"] is model
+        assert _EXTRA_CTX.input_ids is input_ids
+        assert _EXTRA_CTX.model_instance is model
+
+    with pytest.raises(AssertionError, match="Forward context is not set"):
+        core_forward_context.get_forward_context()
+
+
+def test_v2_context_rejects_input_ids_that_exclude_padding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with (
+        _npu_platform_runtime(monkeypatch),
+        pytest.raises(ValueError, match="include every padded model-input token"),
+        _set_forward_context(
+            _vllm_config(),
+            num_tokens=4,
+            input_ids=torch.tensor([1, 2, 3], dtype=torch.int32),
+        ),
+    ):
+        pass
+
+
+def test_v1_shared_builder_preserves_direct_context_semantics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    input_ids = torch.tensor([7, 8], dtype=torch.int32)
+    model = _model_with_layer_range()
+    vllm_config = _vllm_config()
+    vllm_config.use_v2_model_runner = False
+    with _npu_platform_runtime(monkeypatch):
+        monkeypatch.setattr(ascend_forward_context.envs_vllm, "VLLM_USE_V2_MODEL_RUNNER", False)
+        with ascend_forward_context.set_ascend_forward_context(
+            None,
+            vllm_config,
+            num_tokens=2,
+            input_ids=input_ids,
+            model_instance=model,
+        ):
+            context = core_forward_context.get_forward_context()
+            assert context.input_ids is input_ids
+            assert context.model_instance is model
+            assert context.moe_comm_type is MoECommType.ALLGATHER
 
 
 @pytest.mark.parametrize(

@@ -309,14 +309,17 @@ class TestNPUPlatform(TestBase):
     def test_set_additional_forward_context_v2_includes_required_moe_fields(self):
         vllm_config = TestNPUPlatform.mock_vllm_config()
         dummy_comm_method = object()
+        input_ids = torch.tensor([11, 22, 33, -1, -1], dtype=torch.int32)
+        model_instance = torch.nn.Module()
+        model_instance.model = MagicMock(start_layer=0)
 
         with (
             patch("vllm_ascend.platform.envs_vllm.VLLM_USE_V2_MODEL_RUNNER", True, create=True),
-            patch("vllm_ascend.platform.is_moe_model", return_value=True),
-            patch("vllm_ascend.platform.enable_sp", return_value=False),
-            patch("vllm_ascend.platform.flashcomm2_enable", return_value=False),
-            patch("vllm.distributed.get_tensor_model_parallel_world_size", return_value=4),
-            patch("vllm.distributed.get_dp_group", return_value=MagicMock(world_size=1)),
+            patch("vllm_ascend.ascend_forward_context.is_moe_model", return_value=True),
+            patch("vllm_ascend.ascend_forward_context.enable_sp", return_value=False),
+            patch("vllm_ascend.ascend_forward_context.flashcomm2_enable", return_value=False),
+            patch("vllm_ascend.ascend_forward_context.get_tensor_model_parallel_world_size", return_value=4),
+            patch("vllm_ascend.ascend_forward_context.get_dp_group", return_value=MagicMock(world_size=1)),
             patch("vllm_ascend.ascend_forward_context.select_moe_comm_method", return_value=MoECommType.ALLGATHER),
             patch("vllm_ascend.ascend_forward_context.get_mc2_mask", return_value=None),
             patch("vllm_ascend.ops.fused_moe.moe_comm_method.get_moe_comm_method", return_value=dummy_comm_method),
@@ -326,22 +329,26 @@ class TestNPUPlatform(TestBase):
                 vllm_config=vllm_config,
                 dp_metadata=None,
                 num_tokens=5,
+                input_ids=input_ids,
+                model_instance=model_instance,
             )
 
         self.assertFalse(kwargs["in_profile_run"])
         self.assertEqual(kwargs["padded_num_tokens"], 8)
         self.assertIs(kwargs["moe_comm_method"], dummy_comm_method)
+        self.assertIs(kwargs["input_ids"], input_ids)
+        self.assertIs(kwargs["model_instance"], model_instance)
 
     def test_set_additional_forward_context_reads_v2_profile_override(self):
         vllm_config = TestNPUPlatform.mock_vllm_config()
 
         with (
             patch("vllm_ascend.platform.envs_vllm.VLLM_USE_V2_MODEL_RUNNER", True, create=True),
-            patch("vllm_ascend.platform.is_moe_model", return_value=True),
-            patch("vllm_ascend.platform.enable_sp", return_value=False),
-            patch("vllm_ascend.platform.flashcomm2_enable", return_value=False),
-            patch("vllm.distributed.get_tensor_model_parallel_world_size", return_value=2),
-            patch("vllm.distributed.get_dp_group", return_value=MagicMock(world_size=1)),
+            patch("vllm_ascend.ascend_forward_context.is_moe_model", return_value=True),
+            patch("vllm_ascend.ascend_forward_context.enable_sp", return_value=False),
+            patch("vllm_ascend.ascend_forward_context.flashcomm2_enable", return_value=False),
+            patch("vllm_ascend.ascend_forward_context.get_tensor_model_parallel_world_size", return_value=2),
+            patch("vllm_ascend.ascend_forward_context.get_dp_group", return_value=MagicMock(world_size=1)),
             patch("vllm_ascend.ascend_forward_context.select_moe_comm_method", return_value=MoECommType.ALLGATHER),
             patch("vllm_ascend.ascend_forward_context.get_mc2_mask", return_value=None),
             patch("vllm_ascend.ops.fused_moe.moe_comm_method.get_moe_comm_method", return_value=object()),

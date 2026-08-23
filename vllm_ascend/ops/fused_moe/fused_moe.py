@@ -178,7 +178,7 @@ class AscendUnquantizedFusedMoEMethod(UnquantizedFusedMoEMethod):
     ) -> torch.Tensor:
         zero_expert_num = getattr(layer, "zero_expert_num", 0)
         zero_expert_type = getattr(layer, "zero_expert_type", None)
-        input_ids = getattr(get_forward_context(), "input_ids", None)
+        input_ids = _EXTRA_CTX.input_ids
         num_shared_experts = getattr(layer, "n_shared_experts", 0)
         if num_shared_experts is None:
             num_shared_experts = 0
@@ -679,7 +679,7 @@ else:
                     ):
                         shared_out = tensor_model_parallel_all_reduce(shared_out)
                     set_flash_common3_context(shared_out=shared_out)
-                    input_ids = getattr(get_forward_context(), "input_ids", None)
+                    input_ids = _EXTRA_CTX.input_ids
 
                     topk_weights, topk_ids = select_experts(
                         hidden_states=hidden_states,

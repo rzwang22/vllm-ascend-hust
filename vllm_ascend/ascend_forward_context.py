@@ -56,6 +56,120 @@ def get_mrv2_in_profile_run() -> bool:
     return _mrv2_in_profile_run
 
 
+def build_ascend_forward_context(
+    *,
+    attn_metadata: Any,
+    vllm_config: VllmConfig,
+    num_tokens: int | None,
+    num_tokens_across_dp: torch.Tensor | None = None,
+    dp_metadata: Any = None,
+    in_profile_run: bool = False,
+    num_actual_tokens: int | None = None,
+    model_instance: torch.nn.Module | None = None,
+    is_draft_model: bool = False,
+    max_tokens_across_pcp: int = 0,
+    draft_attn_metadatas: Any = None,
+    has_sinks: bool = False,
+    input_ids: torch.Tensor | None = None,
+    eplb_heat_collection_status: bool = False,
+) -> dict[str, Any]:
+    """Build the Ascend-owned portion of a forward context."""
+    from vllm_ascend.ops.fused_moe.moe_comm_method import get_moe_comm_method
+
+    if input_ids is not None:
+        if input_ids.ndim != 1:
+            raise ValueError(
+                "Ascend MoE forward input_ids must be a one-dimensional token tensor, "
+                f"got shape {tuple(input_ids.shape)}."
+            )
+        if num_tokens is not None and input_ids.shape[0] != num_tokens:
+            raise ValueError(
+                "Ascend MoE forward input_ids must include every padded model-input token: "
+                f"got {input_ids.shape[0]} IDs for {num_tokens} tokens."
+            )
+
+    max_num_tokens = int(num_tokens_across_dp.max().item()) if num_tokens_across_dp is not None else num_tokens
+    moe_comm_type = select_moe_comm_method(max_num_tokens, vllm_config, is_draft_model)
+    moe_comm_method = get_moe_comm_method(moe_comm_type)
+    tp_world_size = get_tensor_model_parallel_world_size()
+
+    mmrs_fusion = tp_world_size <= 8
+    is_context_moe_model = is_drafter_moe_model(vllm_config) if is_draft_model else is_moe_model(vllm_config)
+    if is_context_moe_model:
+        flash_comm_v1_enabled = enable_sp(vllm_config) and num_tokens is not None
+        mmrs_fusion = False
+    elif is_draft_model:
+        flash_comm_v1_enabled = False
+    else:
+        flash_comm_v1_enabled = enable_sp(vllm_config) and num_tokens is not None and num_tokens > 1000
+    flashcomm_v2_enabled = flashcomm2_enable() and tp_world_size > 1 and num_tokens is not None
+
+    pad_size = 0
+    padded_length = None
+    if flash_comm_v1_enabled or flashcomm_v2_enabled:
+        pad_size = (tp_world_size - (num_tokens % tp_world_size)) % tp_world_size
+
+    if num_tokens is None and attn_metadata is not None:
+        if isinstance(attn_metadata, dict):
+            num_tokens = next(iter(attn_metadata.values())).num_actual_tokens
+        else:
+            num_tokens = attn_metadata.num_actual_tokens
+
+    dp_world_size = get_dp_group().world_size
+    if dp_world_size > 1 and dp_metadata is not None:
+        max_tokens_across_dp = dp_metadata.num_tokens_across_dp_cpu.max().item()
+        if flash_comm_v1_enabled or flashcomm_v2_enabled:
+            padded_length = (max_tokens_across_dp + tp_world_size - 1) // tp_world_size * tp_world_size
+            pad_size = padded_length - num_tokens
+    else:
+        max_tokens_across_dp = num_tokens
+
+    padded_num_tokens = None
+    mc2_mask = None
+    if num_tokens is not None:
+        if num_actual_tokens is None:
+            num_actual_tokens = num_tokens
+        padded_num_tokens = math.ceil(max_tokens_across_dp / tp_world_size) * tp_world_size
+        reserved_mc2_mask = get_mc2_mask()
+        if reserved_mc2_mask is not None:
+            mc2_mask = reserved_mc2_mask[:padded_num_tokens]
+            mc2_mask[:num_actual_tokens] = True
+            mc2_mask[num_actual_tokens:] = False
+
+    layer_idx = None
+    if has_layer_idx(model_instance):
+        layer_idx = model_instance.model.start_layer
+
+    return {
+        "draft_attn_metadatas": draft_attn_metadatas,
+        "input_ids": input_ids,
+        "moe_comm_type": moe_comm_type,
+        "moe_comm_method": moe_comm_method,
+        "in_profile_run": in_profile_run,
+        "capturing": False,
+        "sinks": has_sinks,
+        "mmrs_fusion": mmrs_fusion,
+        "num_tokens": num_tokens,
+        "num_tokens_across_dp": num_tokens_across_dp,
+        "flash_comm_v1_enabled": flash_comm_v1_enabled,
+        "flashcomm_v2_enabled": flashcomm_v2_enabled,
+        "pad_size": pad_size,
+        "padded_length": padded_length,
+        "is_first_layer": True,
+        "layer_idx": layer_idx,
+        "prefetch_mlp_gate_up_proj": False,
+        "prefetch_mlp_down_proj": False,
+        "model_instance": model_instance,
+        "is_draft_model": is_draft_model,
+        "is_draft_model_prefill": False,
+        "max_tokens_across_dp": max_tokens_across_dp,
+        "max_tokens_across_pcp": max_tokens_across_pcp,
+        "eplb_heat_collection_status": eplb_heat_collection_status,
+        "padded_num_tokens": padded_num_tokens,
+        "mc2_mask": mc2_mask,
+    }
+
+
 @contextmanager
 def set_ascend_forward_context(
     attn_metadata: Any,
@@ -90,107 +204,24 @@ def set_ascend_forward_context(
     }
     with set_forward_context(**forward_context_kwargs):
         forward_context = get_forward_context()
-        forward_context.draft_attn_metadatas = draft_attn_metadatas
-
-        forward_context.input_ids = input_ids
-
-        from vllm_ascend.ops.fused_moe.moe_comm_method import get_moe_comm_method
-
-        max_num_tokens = int(num_tokens_across_dp.max().item()) if num_tokens_across_dp is not None else num_tokens
-        moe_comm_type = select_moe_comm_method(max_num_tokens, vllm_config, is_draft_model)
-
-        forward_context.moe_comm_type = moe_comm_type
-        forward_context.moe_comm_method = get_moe_comm_method(moe_comm_type)
-
-        tp_world_size = get_tensor_model_parallel_world_size()
-
-        forward_context.in_profile_run = in_profile_run
-
-        # NOTE: This cannot be set using set_forward_context
-        # due to multiple warmups before actual capturing
-        forward_context.capturing = False
-
-        # TODO: remove it when fia merge in fiav2
-        forward_context.sinks = has_sinks
-
-        # TODO: remove it when torch_npu.npu_mm_reduce_scatter_base supports tp_size >= 16.
-        mmrs_fusion = tp_world_size <= 8
-
-        # set for sequence parallelism, 1000 is the batch size concurrency threshold
-        # for enabling the flashcomm_v1 or sequence_parallelism feature.
-        # Currently, it is an empirical value. In normal scenarios, if the concurrency
-        # exceeds this threshold, the performance benefits can be maximized.
-        # Conversely, if the concurrency is below the threshold,
-        # the performance may degrade due to the switching of communication methods.
-
-        # main model and drafter model may have different architecture
-        is_context_moe_model = is_drafter_moe_model(vllm_config) if is_draft_model else is_moe_model(vllm_config)
-        if is_context_moe_model:
-            flash_comm_v1_enabled = enable_sp(vllm_config) and num_tokens is not None
-            mmrs_fusion = False
-        elif is_draft_model:
-            # TODO: for dense drafter, `sp` is redundant and is not compatible with `dp` and `graph`.
-            # Disable it to avoid more problems.
-            flash_comm_v1_enabled = False
-        else:
-            flash_comm_v1_enabled = enable_sp(vllm_config) and num_tokens is not None and num_tokens > 1000
-        forward_context.mmrs_fusion = mmrs_fusion
-        forward_context.num_tokens = num_tokens
-        forward_context.flash_comm_v1_enabled = flash_comm_v1_enabled
-        # TODO(Levi-JQ): another PR to normalize the enabling logic for sp/fc2
-        forward_context.flashcomm_v2_enabled = flashcomm2_enable() and tp_world_size > 1 and num_tokens is not None
-
-        forward_context.pad_size = 0
-        if forward_context.flash_comm_v1_enabled or forward_context.flashcomm_v2_enabled:
-            pad_size = (tp_world_size - (num_tokens % tp_world_size)) % tp_world_size
-            forward_context.pad_size = pad_size
-
-        # set this for rope forward_oot using
-        forward_context.is_first_layer = True
-
-        # set layer_idx to enable optimization features that depend on this information.
-        # This is only applicable to models that contain these necessary attributes.
-        forward_context.layer_idx = None
-        if has_layer_idx(model_instance):
-            forward_context.layer_idx = model_instance.model.start_layer
-
-        forward_context.prefetch_mlp_gate_up_proj = False
-        forward_context.prefetch_mlp_down_proj = False
-        forward_context.model_instance = model_instance
-        forward_context.is_draft_model = is_draft_model
-        forward_context.is_draft_model_prefill = False
-
-        if num_tokens is None and attn_metadata is not None:
-            num_tokens = attn_metadata.num_actual_tokens
-
-        dp_world_size = get_dp_group().world_size
-        if dp_world_size > 1 and forward_context.dp_metadata is not None:
-            dp_meta = forward_context.dp_metadata
-            max_tokens_across_dp = dp_meta.num_tokens_across_dp_cpu.max().item()
-            if forward_context.flash_comm_v1_enabled or forward_context.flashcomm_v2_enabled:
-                padded_length = (max_tokens_across_dp + tp_world_size - 1) // tp_world_size * tp_world_size
-                pad_size = padded_length - num_tokens
-                forward_context.padded_length = padded_length
-                forward_context.pad_size = pad_size
-        else:
-            max_tokens_across_dp = num_tokens
-
-        forward_context.max_tokens_across_dp = max_tokens_across_dp
-        forward_context.max_tokens_across_pcp = max_tokens_across_pcp
-
-        forward_context.eplb_heat_collection_status = eplb_heat_collection_status
-
-        if num_tokens is not None:
-            if num_actual_tokens is None:
-                num_actual_tokens = num_tokens
-            # NOTE: token num which need to pad to when mc2
-            forward_context.padded_num_tokens = math.ceil(max_tokens_across_dp / tp_world_size) * tp_world_size
-            reserved_mc2_mask = get_mc2_mask()
-            if reserved_mc2_mask is not None:
-                mc2_mask = reserved_mc2_mask[: forward_context.padded_num_tokens]
-                mc2_mask[:num_actual_tokens] = True
-                mc2_mask[num_actual_tokens:] = False
-                forward_context.mc2_mask = mc2_mask
+        extra_context = build_ascend_forward_context(
+            attn_metadata=attn_metadata,
+            vllm_config=vllm_config,
+            num_tokens=num_tokens,
+            num_tokens_across_dp=num_tokens_across_dp,
+            dp_metadata=forward_context.dp_metadata,
+            in_profile_run=in_profile_run,
+            num_actual_tokens=num_actual_tokens,
+            model_instance=model_instance,
+            is_draft_model=is_draft_model,
+            max_tokens_across_pcp=max_tokens_across_pcp,
+            draft_attn_metadatas=draft_attn_metadatas,
+            has_sinks=has_sinks,
+            input_ids=input_ids,
+            eplb_heat_collection_status=eplb_heat_collection_status,
+        )
+        for name, value in extra_context.items():
+            setattr(forward_context, name, value)
         try:
             yield
         finally:
@@ -343,6 +374,7 @@ class _ExtraForwardContextProxy:
     """Unified forward-context access for v1/v2 model runners."""
 
     extra_attrs = (
+        "input_ids",
         "capturing",
         "moe_comm_type",
         "moe_comm_method",
