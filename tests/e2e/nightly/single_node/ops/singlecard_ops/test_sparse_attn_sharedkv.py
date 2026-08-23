@@ -25,8 +25,47 @@ NUM_KV_HEADS = 1
 SOFTMAX_SCALE = 1.0 / sqrt(HEAD_DIM)
 DEFAULT_WIN_LEFT = 127
 DEFAULT_WIN_RIGHT = 0
-DSA_BLOCK_SIZE = 32
-DSA_NUM_BLOCKS = 2
+
+
+@dataclass(frozen=True)
+class SharedKVAddressDiagnosticCase:
+    label: str
+    block_size: int
+    physical_block: int
+    seqused_kv: int
+    dtype: torch.dtype
+
+
+SHAREDKV_ADDRESS_CASES = (
+    pytest.param(
+        SharedKVAddressDiagnosticCase("A", 32, 0, 1, torch.bfloat16),
+        id="A-bs32-pb0-s2-1-bf16",
+    ),
+    pytest.param(
+        SharedKVAddressDiagnosticCase("B", 32, 1, 16, torch.bfloat16),
+        id="B-bs32-pb1-s2-16-bf16",
+    ),
+    pytest.param(
+        SharedKVAddressDiagnosticCase("C", 32, 1, 32, torch.bfloat16),
+        id="C-bs32-pb1-s2-32-bf16",
+    ),
+    pytest.param(
+        SharedKVAddressDiagnosticCase("D", 128, 1, 1, torch.bfloat16),
+        id="D-bs128-pb1-s2-1-bf16",
+    ),
+    pytest.param(
+        SharedKVAddressDiagnosticCase("E", 32, 1, 1, torch.float16),
+        id="E-bs32-pb1-s2-1-fp16",
+    ),
+)
+
+SHAREDKV_S2_BOUNDARY_CASES = tuple(
+    pytest.param(
+        SharedKVAddressDiagnosticCase(f"S2-{seqused_kv}", 32, 1, seqused_kv, torch.bfloat16),
+        id=f"s2-{seqused_kv}",
+    )
+    for seqused_kv in (1, 8, 15, 16, 17, 31, 32, 33)
+)
 
 
 @dataclass
@@ -229,23 +268,51 @@ def test_minus_one_terminates_sparse_slot_reads() -> None:
     _assert_matches_reference(first_out, _reference_attention(case, valid_slots))
 
 
-def test_first_token_prefill_reads_kernel_compatible_swa_page() -> None:
-    """Run one real arch32 shared-KV read from the V2 Ascend cache layout.
+def _build_diagnostic_block_table(
+    case: SharedKVAddressDiagnosticCase,
+) -> tuple[int, torch.Tensor]:
+    num_logical_blocks = (case.seqused_kv + case.block_size - 1) // case.block_size
+    num_physical_blocks = max(case.physical_block + 1, num_logical_blocks)
+    physical_blocks = [case.physical_block]
+    physical_blocks.extend(block_id for block_id in range(num_physical_blocks) if block_id != case.physical_block)
+    return num_physical_blocks, torch.tensor([physical_blocks[:num_logical_blocks]], dtype=torch.int32)
 
-    This is intentionally a single-kernel diagnostic regression. The explicit
-    synchronize before attention makes a preceding scatter failure attributable
-    and lets the small address inputs be logged without adding synchronization
-    to the production hot path.
-    """
+
+def _build_diagnostic_slot_mapping(
+    case: SharedKVAddressDiagnosticCase,
+    block_table_cpu: torch.Tensor,
+) -> torch.Tensor:
+    logical_slots = torch.arange(case.seqused_kv, dtype=torch.int64)
+    logical_blocks = torch.div(logical_slots, case.block_size, rounding_mode="floor")
+    block_offsets = logical_slots.remainder(case.block_size)
+    physical_blocks = block_table_cpu[0, logical_blocks].to(torch.int64)
+    return torch.stack((physical_blocks, block_offsets), dim=1).to(torch.int32)
+
+
+def _diagnostic_reference_attention(
+    q_cpu: torch.Tensor,
+    kv_cpu: torch.Tensor,
+) -> torch.Tensor:
+    q = q_cpu[0].float()
+    kv = kv_cpu[:, 0].float()
+    scores = torch.matmul(q, kv.transpose(0, 1)) * SOFTMAX_SCALE
+    return torch.matmul(torch.softmax(scores, dim=-1), kv).unsqueeze(0)
+
+
+def _run_sharedkv_address_diagnostic(
+    case: SharedKVAddressDiagnosticCase,
+) -> None:
+    """Run one synchronized PA_ND/TND scatter plus shared-KV read."""
     if get_ascend_device_type() is not AscendDeviceType.A2:
         pytest.skip("The shared-KV address regression targets Ascend 910B2/arch32.")
 
-    page_elements = DSA_BLOCK_SIZE * NUM_KV_HEADS * HEAD_DIM
-    page_bytes = page_elements * torch.tensor([], dtype=torch.bfloat16).element_size()
+    num_physical_blocks, block_table_cpu = _build_diagnostic_block_table(case)
+    slot_mapping_cpu = _build_diagnostic_slot_mapping(case, block_table_cpu)
+    element_size = torch.tensor([], dtype=case.dtype).element_size()
+    page_elements = case.block_size * NUM_KV_HEADS * HEAD_DIM
+    page_stride_bytes = page_elements * element_size
     page_offset_bytes = 0
-    page_stride_bytes = page_bytes
-    backing_bytes = DSA_NUM_BLOCKS * page_stride_bytes
-    physical_block = DSA_NUM_BLOCKS - 1
+    backing_bytes = num_physical_blocks * page_stride_bytes
     layer_name = "model.layers.0.self_attn.swa_cache"
 
     tensors: list[torch.Tensor] = []
@@ -253,41 +320,58 @@ def test_first_token_prefill_reads_kernel_compatible_swa_page() -> None:
         backing = torch.zeros(backing_bytes, dtype=torch.uint8, device="npu:0")
         (swa_kv_cache,) = _adjust_dsv4_kv_layout(
             backing,
-            [(DSA_NUM_BLOCKS, DSA_BLOCK_SIZE, NUM_KV_HEADS, HEAD_DIM)],
-            [torch.bfloat16],
+            [
+                (
+                    num_physical_blocks,
+                    case.block_size,
+                    NUM_KV_HEADS,
+                    HEAD_DIM,
+                )
+            ],
+            [case.dtype],
             page_stride_bytes,
             page_offset_bytes,
         )
-        generator = torch.Generator().manual_seed(20260823)
-        q_cpu = torch.randn(
-            (1, NUM_Q_HEADS, HEAD_DIM),
-            dtype=torch.float32,
-            generator=generator,
-        ).to(torch.bfloat16)
-        kv_cpu = torch.randn(
-            (1, NUM_KV_HEADS, HEAD_DIM),
-            dtype=torch.float32,
-            generator=generator,
-        ).to(torch.bfloat16)
+        generator = torch.Generator().manual_seed(
+            20260823 + case.block_size + case.physical_block + case.seqused_kv + element_size
+        )
+        q_cpu = (
+            torch.randn(
+                (1, NUM_Q_HEADS, HEAD_DIM),
+                dtype=torch.float32,
+                generator=generator,
+            )
+            .mul_(0.1)
+            .to(case.dtype)
+        )
+        kv_cpu = (
+            torch.randn(
+                (case.seqused_kv, NUM_KV_HEADS, HEAD_DIM),
+                dtype=torch.float32,
+                generator=generator,
+            )
+            .mul_(0.1)
+            .to(case.dtype)
+        )
         q = q_cpu.npu()
         kv = kv_cpu.npu()
-        ori_block_table = torch.tensor([[physical_block]], dtype=torch.int32, device="npu:0")
-        slot_mapping = torch.tensor([[physical_block, 0]], dtype=torch.int32, device="npu:0")
+        ori_block_table = block_table_cpu.npu()
+        slot_mapping = slot_mapping_cpu.npu()
         cu_seqlens_q = torch.tensor([0, 1], dtype=torch.int32, device="npu:0")
-        seqused_kv = torch.tensor([1], dtype=torch.int32, device="npu:0")
+        seqused_kv = torch.tensor([case.seqused_kv], dtype=torch.int32, device="npu:0")
         sinks = torch.full((NUM_Q_HEADS,), -10000.0, dtype=torch.float32, device="npu:0")
         metadata = torch.ops._C_ascend.npu_sparse_attn_sharedkv_metadata(
             num_heads_q=NUM_Q_HEADS,
             num_heads_kv=NUM_KV_HEADS,
             head_dim=HEAD_DIM,
             cu_seqlens_q=cu_seqlens_q,
-            cu_seqlens_ori_kv=cu_seqlens_q,
+            cu_seqlens_ori_kv=None,
             cu_seqlens_cmp_kv=None,
             seqused_q=None,
             seqused_kv=seqused_kv,
             batch_size=1,
             max_seqlen_q=1,
-            max_seqlen_kv=1,
+            max_seqlen_kv=case.seqused_kv,
             ori_topk=0,
             cmp_topk=0,
             cmp_ratio=1,
@@ -319,16 +403,30 @@ def test_first_token_prefill_reads_kernel_compatible_swa_page() -> None:
         DeviceOperator.dsa_kv_compress_scatter(swa_kv_cache, kv, slot_mapping)
         torch.npu.synchronize()
 
-        element_size = swa_kv_cache.element_size()
-        access_min_bytes = swa_kv_cache.storage_offset() * element_size + physical_block * page_stride_bytes
-        access_max_bytes_exclusive = access_min_bytes + HEAD_DIM * element_size
+        cache_storage_offset_bytes = swa_kv_cache.storage_offset() * element_size
+        block_stride_bytes = swa_kv_cache.stride(0) * element_size
+        token_stride_bytes = swa_kv_cache.stride(1) * element_size
+        accessed_starts = [
+            cache_storage_offset_bytes
+            + int(physical_block) * block_stride_bytes
+            + int(block_offset) * token_stride_bytes
+            for physical_block, block_offset in slot_mapping_cpu.tolist()
+        ]
+        access_min_bytes = min(accessed_starts)
+        access_max_bytes_exclusive = max(accessed_starts) + HEAD_DIM * element_size
         assert swa_kv_cache.data_ptr() == backing.data_ptr() + page_offset_bytes
-        assert swa_kv_cache.stride(0) * element_size == page_stride_bytes
+        assert block_stride_bytes == page_stride_bytes
+        assert access_min_bytes >= 0
         assert access_max_bytes_exclusive <= backing.untyped_storage().nbytes()
         diagnostic = {
+            "case": case.label,
             "rank": int(os.getenv("RANK", "0")),
             "layer_name": layer_name,
             "compress_ratio": 1,
+            "dtype": str(case.dtype),
+            "block_size": case.block_size,
+            "physical_block": case.physical_block,
+            "seqused_kv": case.seqused_kv,
             "q": {
                 "shape": list(q.shape),
                 "dtype": str(q.dtype),
@@ -346,20 +444,21 @@ def test_first_token_prefill_reads_kernel_compatible_swa_page() -> None:
                 "data_ptr": backing.data_ptr(),
                 "storage_bytes": backing.untyped_storage().nbytes(),
             },
-            "block_size": DSA_BLOCK_SIZE,
-            "ori_block_table_row": ori_block_table[0].cpu().tolist(),
-            "slot_mapping": slot_mapping.cpu().tolist(),
-            "cu_seqlens_q": cu_seqlens_q.cpu().tolist(),
-            "cu_seqlens_ori_kv": cu_seqlens_q.cpu().tolist(),
-            "seqused_kv": seqused_kv.cpu().tolist(),
+            "ori_block_table": block_table_cpu.tolist(),
+            "slot_mapping": slot_mapping_cpu.tolist(),
+            "cu_seqlens_q": [0, 1],
+            "cu_seqlens_ori_kv": None,
             "sas_metadata": {"shape": list(metadata.shape), "dtype": str(metadata.dtype)},
             "sinks": {"shape": list(sinks.shape), "dtype": str(sinks.dtype)},
-            "access_byte_offsets": {
+            "theoretical_accessed_byte_range": {
                 "min": access_min_bytes,
                 "max_exclusive": access_max_bytes_exclusive,
             },
         }
-        print("SHAREDKV_ADDRESS_DIAGNOSTIC " + json.dumps(diagnostic, sort_keys=True))
+        print(
+            "SHAREDKV_ADDRESS_DIAGNOSTIC " + json.dumps(diagnostic, sort_keys=True),
+            flush=True,
+        )
 
         out, _ = torch.ops._C_ascend.npu_sparse_attn_sharedkv(
             q,
@@ -370,7 +469,7 @@ def test_first_token_prefill_reads_kernel_compatible_swa_page() -> None:
             ori_block_table=ori_block_table,
             cmp_block_table=None,
             cu_seqlens_q=cu_seqlens_q,
-            cu_seqlens_ori_kv=cu_seqlens_q,
+            cu_seqlens_ori_kv=None,
             cu_seqlens_cmp_kv=None,
             seqused_q=None,
             seqused_kv=seqused_kv,
@@ -389,16 +488,30 @@ def test_first_token_prefill_reads_kernel_compatible_swa_page() -> None:
         tensors.append(out)
         torch.npu.synchronize()
 
-        expected = kv_cpu.expand(1, NUM_Q_HEADS, HEAD_DIM)
-        assert out.dtype == torch.bfloat16
+        expected = _diagnostic_reference_attention(q_cpu, kv_cpu)
+        assert out.dtype == case.dtype
         assert out.shape == expected.shape
         assert torch.isfinite(out).all().cpu().item()
         torch.testing.assert_close(out.float().cpu(), expected.float(), atol=3e-2, rtol=3e-2)
-        print("SHAREDKV_ADDRESS_PASS")
+        print(f"SHAREDKV_ADDRESS_PASS case={case.label}", flush=True)
     finally:
         tensors.clear()
         gc.collect()
         torch.npu.empty_cache()
+
+
+@pytest.mark.parametrize("case", SHAREDKV_ADDRESS_CASES)
+def test_first_token_prefill_reads_kernel_compatible_swa_page(
+    case: SharedKVAddressDiagnosticCase,
+) -> None:
+    _run_sharedkv_address_diagnostic(case)
+
+
+@pytest.mark.parametrize("case", SHAREDKV_S2_BOUNDARY_CASES)
+def test_first_token_prefill_sharedkv_s2_boundaries(
+    case: SharedKVAddressDiagnosticCase,
+) -> None:
+    _run_sharedkv_address_diagnostic(case)
 
 
 def test_rejects_wrong_ori_sparse_indices_dtype() -> None:
