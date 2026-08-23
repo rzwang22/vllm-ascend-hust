@@ -106,7 +106,7 @@ def test_tnd_query_extent_uses_full_tensor_element_count_at_both_assignments() -
         ) in kernel
 
 
-def test_preload_run_info_fields_have_default_member_initializers() -> None:
+def test_preload_run_info_pipeline_state_is_aggregate_zero_initialized() -> None:
     common = _read(KERNEL_COMMON)
     run_info = common[common.index("struct RunInfo {") : common.index("struct ConstInfo {")]
     declarations = [
@@ -118,9 +118,28 @@ def test_preload_run_info_fields_have_default_member_initializers() -> None:
     assert instance_fields
     assert all("=" in line for line in instance_fields)
 
-    declaration = "RunInfo extraInfo[SAS_PRELOAD_TASK_CACHE_SIZE];"
-    assert declaration in _read(SWA_KERNEL)
-    assert declaration in _read(SCFA_KERNEL)
+    initialized_declaration = "RunInfo extraInfo[SAS_PRELOAD_TASK_CACHE_SIZE] = {};"
+    bare_declaration = "RunInfo extraInfo[SAS_PRELOAD_TASK_CACHE_SIZE];"
+    for kernel_path in (SWA_KERNEL, SCFA_KERNEL):
+        kernel = _read(kernel_path)
+        assert kernel.count(initialized_declaration) == 1
+        assert bare_declaration not in kernel
+
+
+def test_preload_pipeline_guards_each_cache_slot_with_is_valid() -> None:
+    for kernel_path in (SWA_KERNEL, SCFA_KERNEL):
+        kernel = _read(kernel_path)
+        pipeline = kernel[kernel.index("::PreloadPipeline(") :]
+        _assert_in_order(
+            pipeline,
+            (
+                "CalcParams(loop, cmpLoop, s2Start, s2LoopIdx, extraInfo0);",
+                "if (extraInfo0.isValid)",
+                "if (extraInfo2.isValid)",
+                "if (extraInfo1.isValid)",
+                "extraInfo1.isValid = false;",
+            ),
+        )
 
 
 def test_optional_sparse_indices_are_guarded_by_serialized_tiling_flags() -> None:

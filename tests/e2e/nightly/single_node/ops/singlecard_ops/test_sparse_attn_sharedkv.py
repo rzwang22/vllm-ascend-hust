@@ -401,13 +401,17 @@ def _print_sharedkv_runtime_fingerprint() -> None:
     cmp_fields = _SparseAttnSharedkvCmpParams._fields_
     scalar_payload_bytes = sum(ctypes.sizeof(field_type) for _, field_type in (*base_fields, *cmp_fields))
     operator_root = repo_root / "csrc" / "attention" / "sparse_attn_sharedkv"
+    swa_kernel_path = operator_root / "op_kernel" / "arch32" / "sparse_attn_sharedkv_swa_kernel.h"
+    scfa_kernel_path = operator_root / "op_kernel" / "arch32" / "sparse_attn_sharedkv_scfa_kernel.h"
     source_paths = (
         repo_root / "csrc" / "torch_binding.cpp",
         operator_root / "op_host" / "sparse_attn_sharedkv_tiling.cpp",
         operator_root / "op_host" / "sparse_attn_sharedkv_tiling.h",
         operator_root / "op_kernel" / "sparse_attn_sharedkv_common.h",
-        operator_root / "op_kernel" / "arch32" / "sparse_attn_sharedkv_swa_kernel.h",
+        swa_kernel_path,
+        scfa_kernel_path,
     )
+    initialized_runinfo = "RunInfo extraInfo[SAS_PRELOAD_TASK_CACHE_SIZE] = {};"
     fingerprint = {
         "plugin_head": git_result.stdout.strip() if git_result.returncode == 0 else None,
         "plugin_head_error": git_result.stderr.strip() if git_result.returncode != 0 else None,
@@ -416,6 +420,10 @@ def _print_sharedkv_runtime_fingerprint() -> None:
         "loaded_custom_op_libraries": _loaded_custom_op_libraries(),
         "custom_op_artifacts": _custom_op_artifacts(),
         "operator_sources": [_file_fingerprint(path) for path in source_paths],
+        "runinfo_zero_initialized": {
+            "swa": initialized_runinfo in swa_kernel_path.read_text(),
+            "scfa": initialized_runinfo in scfa_kernel_path.read_text(),
+        },
         "tiling": {
             "scalar_payload_bytes_without_padding": scalar_payload_bytes,
             "expected_native_layout_bytes": ctypes.sizeof(_SparseAttnSharedkvTilingData),

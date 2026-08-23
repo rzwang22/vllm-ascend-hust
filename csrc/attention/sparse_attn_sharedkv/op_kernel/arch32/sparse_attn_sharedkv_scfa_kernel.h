@@ -673,7 +673,7 @@ __aicore__ inline void SparseAttnSharedkvScfa<SAST>::GetBN2Idx(uint32_t bN2Idx, 
 template <typename SAST>
 __aicore__ inline void SparseAttnSharedkvScfa<SAST>::ProcessBalance()
 {
-    RunInfo extraInfo[SAS_PRELOAD_TASK_CACHE_SIZE];
+    RunInfo extraInfo[SAS_PRELOAD_TASK_CACHE_SIZE] = {};
     uint32_t gloop = 0;
     uint32_t cmpLoop = 0;
     uint32_t gS1LoopEnd = 0;
