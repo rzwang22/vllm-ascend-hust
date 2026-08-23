@@ -22,11 +22,15 @@ from vllm.v1.kv_cache_interface import (
     KVCacheConfig,
     KVCacheGroupSpec,
     KVCacheTensor,
+    UniformTypeKVCacheSpecs,
 )
 from vllm.v1.worker.gpu import model_runner as vllm_model_runner
 from vllm.v1.worker.gpu.cudagraph_utils import ModelCudaGraphManager
 
 from vllm_ascend.core.kv_cache_interface import AscendSlidingWindowMLASpec
+from vllm_ascend.patch.platform.patch_kv_cache_utils import (
+    _get_kv_cache_config_deepseek_v4,
+)
 from vllm_ascend.worker.v2 import attn_utils
 from vllm_ascend.worker.v2.spec_decode.dspark import (
     AscendDSparkSpeculator,
@@ -407,6 +411,53 @@ def test_dsv4_allocator_keeps_single_shared_kv_page() -> None:
     assert len(caches[DRAFT_LAYERS[0]]) == 1
     assert caches[DRAFT_LAYERS[0]][0].shape == (2, 16, 1, 64)
     assert caches[DRAFT_LAYERS[0]][0].data_ptr() == raw_cache.data_ptr()
+
+
+def test_current_core_uses_ascend_nonpacked_dsv4_planner() -> None:
+    from vllm.v1.core import kv_cache_utils as core_kv_cache_utils
+
+    assert core_kv_cache_utils._get_kv_cache_config_packed is _get_kv_cache_config_deepseek_v4
+
+
+def test_ascend_dsv4_planner_keeps_group_local_pages_kernel_contiguous() -> None:
+    config = _config()
+    config.cache_config = SimpleNamespace(num_gpu_blocks_override=None)
+    spec = _spec()
+    target_names = (TARGET_LAYER, "model.layers.1.self_attn.swa_cache")
+    target_uniform = UniformTypeKVCacheSpecs.from_specs({name: spec for name in target_names})
+    draft_uniform = UniformTypeKVCacheSpecs.from_specs({DRAFT_LAYERS[0]: spec})
+    assert target_uniform is not None
+    assert draft_uniform is not None
+    groups = [
+        KVCacheGroupSpec(
+            layer_names=list(target_names),
+            kv_cache_spec=target_uniform,
+        ),
+        KVCacheGroupSpec(
+            layer_names=[DRAFT_LAYERS[0]],
+            kv_cache_spec=draft_uniform,
+        ),
+    ]
+    expected_blocks = 4
+    per_block_bytes = spec.page_size_bytes * 3
+    available_memory = per_block_bytes * expected_blocks + spec.page_size_bytes // 2
+
+    num_blocks, tensors = _get_kv_cache_config_deepseek_v4(
+        config,
+        groups,
+        available_memory,
+    )
+
+    assert num_blocks == expected_blocks
+    assert [tensor.shared_by for tensor in tensors] == [
+        [target_names[0]],
+        [target_names[1]],
+        [DRAFT_LAYERS[0]],
+    ]
+    assert all(tensor.offset == 0 for tensor in tensors)
+    assert all(tensor.block_stride == 0 for tensor in tensors)
+    assert all(tensor.size == spec.page_size_bytes * expected_blocks for tensor in tensors)
+    assert sum(tensor.size for tensor in tensors) <= available_memory
 
 
 def test_dsv4_allocator_honors_packed_offset_and_block_stride() -> None:

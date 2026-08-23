@@ -382,10 +382,11 @@ def validate_dsa_sharedkv_page_contract(
 ) -> None:
     """Validate the PA_ND inputs shared by DSA KV scatter and attention.
 
-    The custom kernel accepts page-strided views, so stride(0) may exceed one
-    logical page when DeepSeek V4 caches share a backing allocation. Inner
-    dimensions must still be dense, and every view must remain inside that
-    backing storage.
+    The arch32 shared-KV kernel consumes a page-local PA_ND tensor. A view may
+    begin at a non-zero aligned storage offset, but physical blocks must be
+    adjacent within that view; core's interleaved packed block stride is not a
+    valid shared-KV descriptor. Inner dimensions must be dense, and the view
+    must remain inside its backing storage.
     """
     prefix = f"DSA shared-KV contract for {layer_name}:"
     if kv_cache.ndim != 4:
@@ -411,9 +412,10 @@ def validate_dsa_sharedkv_page_contract(
             f"expected (*, {expected_inner_strides[0]}, {expected_inner_strides[1]}, 1)."
         )
     logical_page_stride = block_size * expected_inner_strides[0]
-    if kv_cache.stride(0) < logical_page_stride:
+    if kv_cache.stride(0) != logical_page_stride:
         raise ValueError(
-            f"{prefix} ori_kv page stride {kv_cache.stride(0)} is smaller than one page {logical_page_stride}."
+            f"{prefix} ori_kv must use page-local physical blocks; got stride(0) "
+            f"{kv_cache.stride(0)}, expected {logical_page_stride}. Interleaved packed KV pages are unsupported."
         )
     maximum_storage_index = kv_cache.storage_offset() + sum(
         (size - 1) * stride for size, stride in zip(kv_cache.shape, kv_cache.stride())
