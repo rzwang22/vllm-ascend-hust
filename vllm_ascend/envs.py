@@ -90,6 +90,10 @@ env_variables: dict[str, Callable[[], Any]] = {
     # 1: only quant case enable nz;
     # 2: enable nz as long as possible.
     "VLLM_ASCEND_ENABLE_NZ": lambda: int(os.getenv("VLLM_ASCEND_ENABLE_NZ", 1)),
+    # Diagnostic-only audit for DSpark ModelSlim W8A8 expert NZ descriptors.
+    # 0: disabled (default), 1: collect descriptor metadata on rank zero and
+    # print one record before the first expert GMM. This flag is non-sensitive.
+    "DSPARK_DIAG_W8A8_NZ": lambda: bool(int(os.getenv("DSPARK_DIAG_W8A8_NZ", "0"))),
     # Whether to anbale dynamic EPLB
     "DYNAMIC_EPLB": lambda: os.getenv("DYNAMIC_EPLB", "false").lower(),
     # Whether to enable fused MC2 (`dispatch_gmm_combine_decode` / `dispatch_ffn_combine`).

@@ -47,6 +47,7 @@ from vllm.v1.kv_cache_interface import (
 from vllm.v1.worker.gpu.model_states.interface import ModelSpecificAttnMetadata
 from vllm.v1.worker.utils import AttentionGroup
 
+from vllm_ascend import envs as ascend_envs
 from vllm_ascend.attention.attention_mask import AttentionMaskBuilder
 from vllm_ascend.attention.attention_v1 import AscendAttentionState
 from vllm_ascend.attention.dsa_v1 import AscendDSAMetadataBuilder
@@ -171,6 +172,11 @@ def bind_kv_cache(
         for layer_name, previous_cache in previous_caches.items():
             forward_context[layer_name].kv_cache = previous_cache
         raise
+
+    if ascend_envs.DSPARK_DIAG_W8A8_NZ:
+        from vllm_ascend.diagnostics.w8a8_nz import record_kv_cache_initialized
+
+        record_kv_cache_initialized(kv_caches)
 
 
 def get_kv_cache_spec(vllm_config: VllmConfig) -> dict[str, KVCacheSpec]:

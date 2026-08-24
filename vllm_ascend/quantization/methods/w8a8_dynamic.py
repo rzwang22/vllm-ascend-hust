@@ -23,6 +23,7 @@ import torch_npu
 from vllm.config import CompilationMode, get_current_vllm_config
 from vllm.logger import logger
 
+from vllm_ascend import envs as ascend_envs
 from vllm_ascend.ascend_config import get_ascend_config
 from vllm_ascend.ascend_forward_context import _EXTRA_CTX, MoECommType
 from vllm_ascend.distributed.parallel_state import get_mc2_group
@@ -365,6 +366,11 @@ class AscendW8A8DynamicFusedMoEMethod(AscendMoEScheme):
         layer.w13_weight_offset.data = layer.w13_weight_offset.data.view(layer.w13_weight_offset.data.shape[0], -1)
         layer.w2_weight_scale.data = layer.w2_weight_scale.data.view(layer.w2_weight_scale.data.shape[0], -1)
         layer.w2_weight_offset.data = layer.w2_weight_offset.data.view(layer.w2_weight_offset.data.shape[0], -1)
+
+        if ascend_envs.DSPARK_DIAG_W8A8_NZ and self.quant_type == QuantType.W8A8:
+            from vllm_ascend.diagnostics.w8a8_nz import record_post_load
+
+            record_post_load(layer)
 
         if get_ascend_config().enable_fused_mc2 == 1:
             layer.fused_w1_scale = scale_from_float_to_int64(layer.w13_weight_scale.data)

@@ -22,6 +22,7 @@ import torch.nn.functional as F
 import torch_npu
 from vllm.triton_utils import HAS_TRITON
 
+from vllm_ascend import envs as ascend_envs
 from vllm_ascend.device.mxfp_compat import (
     FLOAT8_E8M0FNU_DTYPE,
     QUANT_DTYPES,
@@ -141,6 +142,14 @@ class BaseDeviceAdaptor:
     ):
         if use_mxfp_quant:
             raise RuntimeError("MXFP MoE quantization is only supported on Ascend A5.")
+
+        if ascend_envs.DSPARK_DIAG_W8A8_NZ:
+            from vllm_ascend.diagnostics.w8a8_nz import record_pre_gmm
+
+            record_pre_gmm(
+                weight,
+                operator_variant="single_tensor::grouped_matmul_swiglu_quant_weight_nz",
+            )
 
         return torch.ops._C_ascend.grouped_matmul_swiglu_quant_weight_nz(
             x=x,
