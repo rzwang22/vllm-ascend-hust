@@ -58,6 +58,11 @@ class AscendMLAAttentionSpec(MLAAttentionSpec):
     c8_k_scale_cache_dtype: torch.dtype = field(default_factory=_get_c8_k_scale_cache_dtype)
 
     @property
+    def storage_block_size(self) -> int:
+        """Return the physical block size consumed by Ascend kernels."""
+        return self.block_size
+
+    @property
     def page_size_bytes(self) -> int:
         if self.cache_sparse_c8:
             assert self.sparse_head_dim is not None

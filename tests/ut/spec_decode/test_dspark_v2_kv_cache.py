@@ -27,7 +27,10 @@ from vllm.v1.kv_cache_interface import (
 from vllm.v1.worker.gpu import model_runner as vllm_model_runner
 from vllm.v1.worker.gpu.cudagraph_utils import ModelCudaGraphManager
 
-from vllm_ascend.core.kv_cache_interface import AscendSlidingWindowMLASpec
+from vllm_ascend.core.kv_cache_interface import (
+    AscendMLAAttentionSpec,
+    AscendSlidingWindowMLASpec,
+)
 from vllm_ascend.patch.platform.patch_kv_cache_utils import (
     _get_kv_cache_config_deepseek_v4,
 )
@@ -411,6 +414,80 @@ def test_dsv4_allocator_keeps_single_shared_kv_page() -> None:
     assert len(caches[DRAFT_LAYERS[0]]) == 1
     assert caches[DRAFT_LAYERS[0]][0].shape == (2, 16, 1, 64)
     assert caches[DRAFT_LAYERS[0]][0].data_ptr() == raw_cache.data_ptr()
+
+
+@pytest.mark.parametrize("compress_ratio", [4, 128])
+def test_compressed_dsv4_cache_keeps_physical_page_geometry_and_identity(
+    compress_ratio: int,
+) -> None:
+    config = _config()
+    config.model_config = SimpleNamespace(
+        hf_config=SimpleNamespace(compress_ratios=[compress_ratio]),
+    )
+    layer_name = "model.layers.0.self_attn.attn"
+    spec = AscendMLAAttentionSpec(
+        block_size=128,
+        num_kv_heads=1,
+        head_size=64,
+        dtype=torch.bfloat16,
+        model_version="deepseek_v4",
+        compress_ratio=compress_ratio,
+    )
+    assert spec.storage_block_size == 128
+    assert spec.page_size_bytes == 128 * 64 * torch.empty((), dtype=torch.bfloat16).element_size()
+
+    class _DSABackend:
+        @staticmethod
+        def get_kv_cache_shape(
+            num_blocks,
+            block_size,
+            num_kv_heads,
+            head_size,
+            *_args,
+        ):
+            return num_blocks, block_size, num_kv_heads, head_size
+
+    kv_cache_config = KVCacheConfig(
+        num_blocks=2,
+        kv_cache_tensors=[],
+        kv_cache_groups=[],
+    )
+    raw_cache = torch.zeros(
+        spec.page_size_bytes * kv_cache_config.num_blocks,
+        dtype=torch.int8,
+    )
+    cache = attn_utils._view_dsv4_cache(
+        raw_cache,
+        spec,
+        _DSABackend,
+        kv_cache_config,
+        None,
+    )
+    assert len(cache) == 1
+    cache_tensor = cache[0]
+    assert cache_tensor.shape == (2, 128, 1, 64)
+    assert cache_tensor.dtype == torch.bfloat16
+    assert cache_tensor.data_ptr() == raw_cache.data_ptr()
+    assert cache_tensor.untyped_storage().data_ptr() == raw_cache.untyped_storage().data_ptr()
+    assert cache_tensor.untyped_storage().nbytes() == raw_cache.untyped_storage().nbytes()
+
+    layer = _FakeAttentionLayer(spec)
+    context = config.compilation_config.static_forward_context
+    context[layer_name] = layer
+    runner_caches = []
+    with set_current_vllm_config(config):
+        attn_utils.bind_kv_cache(
+            {layer_name: cache},
+            context,
+            runner_caches,
+        )
+
+    assert layer.kv_cache is cache
+    assert len(runner_caches) == 1
+    assert runner_caches[0] is cache
+    assert layer.kv_cache[0] is cache_tensor
+    assert layer.kv_cache[0].data_ptr() == raw_cache.data_ptr()
+    assert layer.kv_cache[0].untyped_storage().data_ptr() == raw_cache.untyped_storage().data_ptr()
 
 
 def test_current_core_uses_ascend_nonpacked_dsv4_planner() -> None:

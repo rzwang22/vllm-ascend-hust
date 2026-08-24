@@ -127,6 +127,7 @@ def test_dspark_proposal_inputs_prepare_only_npu() -> None:
         )
 
         import vllm_ascend
+        from vllm_ascend.core.kv_cache_interface import AscendMLAAttentionSpec
         from vllm_ascend.ops.dsa import _build_kv_cache
         from vllm_ascend.worker.v2.spec_decode.dspark import (
             AscendDSparkProposalInputs,
@@ -190,9 +191,17 @@ def test_dspark_proposal_inputs_prepare_only_npu() -> None:
         indexer_kv_specs = {
             name: spec for name, spec in kv_cache_specs.items() if name.endswith(INDEXER_KV_CACHE_SUFFIX)
         }
+        compressed_kv_specs = {
+            name: spec
+            for name, spec in kv_cache_specs.items()
+            if isinstance(spec, AscendMLAAttentionSpec) and spec.compress_ratio > 1
+        }
         assert indexer_kv_specs, "DeepSeek V4 prepare-only must discover at least one indexer KV cache."
+        assert compressed_kv_specs, "DeepSeek V4 prepare-only must discover compressed KV caches."
+        assert {spec.compress_ratio for spec in compressed_kv_specs.values()} == {4, 128}
         assert all(spec.block_size == PREPARE_ONLY_CACHE_BLOCK_SIZE for spec in indexer_kv_specs.values())
-        assert all(spec.storage_block_size == 32 for spec in indexer_kv_specs.values())
+        assert all(spec.block_size == PREPARE_ONLY_CACHE_BLOCK_SIZE for spec in compressed_kv_specs.values())
+        assert all(spec.storage_block_size == PREPARE_ONLY_CACHE_BLOCK_SIZE for spec in compressed_kv_specs.values())
         available_memory = _kv_cache_budget(os.environ)
         kv_cache_config = get_kv_cache_configs(
             vllm_config,
@@ -205,41 +214,73 @@ def test_dspark_proposal_inputs_prepare_only_npu() -> None:
 
         forward_context = vllm_config.compilation_config.static_forward_context
         indexer_kv_diagnostics = []
-        for layer_name, spec in sorted(indexer_kv_specs.items()):
-            indexer_cache_owner = forward_context[layer_name]
-            runtime_container = indexer_cache_owner.kv_cache
+        compressed_kv_diagnostics = []
+        for layer_name, spec in sorted(compressed_kv_specs.items()):
+            cache_owner = forward_context[layer_name]
+            runtime_container = cache_owner.kv_cache
             assert isinstance(runtime_container, list)
-            assert len(runtime_container) == 2
-            indexer_k_cache, indexer_scale_cache = runtime_container
-            assert indexer_k_cache.dtype == torch.int8
-            assert indexer_scale_cache.dtype == torch.float16
-            assert indexer_k_cache.ndim == 4
-            assert indexer_scale_cache.ndim == 4
-            assert indexer_k_cache.shape[1] == spec.storage_block_size == 32
-            assert indexer_scale_cache.shape[1] == spec.storage_block_size == 32
-            assert indexer_k_cache.shape[:3] == indexer_scale_cache.shape[:3]
+            assert runtime_container
+            primary_cache = runtime_container[0]
+            assert primary_cache.dtype == spec.dtype
+            assert primary_cache.ndim == 4
+            assert primary_cache.shape[1] == spec.storage_block_size == PREPARE_ONLY_CACHE_BLOCK_SIZE
 
-            dsa_layer_name = layer_name.removesuffix(INDEXER_KV_CACHE_SUFFIX)
+            is_indexer = layer_name.endswith(INDEXER_KV_CACHE_SUFFIX)
+            cache_role = "indexer" if is_indexer else "compressed_kv"
+            if is_indexer:
+                assert len(runtime_container) == 2
+                indexer_k_cache, indexer_scale_cache = runtime_container
+                assert indexer_k_cache.dtype == torch.int8
+                assert indexer_scale_cache.dtype == torch.float16
+                assert indexer_scale_cache.ndim == 4
+                assert indexer_scale_cache.shape[1] == spec.storage_block_size
+                assert indexer_k_cache.shape[:3] == indexer_scale_cache.shape[:3]
+                dsa_layer_name = layer_name.removesuffix(INDEXER_KV_CACHE_SUFFIX)
+            else:
+                assert layer_name.endswith(".attn")
+                assert len(runtime_container) == 1
+                indexer_scale_cache = None
+                dsa_layer_name = layer_name.removesuffix(".attn")
+
             dsa_layer = forward_context[dsa_layer_name]
             forward_kv_cache = _build_kv_cache(
                 dsa_layer,
                 SimpleNamespace(virtual_engine=None),
             )
-            assert forward_kv_cache[4] is indexer_k_cache
-            assert forward_kv_cache[5] is indexer_scale_cache
+            if is_indexer:
+                assert forward_kv_cache[4] is primary_cache
+                assert forward_kv_cache[5] is indexer_scale_cache
+            else:
+                assert forward_kv_cache[0] is primary_cache
             assert sum(cache is runtime_container for cache in runner.kv_caches) == 1
-            indexer_kv_diagnostics.append(
-                {
-                    "layer_name": layer_name,
-                    "spec_block_size": spec.block_size,
-                    "storage_block_size": spec.storage_block_size,
-                    "key_shape": tuple(indexer_k_cache.shape),
-                    "key_dtype": str(indexer_k_cache.dtype),
-                    "scale_shape": tuple(indexer_scale_cache.shape),
-                    "scale_dtype": str(indexer_scale_cache.dtype),
-                    "binder_identity": True,
-                    "forward_identity": True,
-                }
+            diagnostic = {
+                "rank": launch.rank,
+                "layer_name": layer_name,
+                "cache_role": cache_role,
+                "compress_ratio": spec.compress_ratio,
+                "spec_block_size": spec.block_size,
+                "storage_block_size": spec.storage_block_size,
+                "runtime_shape": tuple(primary_cache.shape),
+                "dtype": str(primary_cache.dtype),
+                "binder_identity": True,
+                "forward_identity": True,
+            }
+            if indexer_scale_cache is not None:
+                diagnostic.update(
+                    scale_shape=tuple(indexer_scale_cache.shape),
+                    scale_dtype=str(indexer_scale_cache.dtype),
+                )
+                indexer_kv_diagnostics.append(
+                    {
+                        **diagnostic,
+                        "key_shape": tuple(primary_cache.shape),
+                        "key_dtype": str(primary_cache.dtype),
+                    }
+                )
+            compressed_kv_diagnostics.append(diagnostic)
+            print(
+                "DSPARK_COMPRESSED_KV_CONTRACT=" + json.dumps(diagnostic, sort_keys=True),
+                flush=True,
             )
         print(
             "DSPARK_INDEXER_BLOCK_SIZE_CONTRACT="
@@ -426,6 +467,8 @@ def test_dspark_proposal_inputs_prepare_only_npu() -> None:
             kv_cache_specs,
             indexer_kv_specs,
             indexer_kv_diagnostics,
+            compressed_kv_specs,
+            compressed_kv_diagnostics,
             kv_cache_config,
             scheduler_output,
             execute_state,

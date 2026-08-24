@@ -9,6 +9,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CORE_ROOT = REPO_ROOT.parent / "vllm-hust"
 CORE_KV_SPEC = CORE_ROOT / "vllm/v1/kv_cache_interface.py"
+ASCEND_KV_SPEC = REPO_ROOT / "vllm_ascend/core/kv_cache_interface.py"
 DSA_MODEL = REPO_ROOT / "vllm_ascend/models/deepseek_v4.py"
 DSA_LAYER = REPO_ROOT / "vllm_ascend/models/layer/attention/layer.py"
 ASCEND_PLATFORM = REPO_ROOT / "vllm_ascend/platform.py"
@@ -49,7 +50,7 @@ def _assignment_value(function: ast.FunctionDef, name: str):
     raise AssertionError(f"missing assignment to {name}")
 
 
-def test_deepseek_v4_c4_storage_block_size_chain_is_32_to_8_and_128_to_32() -> None:
+def test_deepseek_v4_c4_uses_explicit_ascend_physical_page_geometry() -> None:
     refresh_block_size = ast.unparse(_function(ASCEND_UTILS, "refresh_block_size"))
     assert "cache_config.block_size not in [32, 64, 128]" in refresh_block_size
     assert "cache_config.block_size = 32" in refresh_block_size
@@ -68,10 +69,16 @@ def test_deepseek_v4_c4_storage_block_size_chain_is_32_to_8_and_128_to_32() -> N
     assert block_sizes[32][0][0] == 32
     assert block_sizes[128][0][0] == 128
 
-    storage_block_size = _class_method(CORE_KV_SPEC, "MLAAttentionSpec", "storage_block_size")
-    assert "return self.block_size // self.compress_ratio" in ast.unparse(storage_block_size)
-    assert block_sizes[32][0][0] // 4 == 8
-    assert block_sizes[128][0][0] // 4 == 32
+    core_storage_block_size = _class_method(CORE_KV_SPEC, "MLAAttentionSpec", "storage_block_size")
+    assert "return self.block_size // self.compress_ratio" in ast.unparse(core_storage_block_size)
+    ascend_storage_block_size = _class_method(
+        ASCEND_KV_SPEC,
+        "AscendMLAAttentionSpec",
+        "storage_block_size",
+    )
+    assert "return self.block_size" in ast.unparse(ascend_storage_block_size)
+    assert block_sizes[32][0][0] == 32
+    assert block_sizes[128][0][0] == 128
 
     indexer_spec = ast.unparse(
         _class_method(
@@ -137,13 +144,16 @@ def test_prepare_only_asserts_config_spec_runtime_shape_dtype_and_identity() -> 
     required_contracts = (
         "vllm_config.cache_config.block_size == PREPARE_ONLY_CACHE_BLOCK_SIZE",
         "spec.block_size == PREPARE_ONLY_CACHE_BLOCK_SIZE",
-        "spec.storage_block_size == 32",
-        "indexer_k_cache.shape[1] == spec.storage_block_size == 32",
-        "indexer_scale_cache.shape[1] == spec.storage_block_size == 32",
+        "spec.storage_block_size == PREPARE_ONLY_CACHE_BLOCK_SIZE",
+        "primary_cache.shape[1] == spec.storage_block_size == PREPARE_ONLY_CACHE_BLOCK_SIZE",
+        "indexer_scale_cache.shape[1] == spec.storage_block_size",
         "indexer_k_cache.dtype == torch.int8",
         "indexer_scale_cache.dtype == torch.float16",
-        "forward_kv_cache[4] is indexer_k_cache",
+        "forward_kv_cache[4] is primary_cache",
         "forward_kv_cache[5] is indexer_scale_cache",
+        "forward_kv_cache[0] is primary_cache",
+        '"compress_ratio": spec.compress_ratio',
         "DSPARK_INDEXER_BLOCK_SIZE_CONTRACT=",
+        "DSPARK_COMPRESSED_KV_CONTRACT=",
     )
     assert all(contract in source for contract in required_contracts)
