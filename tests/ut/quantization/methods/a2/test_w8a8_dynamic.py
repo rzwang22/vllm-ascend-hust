@@ -14,6 +14,7 @@ from vllm_ascend.quantization.methods.w8a8_dynamic import (
     AscendW8A8DynamicFusedMoEMethod,
     AscendW8A8DynamicLinearMethod,
 )
+from vllm_ascend.utils import ACL_FORMAT_FRACTAL_NZ
 
 
 class TestAscendW8A8DynamicLinearMethod(TestBase):
@@ -203,3 +204,38 @@ class TestAscendW8A8FusedMoEMethod(TestBase):
         self.quant_method.process_weights_after_loading(layer)
         self.assertTrue(hasattr(layer, "w13_weight_list"))
         self.assertFalse(hasattr(layer, "w13_weight_scale_fp32"))
+
+    @patch("torch_npu.npu_format_cast")
+    @patch("vllm_ascend.quantization.methods.w8a8_dynamic.get_ascend_config")
+    def test_process_weights_after_loading_persists_nz_cast_result(self, mock_get_config, mock_format_cast):
+        mock_config = MagicMock()
+        mock_config.enable_fused_mc2 = 0
+        mock_get_config.return_value = mock_config
+        self.quant_method.dynamic_eplb = False
+        layer = create_moe_layer(
+            num_experts=self.num_experts,
+            hidden_size=self.hidden_size,
+            intermediate_size=self.intermediate_size,
+        )
+        formatted_w13 = torch.empty(
+            self.num_experts,
+            self.hidden_size,
+            2 * self.intermediate_size,
+            dtype=torch.int8,
+        )
+        formatted_w2 = torch.empty(
+            self.num_experts,
+            self.intermediate_size,
+            self.hidden_size,
+            dtype=torch.int8,
+        )
+        mock_format_cast.side_effect = (formatted_w13, formatted_w2)
+
+        self.quant_method.process_weights_after_loading(layer)
+
+        self.assertEqual(layer.w13_weight.data_ptr(), formatted_w13.data_ptr())
+        self.assertEqual(layer.w2_weight.data_ptr(), formatted_w2.data_ptr())
+        self.assertEqual(mock_format_cast.call_count, 2)
+        for call in mock_format_cast.call_args_list:
+            self.assertEqual(call.args[0].ndim, 3)
+            self.assertEqual(call.args[1], ACL_FORMAT_FRACTAL_NZ)

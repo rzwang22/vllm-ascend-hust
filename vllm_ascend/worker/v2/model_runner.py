@@ -60,6 +60,11 @@ from vllm_ascend.worker.v2.spec_decode.runner_init import (
 from vllm_ascend.worker.v2.states import AscendRequestState
 from vllm_ascend.worker.v2.utils import torch_cuda_wrapper
 
+# Keep V2 weight post-processing consistent with the V1 runner. 910B-class
+# torch-npu defaults this option to disabled, in which case an explicit
+# FRACTAL_NZ format cast can leave the tensor in its base ND format.
+torch.npu.config.allow_internal_format = True
+
 
 class NPUModelRunner(GPUModelRunner):
     """Model runner for Ascend NPUs."""

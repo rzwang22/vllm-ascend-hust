@@ -417,11 +417,29 @@ def _construct_w8a8_routed_experts(torch: Any, torch_npu: Any, vllm_config: Any)
     assert layer.w13_weight_scale_fp32.dtype == torch.float32
     assert int(torch_npu.get_npu_format(layer.w13_weight)) == ACL_FORMAT_FRACTAL_NZ
     assert int(torch_npu.get_npu_format(layer.w2_weight)) == ACL_FORMAT_FRACTAL_NZ
+    w13_storage_shape = tuple(torch.ops._C_ascend.get_npu_storage_shape(layer.w13_weight))
+    w2_storage_shape = tuple(torch.ops._C_ascend.get_npu_storage_shape(layer.w2_weight))
+    assert w13_storage_shape == (
+        NUM_EXPERTS,
+        (2 * INTERMEDIATE_SIZE) // 32,
+        HIDDEN_SIZE // 16,
+        16,
+        32,
+    )
+    assert w2_storage_shape == (
+        NUM_EXPERTS,
+        HIDDEN_SIZE // 32,
+        INTERMEDIATE_SIZE // 16,
+        16,
+        32,
+    )
     _emit(
         "WEIGHTS_POSTPROCESSED",
         nz_format=ACL_FORMAT_FRACTAL_NZ,
         w13_shape=list(layer.w13_weight.shape),
+        w13_storage_shape=list(w13_storage_shape),
         w2_shape=list(layer.w2_weight.shape),
+        w2_storage_shape=list(w2_storage_shape),
         w13_scale_dtype=str(layer.w13_weight_scale_fp32.dtype),
     )
     return layer
