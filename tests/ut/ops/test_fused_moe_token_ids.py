@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 import torch
+from vllm.model_executor.layers.fused_moe.activation import MoEActivation
 
 from vllm_ascend.ascend_forward_context import MoECommType
 from vllm_ascend.ops.fused_moe import fused_moe as fused_moe_module
@@ -102,11 +103,13 @@ def _configure_no_shared_runner(runner: AscendMoERunner, quant_method: MagicMock
     runner.scoring_func = "sqrtsoftplus"
     runner._original_routed_scaling_factor = 1.0
     runner.e_score_correction_bias = None
-    runner.activation = "silu"
     runner.apply_router_weight_on_input = False
     runner.global_redundant_expert_num = 0
     runner.dynamic_eplb = False
-    runner.routed_experts = SimpleNamespace(quant_method=quant_method)
+    runner.routed_experts = SimpleNamespace(
+        quant_method=quant_method,
+        activation=MoEActivation.SILU,
+    )
     comm = MagicMock()
     comm.prepare.return_value = MoEPrepareOutput(
         hidden_states=torch.randn(2, 4),
