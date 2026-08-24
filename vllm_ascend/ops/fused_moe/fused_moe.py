@@ -175,10 +175,10 @@ class AscendUnquantizedFusedMoEMethod(UnquantizedFusedMoEMethod):
         global_redundant_expert_num: int = 0,
         pertoken_scale: torch.Tensor | None = None,
         mc2_mask: torch.Tensor | None = None,
+        input_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
         zero_expert_num = getattr(layer, "zero_expert_num", 0)
         zero_expert_type = getattr(layer, "zero_expert_type", None)
-        input_ids = _EXTRA_CTX.input_ids
         num_shared_experts = getattr(layer, "n_shared_experts", 0)
         if num_shared_experts is None:
             num_shared_experts = 0
@@ -642,7 +642,11 @@ else:
             return states[..., :trunc_size]
 
         def no_shared_forward_impl(  # type: ignore[override]
-            self, hidden_states: torch.Tensor, router_logits: torch.Tensor, return_with_event: bool = False
+            self,
+            hidden_states: torch.Tensor,
+            router_logits: torch.Tensor,
+            return_with_event: bool = False,
+            input_ids: torch.Tensor | None = None,
         ) -> torch.Tensor | FusedMoEResult:
             forward_context = get_forward_context()
             # When static kernels are enabled, the forward pass runs twice (compilation + capture),
@@ -679,8 +683,6 @@ else:
                     ):
                         shared_out = tensor_model_parallel_all_reduce(shared_out)
                     set_flash_common3_context(shared_out=shared_out)
-                    input_ids = _EXTRA_CTX.input_ids
-
                     topk_weights, topk_ids = select_experts(
                         hidden_states=hidden_states,
                         router_logits=router_logits,
@@ -748,6 +750,7 @@ else:
                 log2phy=self.log2phy,
                 global_redundant_expert_num=self.global_redundant_expert_num,
                 mc2_mask=mc2_mask,
+                input_ids=input_ids,
             )
 
             if self.dynamic_eplb and _EXTRA_CTX.eplb_heat_collection_status:
@@ -897,7 +900,10 @@ else:
             return shared_out
 
         def shared_forward_impl(  # type: ignore[override]
-            self, hidden_states: torch.Tensor, router_logits: torch.Tensor
+            self,
+            hidden_states: torch.Tensor,
+            router_logits: torch.Tensor,
+            input_ids: torch.Tensor | None = None,
         ):
             if self.shared_multistream_overlap_gate:
                 set_flash_common3_context(shared_experts=self._shared_experts)
@@ -921,6 +927,7 @@ else:
                 hidden_states,
                 router_logits,
                 return_with_event=True,
+                input_ids=input_ids,
             )
             routed_out = fused_moe_results.routed_out
 
@@ -954,6 +961,14 @@ else:
         ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
             with self._sequence_parallel_context():
                 if self.shared_experts is None:
-                    return self.no_shared_forward_impl(hidden_states, router_logits)
+                    return self.no_shared_forward_impl(
+                        hidden_states,
+                        router_logits,
+                        input_ids=input_ids,
+                    )
                 else:
-                    return self.shared_forward_impl(hidden_states, router_logits)
+                    return self.shared_forward_impl(
+                        hidden_states,
+                        router_logits,
+                        input_ids=input_ids,
+                    )

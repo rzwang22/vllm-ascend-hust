@@ -251,7 +251,7 @@ def _select_experts_with_fusion_ops(
     if scoring_func == "sqrtsoftplus":
         if tid2eid is not None:
             if input_ids is None:
-                raise ValueError("DeepSeek V4 hash MoE routing requires input_ids from the current forward context.")
+                raise ValueError("DeepSeek V4 hash MoE routing requires input_ids.")
             if input_ids.ndim != 1 or input_ids.shape[0] != router_logits.shape[0]:
                 raise ValueError(
                     "DeepSeek V4 hash MoE input_ids must match the router token dimension: "

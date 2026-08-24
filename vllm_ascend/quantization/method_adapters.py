@@ -270,8 +270,9 @@ class AscendFusedMoEMethod(FusedMoEMethodBase):
         activation: str = "silu",
         apply_router_weight_on_input: bool = False,
         mc2_mask: torch.Tensor | None = None,
+        input_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        return self.quant_method.apply(
+        apply_kwargs = dict(
             layer=layer,
             x=x,
             router_logits=router_logits,
@@ -296,6 +297,11 @@ class AscendFusedMoEMethod(FusedMoEMethodBase):
             mc2_mask=mc2_mask,
             tid2eid=self.tid2eid,
         )
+        # Only hash-routed DeepSeek V4 layers consume token identity. Keeping
+        # the keyword off non-hash schemes preserves their established ABI.
+        if self.tid2eid is not None:
+            apply_kwargs["input_ids"] = input_ids
+        return self.quant_method.apply(**apply_kwargs)
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
         if hasattr(self.quant_method, "process_weights_after_loading"):

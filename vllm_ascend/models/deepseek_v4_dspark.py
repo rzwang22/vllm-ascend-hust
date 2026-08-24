@@ -329,6 +329,7 @@ class DeepseekV4DSparkModel(nn.Module):
                 hidden_states,
                 residual,
                 llama_4_scaling=None,
+                input_ids=input_ids,
             )
         return self.hc_head(
             hidden_states,

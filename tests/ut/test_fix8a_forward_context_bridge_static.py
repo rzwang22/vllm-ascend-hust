@@ -34,7 +34,7 @@ def test_plugin_uses_one_builder_and_proxy_for_v1_v2_moe_context() -> None:
     assert "return build_ascend_forward_context(" in platform
     assert '"input_ids",' in context
     assert "forward_context.input_ids" not in selector
-    assert "input_ids = _EXTRA_CTX.input_ids" in fused_moe
+    assert "input_ids = _EXTRA_CTX.input_ids" not in fused_moe
     assert "_EXTRA_CTX.moe_comm_type" in selector
     assert "DeepSeek V4 hash MoE routing requires input_ids" in selector
 
