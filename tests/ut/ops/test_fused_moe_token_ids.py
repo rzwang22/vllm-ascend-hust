@@ -104,6 +104,8 @@ def _configure_no_shared_runner(runner: AscendMoERunner, quant_method: MagicMock
     runner._original_routed_scaling_factor = 1.0
     runner.e_score_correction_bias = None
     runner.apply_router_weight_on_input = False
+    runner.tid2eid = None
+    runner.log2phy = None
     runner.global_redundant_expert_num = 0
     runner.dynamic_eplb = False
     runner.routed_experts = SimpleNamespace(
