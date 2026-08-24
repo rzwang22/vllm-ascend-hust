@@ -8,6 +8,7 @@ import json
 import os
 import sys
 from contextlib import ExitStack
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -42,6 +43,8 @@ PREPARE_STAGES = (
     PREPARE_ONLY_PASS,
 )
 EXPECTED_TARGET_LAYER_IDS = (40, 41, 42)
+INDEXER_KV_CACHE_SUFFIX = ".indexer.k_cache"
+PREPARE_ONLY_CACHE_BLOCK_SIZE = 128
 
 enforce_offline_mode()
 
@@ -124,6 +127,7 @@ def test_dspark_proposal_inputs_prepare_only_npu() -> None:
         )
 
         import vllm_ascend
+        from vllm_ascend.ops.dsa import _build_kv_cache
         from vllm_ascend.worker.v2.spec_decode.dspark import (
             AscendDSparkProposalInputs,
             AscendDSparkSpeculator,
@@ -141,6 +145,7 @@ def test_dspark_proposal_inputs_prepare_only_npu() -> None:
             enable_expert_parallel=True,
             distributed_executor_backend="external_launcher",
             enforce_eager=True,
+            block_size=PREPARE_ONLY_CACHE_BLOCK_SIZE,
             max_num_seqs=1,
             speculative_config={
                 "method": "dspark",
@@ -149,6 +154,7 @@ def test_dspark_proposal_inputs_prepare_only_npu() -> None:
             },
         )
         vllm_config = engine_args.create_engine_config()
+        assert vllm_config.cache_config.block_size == PREPARE_ONLY_CACHE_BLOCK_SIZE
         config_context.enter_context(dspark_loader_config_context(vllm_config))
         vllm_ascend.register_model()
 
@@ -181,6 +187,12 @@ def test_dspark_proposal_inputs_prepare_only_npu() -> None:
         assert speculator.target_layer_ids == EXPECTED_TARGET_LAYER_IDS
 
         kv_cache_specs = worker.get_kv_cache_spec()
+        indexer_kv_specs = {
+            name: spec for name, spec in kv_cache_specs.items() if name.endswith(INDEXER_KV_CACHE_SUFFIX)
+        }
+        assert indexer_kv_specs, "DeepSeek V4 prepare-only must discover at least one indexer KV cache."
+        assert all(spec.block_size == PREPARE_ONLY_CACHE_BLOCK_SIZE for spec in indexer_kv_specs.values())
+        assert all(spec.storage_block_size == 32 for spec in indexer_kv_specs.values())
         available_memory = _kv_cache_budget(os.environ)
         kv_cache_config = get_kv_cache_configs(
             vllm_config,
@@ -190,6 +202,58 @@ def test_dspark_proposal_inputs_prepare_only_npu() -> None:
         worker.initialize_from_config(kv_cache_config)
         assert speculator.block_tables is runner.block_tables
         assert speculator.kv_cache_config is runner.kv_cache_config
+
+        forward_context = vllm_config.compilation_config.static_forward_context
+        indexer_kv_diagnostics = []
+        for layer_name, spec in sorted(indexer_kv_specs.items()):
+            indexer_cache_owner = forward_context[layer_name]
+            runtime_container = indexer_cache_owner.kv_cache
+            assert isinstance(runtime_container, list)
+            assert len(runtime_container) == 2
+            indexer_k_cache, indexer_scale_cache = runtime_container
+            assert indexer_k_cache.dtype == torch.int8
+            assert indexer_scale_cache.dtype == torch.float16
+            assert indexer_k_cache.ndim == 4
+            assert indexer_scale_cache.ndim == 4
+            assert indexer_k_cache.shape[1] == spec.storage_block_size == 32
+            assert indexer_scale_cache.shape[1] == spec.storage_block_size == 32
+            assert indexer_k_cache.shape[:3] == indexer_scale_cache.shape[:3]
+
+            dsa_layer_name = layer_name.removesuffix(INDEXER_KV_CACHE_SUFFIX)
+            dsa_layer = forward_context[dsa_layer_name]
+            forward_kv_cache = _build_kv_cache(
+                dsa_layer,
+                SimpleNamespace(virtual_engine=None),
+            )
+            assert forward_kv_cache[4] is indexer_k_cache
+            assert forward_kv_cache[5] is indexer_scale_cache
+            assert sum(cache is runtime_container for cache in runner.kv_caches) == 1
+            indexer_kv_diagnostics.append(
+                {
+                    "layer_name": layer_name,
+                    "spec_block_size": spec.block_size,
+                    "storage_block_size": spec.storage_block_size,
+                    "key_shape": tuple(indexer_k_cache.shape),
+                    "key_dtype": str(indexer_k_cache.dtype),
+                    "scale_shape": tuple(indexer_scale_cache.shape),
+                    "scale_dtype": str(indexer_scale_cache.dtype),
+                    "binder_identity": True,
+                    "forward_identity": True,
+                }
+            )
+        print(
+            "DSPARK_INDEXER_BLOCK_SIZE_CONTRACT="
+            + json.dumps(
+                {
+                    "rank": launch.rank,
+                    "cache_config_block_size": vllm_config.cache_config.block_size,
+                    "indexer_cache_count": len(indexer_kv_diagnostics),
+                    "caches": indexer_kv_diagnostics,
+                },
+                sort_keys=True,
+            ),
+            flush=True,
+        )
 
         prepare_import_baseline = set(sys.modules)
         req_id = "dspark-prepare-only"
@@ -360,6 +424,8 @@ def test_dspark_proposal_inputs_prepare_only_npu() -> None:
             runner,
             speculator,
             kv_cache_specs,
+            indexer_kv_specs,
+            indexer_kv_diagnostics,
             kv_cache_config,
             scheduler_output,
             execute_state,
