@@ -6,6 +6,7 @@ import torch
 from vllm.config import VllmConfig
 
 from vllm_ascend.worker.v2.spec_decode.dspark.proposal_inputs import (
+    AscendDSparkDraftExecution,
     AscendDSparkProposalInputs,
 )
 from vllm_ascend.worker.v2.spec_decode.dspark.speculator import (
@@ -22,6 +23,7 @@ def create_dspark_speculator(
 
 
 __all__ = [
+    "AscendDSparkDraftExecution",
     "AscendDSparkProposalInputs",
     "AscendDSparkSpeculator",
     "create_dspark_speculator",

@@ -45,6 +45,7 @@ PREPARE_STAGES = (
 EXPECTED_TARGET_LAYER_IDS = (40, 41, 42)
 INDEXER_KV_CACHE_SUFFIX = ".indexer.k_cache"
 PREPARE_ONLY_CACHE_BLOCK_SIZE = 128
+_PREPARED_STEP_CALLBACK = None
 
 enforce_offline_mode()
 
@@ -449,6 +450,20 @@ def test_dspark_proposal_inputs_prepare_only_npu() -> None:
             },
             block_table_identity=True,
         )
+        if _PREPARED_STEP_CALLBACK is not None:
+            _PREPARED_STEP_CALLBACK(
+                SimpleNamespace(
+                    torch=torch,
+                    launch=launch,
+                    settings=settings,
+                    runner=runner,
+                    speculator=speculator,
+                    target_model=target_model,
+                    draft_model=draft_model,
+                    prepared=prepared,
+                    aux_hidden_states=aux_hidden_states,
+                )
+            )
 
         torch.distributed.barrier()
         tracker.mark(

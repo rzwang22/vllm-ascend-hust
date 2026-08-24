@@ -39,6 +39,31 @@ class _TargetModel(nn.Module):
         )
 
 
+class _DraftModel(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.combined_aux: torch.Tensor | None = None
+        self.precomputed: tuple[torch.Tensor, torch.Tensor, list[torch.Tensor]] | None = None
+        self.forward_output: torch.Tensor | None = None
+
+    def combine_hidden_states(self, auxiliary_states: torch.Tensor) -> torch.Tensor:
+        self.combined_aux = auxiliary_states
+        return auxiliary_states[:, :8]
+
+    def precompute_and_store_context_kv(
+        self,
+        context_states: torch.Tensor,
+        positions: torch.Tensor,
+        slot_mappings: list[torch.Tensor],
+    ) -> None:
+        self.precomputed = (context_states, positions, slot_mappings)
+
+    def forward(self, input_ids: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
+        del positions
+        self.forward_output = torch.ones(input_ids.shape[0], 8, dtype=torch.bfloat16)
+        return self.forward_output
+
+
 class _BlockTables:
     def __init__(self) -> None:
         self.kernel_block_sizes = [4, 4]
@@ -66,12 +91,18 @@ class _BlockTables:
 def _config():
     return SimpleNamespace(
         model_config=SimpleNamespace(max_model_len=64),
+        compilation_config=SimpleNamespace(static_forward_context={}),
+        parallel_config=SimpleNamespace(
+            data_parallel_size=1,
+            is_moe_model=False,
+        ),
         speculative_config=SimpleNamespace(
             method="dspark",
             draft_model_config=SimpleNamespace(
                 hf_config=SimpleNamespace(
                     dspark_noise_token_id=127,
                     dspark_target_layer_ids=list(TARGET_LAYER_IDS),
+                    hidden_size=8,
                 ),
             ),
             num_speculative_tokens=5,
@@ -81,8 +112,9 @@ def _config():
 
 def _ready_speculator():
     speculator = create_dspark_speculator(_config(), torch.device("cpu"))
-    speculator._model = nn.Module()
+    speculator._model = _DraftModel()
     speculator._loaded_target_model = _TargetModel()
+    speculator.target_attn_layer_names = frozenset()
     speculator.draft_attn_layer_names = frozenset(DRAFT_LAYERS)
     speculator.draft_attn_layer_order = DRAFT_LAYERS
     speculator.draft_layer_group_ids = MappingProxyType(
@@ -93,6 +125,9 @@ def _ready_speculator():
         },
     )
     speculator.draft_kv_cache_group_ids = (0, 1)
+    speculator.draft_kv_caches = MappingProxyType(
+        {layer_name: torch.zeros(8, dtype=torch.bfloat16) for layer_name in DRAFT_LAYERS},
+    )
     speculator.block_tables = _BlockTables()
     speculator.kv_cache_config = object()
     return speculator
@@ -209,6 +244,7 @@ def test_prepare_proposal_inputs_preserves_aux_order_identity_and_shapes() -> No
         prepared.draft_sequence_lengths,
         torch.tensor([12, 17], dtype=torch.int32),
     )
+    assert torch.equal(prepared.draft_is_prefilling, torch.tensor([False, False]))
 
 
 def test_prepare_proposal_inputs_updates_block_and_slot_metadata_by_group() -> None:
@@ -292,6 +328,7 @@ def test_prepare_proposal_inputs_supports_different_batch_and_decode_shapes(
     batch.num_scheduled_tokens = np.asarray(num_scheduled_tokens, dtype=np.int32)
     batch.num_tokens = num_tokens
     batch.num_tokens_after_padding = num_tokens
+    batch.is_prefilling_np = np.zeros(num_reqs, dtype=np.bool_)
     batch.query_start_loc = torch.from_numpy(query_start.copy())
     batch.query_start_loc_np = query_start
     batch.seq_lens = torch.tensor(seq_lens, dtype=torch.int32)
@@ -459,14 +496,23 @@ def test_prepared_inputs_reject_different_rank_ownership() -> None:
         )
 
 
-def test_propose_prepares_inputs_then_fails_at_draft_execution() -> None:
+def test_propose_runs_backbone_then_fails_at_markov_sampling(monkeypatch) -> None:
     speculator = _ready_speculator()
     kwargs, _aux = _step_kwargs()
+    forwarded: list[AscendDSparkProposalInputs] = []
 
-    with pytest.raises(DSparkRuntimeNotWiredError, match="V2 draft execution"):
+    def execute_backbone(proposal_inputs):
+        forwarded.append(proposal_inputs)
+        return torch.ones(proposal_inputs.num_query_tokens, 8)
+
+    monkeypatch.setattr(speculator, "_execute_draft_backbone", execute_backbone)
+
+    with pytest.raises(DSparkRuntimeNotWiredError, match="V2 DSpark Markov sampling"):
         speculator.propose(**kwargs)
 
     assert speculator._proposal_step_epoch == 1
+    assert len(forwarded) == 1
+    assert forwarded[0].step_epoch == 1
 
 
 @pytest.mark.parametrize("flag", ["dummy_run", "is_profile"])

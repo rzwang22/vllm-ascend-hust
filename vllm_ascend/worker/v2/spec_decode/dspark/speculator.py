@@ -2,12 +2,19 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # Copyright (c) 2026 Huawei Technologies Co., Ltd. All Rights Reserved.
 
+from itertools import product
 from types import MappingProxyType
 from typing import Any, cast
 
+import numpy as np
 import torch
 from vllm.config import VllmConfig, get_layers_from_vllm_config
 from vllm.config.compilation import CUDAGraphMode
+from vllm.forward_context import (
+    BatchDescriptor,
+    get_forward_context,
+    set_forward_context,
+)
 from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
 from vllm.v1.attention.backend import AttentionBackend
 from vllm.v1.kv_cache_interface import KVCacheConfig, KVCacheSpec
@@ -24,10 +31,87 @@ from vllm.v1.worker.gpu.spec_decode.utils import (
     get_parallel_drafting_token_id,
 )
 
+from vllm_ascend.ascend_forward_context import build_ascend_forward_context
+from vllm_ascend.attention.attention_v1 import AscendAttentionState
 from vllm_ascend.spec_decode import dspark_runtime_not_wired
+from vllm_ascend.worker.v2.attn_utils import build_attn_metadata
 from vllm_ascend.worker.v2.spec_decode.dspark.proposal_inputs import (
+    AscendDSparkDraftExecution,
     AscendDSparkProposalInputs,
 )
+
+
+def _iter_cache_tensors(cache: Any):
+    if isinstance(cache, torch.Tensor):
+        yield cache
+    elif isinstance(cache, dict):
+        for value in cache.values():
+            yield from _iter_cache_tensors(value)
+    elif isinstance(cache, (list, tuple)):
+        for value in cache:
+            yield from _iter_cache_tensors(value)
+
+
+def _tensor_byte_intervals(tensor: torch.Tensor) -> tuple[tuple[int, int], ...]:
+    """Return exact occupied byte intervals for page-strided cache views."""
+    if tensor.numel() == 0:
+        return ()
+    if any(stride < 0 for stride in tensor.stride()):
+        raise RuntimeError("Ascend DSpark KV cache views must not use negative strides.")
+
+    shape = tuple(tensor.shape)
+    strides = tuple(tensor.stride())
+    contiguous_span = 1
+    suffix_start = len(shape)
+    for dimension in range(len(shape) - 1, -1, -1):
+        if strides[dimension] != contiguous_span:
+            break
+        contiguous_span *= shape[dimension]
+        suffix_start = dimension
+
+    prefix_shape = shape[:suffix_start]
+    prefix_strides = strides[:suffix_start]
+    interval_count = int(np.prod(prefix_shape, dtype=np.int64)) if prefix_shape else 1
+    if interval_count > 1_000_000:
+        raise RuntimeError(
+            "Ascend DSpark cannot audit a KV cache view with more than one million discontiguous byte intervals."
+        )
+
+    element_size = tensor.element_size()
+    storage_base = tensor.untyped_storage().data_ptr()
+    storage_offset = tensor.storage_offset()
+    intervals: list[tuple[int, int]] = []
+    prefix_indices = product(*(range(size) for size in prefix_shape)) if prefix_shape else ((),)
+    for indices in prefix_indices:
+        element_offset = storage_offset + sum(index * stride for index, stride in zip(indices, prefix_strides))
+        start = storage_base + element_offset * element_size
+        intervals.append((start, start + contiguous_span * element_size))
+
+    intervals.sort()
+    merged: list[tuple[int, int]] = []
+    for start, end in intervals:
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return tuple(merged)
+
+
+def _byte_intervals_overlap(
+    first: tuple[tuple[int, int], ...],
+    second: tuple[tuple[int, int], ...],
+) -> bool:
+    first_index = second_index = 0
+    while first_index < len(first) and second_index < len(second):
+        first_start, first_end = first[first_index]
+        second_start, second_end = second[second_index]
+        if max(first_start, second_start) < min(first_end, second_end):
+            return True
+        if first_end <= second_end:
+            first_index += 1
+        else:
+            second_index += 1
+    return False
 
 
 class AscendDSparkSpeculator(BaseSpeculator):
@@ -113,6 +197,9 @@ class AscendDSparkSpeculator(BaseSpeculator):
         self._kv_cache_signature: tuple[Any, ...] | None = None
         self._proposal_step_epoch = 0
         self._prepared_step_epoch: int | None = None
+        self._context_kv_step_epoch: int | None = None
+        self._draft_forward_step_epoch: int | None = None
+        self._draft_cache_isolation_audit: MappingProxyType[str, int] | None = None
         self.eplb_state: Any | None = None
 
         # These fields are consumed directly by GPUModelRunner's generic V2
@@ -351,6 +438,7 @@ class AscendDSparkSpeculator(BaseSpeculator):
         self.draft_kv_cache_group_ids = active_group_ids
         self.draft_kv_caches = draft_kv_cache_view
         self._kv_cache_signature = cache_signature
+        self._draft_cache_isolation_audit = None
 
     def _validate_step_tensor(
         self,
@@ -772,6 +860,7 @@ class AscendDSparkSpeculator(BaseSpeculator):
             draft_positions=draft_positions,
             draft_query_start_loc=draft_query_start_loc,
             draft_sequence_lengths=draft_sequence_lengths,
+            draft_is_prefilling=torch.from_numpy(input_batch.is_prefilling_np.copy()),
             draft_layer_group_ids=layer_group_ids,
             draft_block_tables=draft_block_tables,
             draft_context_slot_mappings=MappingProxyType(context_slots_by_layer),
@@ -798,12 +887,392 @@ class AscendDSparkSpeculator(BaseSpeculator):
         if proposal_inputs.rank != self.rank:
             raise RuntimeError("Ascend DSpark proposal inputs belong to a different NPU rank.")
 
+    def _validate_draft_backbone_inputs(
+        self,
+        proposal_inputs: AscendDSparkProposalInputs,
+    ) -> None:
+        self.validate_prepared_inputs_current(proposal_inputs)
+        if (
+            not proposal_inputs.request_ids
+            or len(proposal_inputs.request_ids) != proposal_inputs.num_reqs
+            or any(not request_id for request_id in proposal_inputs.request_ids)
+        ):
+            raise ValueError("Ascend DSpark draft execution requires one non-empty request ID per request.")
+        if len(set(proposal_inputs.request_ids)) != proposal_inputs.num_reqs:
+            raise ValueError("Ascend DSpark draft execution request IDs must remain unique.")
+        if proposal_inputs.target_layer_ids != self.target_layer_ids:
+            raise RuntimeError("Ascend DSpark auxiliary target-layer order changed after proposal preparation.")
+        if proposal_inputs.num_speculative_tokens != self.num_speculative_steps:
+            raise RuntimeError("Ascend DSpark speculative-token count changed after proposal preparation.")
+        expected_query_tokens = proposal_inputs.num_reqs * proposal_inputs.num_speculative_tokens
+        if proposal_inputs.num_query_tokens != expected_query_tokens:
+            raise ValueError(
+                "Ascend DSpark logical draft-token count must equal request count times speculative-token count."
+            )
+        if len(proposal_inputs.auxiliary_hidden_states) != len(self.target_layer_ids):
+            raise ValueError("Ascend DSpark draft execution requires exactly three auxiliary hidden states.")
+
+        draft_hidden_size = int(self.draft_model_config.hf_config.hidden_size)
+        auxiliary_dtype: torch.dtype | None = None
+        for layer_id, hidden_states in zip(
+            proposal_inputs.target_layer_ids,
+            proposal_inputs.auxiliary_hidden_states,
+        ):
+            self._validate_step_tensor(
+                f"draft auxiliary hidden state for target layer {layer_id}",
+                hidden_states,
+                ndim=2,
+            )
+            if not hidden_states.dtype.is_floating_point:
+                raise TypeError(
+                    f"Ascend DSpark draft auxiliary hidden states must be floating point, got {hidden_states.dtype}."
+                )
+            if auxiliary_dtype is None:
+                auxiliary_dtype = hidden_states.dtype
+            elif hidden_states.dtype != auxiliary_dtype:
+                raise TypeError("Ascend DSpark draft auxiliary hidden states must have one common dtype.")
+            if (
+                hidden_states.shape[0] < proposal_inputs.num_target_tokens
+                or hidden_states.shape[1] != draft_hidden_size
+            ):
+                raise ValueError(
+                    "Ascend DSpark auxiliary hidden-state shape must match the "
+                    "valid target context prefix and draft hidden size, got "
+                    f"{tuple(hidden_states.shape)} for at least "
+                    f"{proposal_inputs.num_target_tokens} rows and hidden size {draft_hidden_size}."
+                )
+
+        tensor_contracts = (
+            ("target positions", proposal_inputs.target_positions, 1, (torch.int64,)),
+            ("draft input IDs", proposal_inputs.draft_input_ids, 1, (torch.int32,)),
+            ("draft positions", proposal_inputs.draft_positions, 1, (torch.int64,)),
+            ("draft query-start locations", proposal_inputs.draft_query_start_loc, 1, (torch.int32,)),
+            ("draft sequence lengths", proposal_inputs.draft_sequence_lengths, 1, (torch.int32,)),
+        )
+        for name, tensor, ndim, dtypes in tensor_contracts:
+            self._validate_step_tensor(name, tensor, ndim=ndim, dtypes=dtypes)
+        if proposal_inputs.draft_input_ids.shape[0] != expected_query_tokens:
+            raise ValueError("Ascend DSpark draft input IDs do not match the logical draft-token count.")
+        if proposal_inputs.draft_positions.shape != proposal_inputs.draft_input_ids.shape:
+            raise ValueError("Ascend DSpark draft positions must align one-to-one with draft input IDs.")
+        if proposal_inputs.draft_query_start_loc.shape[0] != proposal_inputs.num_reqs + 1:
+            raise ValueError("Ascend DSpark draft query-start locations must contain B+1 entries.")
+        if proposal_inputs.draft_sequence_lengths.shape[0] != proposal_inputs.num_reqs:
+            raise ValueError("Ascend DSpark draft sequence lengths must contain one entry per request.")
+        if (
+            not isinstance(proposal_inputs.draft_is_prefilling, torch.Tensor)
+            or proposal_inputs.draft_is_prefilling.device.type != "cpu"
+            or proposal_inputs.draft_is_prefilling.dtype != torch.bool
+            or proposal_inputs.draft_is_prefilling.shape != (proposal_inputs.num_reqs,)
+        ):
+            raise ValueError(
+                "Ascend DSpark draft prefill ownership must be a CPU bool tensor with one row per request."
+            )
+        if proposal_inputs.target_positions.shape[0] < proposal_inputs.num_target_tokens:
+            raise ValueError("Ascend DSpark target positions do not cover the valid context-token prefix.")
+
+        if self.draft_kv_caches is None or self.draft_layer_group_ids is None:
+            raise RuntimeError("Ascend DSpark draft KV cache must be installed before draft execution.")
+        if set(proposal_inputs.draft_layer_group_ids) != set(self.draft_attn_layer_order):
+            raise RuntimeError("Ascend DSpark draft layer/group mapping changed after proposal preparation.")
+        for mapping_name, mapping in (
+            ("context slots", proposal_inputs.draft_context_slot_mappings),
+            ("query slots", proposal_inputs.draft_query_slot_mappings),
+        ):
+            if set(mapping) != set(self.draft_attn_layer_order):
+                raise RuntimeError(f"Ascend DSpark draft {mapping_name} mapping is incomplete.")
+        if set(self.draft_kv_caches) != set(self.draft_attn_layer_order):
+            raise RuntimeError("Ascend DSpark draft cache registry is incomplete.")
+        for layer_name in self.draft_attn_layer_order:
+            if not layer_name.startswith("mtp."):
+                raise RuntimeError(f"Ascend DSpark draft cache escaped the MTP namespace: {layer_name}.")
+            if proposal_inputs.draft_layer_group_ids[layer_name] != self.draft_layer_group_ids[layer_name]:
+                raise RuntimeError(f"Ascend DSpark KV group changed for draft layer {layer_name}.")
+            if not self._is_materialized_kv_cache(self.draft_kv_caches[layer_name]):
+                raise RuntimeError(f"Ascend DSpark draft KV cache is not materialized for {layer_name}.")
+            group_id = self.draft_layer_group_ids[layer_name]
+            if group_id not in proposal_inputs.draft_block_tables:
+                raise RuntimeError(f"Ascend DSpark draft block table is missing for KV group {group_id}.")
+            self._validate_step_tensor(
+                f"draft block table for {layer_name}",
+                proposal_inputs.draft_block_tables[group_id],
+                ndim=2,
+                dtypes=(torch.int32,),
+                min_size=proposal_inputs.num_reqs,
+            )
+            self._validate_step_tensor(
+                f"draft context slots for {layer_name}",
+                proposal_inputs.draft_context_slot_mappings[layer_name],
+                ndim=1,
+                dtypes=(torch.int32,),
+                min_size=proposal_inputs.num_target_tokens,
+            )
+            query_slots = self._validate_step_tensor(
+                f"draft query slots for {layer_name}",
+                proposal_inputs.draft_query_slot_mappings[layer_name],
+                ndim=1,
+                dtypes=(torch.int32,),
+                min_size=proposal_inputs.num_query_tokens,
+            )
+            if query_slots.shape[0] != proposal_inputs.num_query_tokens:
+                raise ValueError(f"Ascend DSpark query-slot count changed for draft layer {layer_name}.")
+
+    def audit_target_draft_cache_isolation(self) -> dict[str, int]:
+        """Compare stable target/draft cache objects and their occupied bytes."""
+        if self._draft_cache_isolation_audit is not None:
+            return dict(self._draft_cache_isolation_audit)
+        if self.target_attn_layer_names is None or self.draft_kv_caches is None:
+            raise RuntimeError("Ascend DSpark target and draft caches must be installed before alias auditing.")
+        layer_type = cast(type[Any], AttentionLayerBase)
+        target_layers = get_layers_from_vllm_config(
+            self.vllm_config,
+            layer_type,
+            self.target_attn_layer_names,
+        )
+        target_tensors = {
+            id(tensor): tensor for layer in target_layers.values() for tensor in _iter_cache_tensors(layer.kv_cache)
+        }
+        draft_tensors = {
+            id(tensor): tensor for cache in self.draft_kv_caches.values() for tensor in _iter_cache_tensors(cache)
+        }
+        object_alias_count = len(target_tensors.keys() & draft_tensors.keys())
+        target_storage_bases = {tensor.untyped_storage().data_ptr() for tensor in target_tensors.values()}
+        draft_storage_bases = {tensor.untyped_storage().data_ptr() for tensor in draft_tensors.values()}
+        shared_backing_base_count = len(target_storage_bases & draft_storage_bases)
+
+        target_intervals = {tensor_id: _tensor_byte_intervals(tensor) for tensor_id, tensor in target_tensors.items()}
+        draft_intervals = {tensor_id: _tensor_byte_intervals(tensor) for tensor_id, tensor in draft_tensors.items()}
+        byte_range_overlap_count = sum(
+            _byte_intervals_overlap(target_range, draft_range)
+            for target_range in target_intervals.values()
+            for draft_range in draft_intervals.values()
+        )
+        audit = {
+            "target_cache_object_alias_count": object_alias_count,
+            "target_cache_byte_range_overlap_count": byte_range_overlap_count,
+            "shared_backing_base_count": shared_backing_base_count,
+        }
+        self._draft_cache_isolation_audit = MappingProxyType(audit)
+        return dict(audit)
+
+    @torch.inference_mode()
+    def _combine_and_precompute_draft_context(
+        self,
+        proposal_inputs: AscendDSparkProposalInputs,
+    ) -> AscendDSparkDraftExecution:
+        """Consume one proposal epoch and write its real context into draft KV."""
+        self._validate_draft_backbone_inputs(proposal_inputs)
+        if self._context_kv_step_epoch == proposal_inputs.step_epoch:
+            raise RuntimeError("Ascend DSpark proposal inputs were already consumed by context-KV precompute.")
+
+        cache_audit = self.audit_target_draft_cache_isolation()
+        if cache_audit["target_cache_object_alias_count"]:
+            raise RuntimeError("Ascend DSpark target and draft KV caches alias the same tensor object.")
+        if cache_audit["target_cache_byte_range_overlap_count"]:
+            raise RuntimeError("Ascend DSpark target and draft KV caches overlap in occupied byte ranges.")
+
+        # Mark the proposal consumed before the first irreversible KV write.
+        # A failure keeps the epoch invalid; the next target step must prepare
+        # fresh metadata instead of replaying a partially written cache step.
+        self._context_kv_step_epoch = proposal_inputs.step_epoch
+        self._prepared_step_epoch = None
+
+        auxiliary_states = tuple(
+            hidden_states[: proposal_inputs.num_target_tokens]
+            for hidden_states in proposal_inputs.auxiliary_hidden_states
+        )
+        concatenated_aux = torch.cat(auxiliary_states, dim=-1)
+        context_states = self.model.combine_hidden_states(concatenated_aux)
+        self._validate_step_tensor("combined draft context states", context_states, ndim=2)
+        if context_states.dtype != auxiliary_states[0].dtype:
+            raise RuntimeError(
+                "Ascend DSpark combined context states must preserve the "
+                f"target auxiliary dtype {auxiliary_states[0].dtype}, got {context_states.dtype}."
+            )
+        if context_states.shape != (
+            proposal_inputs.num_target_tokens,
+            int(self.draft_model_config.hf_config.hidden_size),
+        ):
+            raise RuntimeError(
+                "Ascend DSpark combined context-state shape does not match the "
+                f"draft model ABI: {tuple(context_states.shape)}."
+            )
+
+        context_slot_mappings = [
+            proposal_inputs.draft_context_slot_mappings[layer_name] for layer_name in self.draft_attn_layer_order
+        ]
+        self.model.precompute_and_store_context_kv(
+            context_states,
+            proposal_inputs.target_positions[: proposal_inputs.num_target_tokens],
+            context_slot_mappings,
+        )
+        return AscendDSparkDraftExecution(
+            proposal_inputs=proposal_inputs,
+            execution_token_count=proposal_inputs.draft_input_ids.shape[0],
+        )
+
+    def _validate_draft_execution_current(
+        self,
+        execution: AscendDSparkDraftExecution,
+    ) -> AscendDSparkProposalInputs:
+        proposal_inputs = execution.proposal_inputs
+        if proposal_inputs.step_epoch != self._proposal_step_epoch:
+            raise RuntimeError("Ascend DSpark draft execution belongs to a stale target step.")
+        if proposal_inputs.rank != self.rank:
+            raise RuntimeError("Ascend DSpark draft execution belongs to a different NPU rank.")
+        if self._context_kv_step_epoch != proposal_inputs.step_epoch:
+            raise RuntimeError("Ascend DSpark draft context KV was not precomputed for this execution.")
+        if execution.execution_token_count != proposal_inputs.num_query_tokens:
+            raise RuntimeError("Ascend DSpark eager execution token count differs from its logical token count.")
+        return proposal_inputs
+
+    def _build_draft_forward_metadata(
+        self,
+        execution: AscendDSparkDraftExecution,
+    ) -> dict[str, Any]:
+        proposal_inputs = self._validate_draft_execution_current(execution)
+        if self.attn_groups is None or self.block_tables is None or self.kv_cache_config is None:
+            raise RuntimeError("Ascend DSpark attention state is unavailable for draft metadata construction.")
+
+        block_tables: list[torch.Tensor] = []
+        for group_id in range(len(self.kv_cache_config.kv_cache_groups)):
+            block_table = self.block_tables.input_block_tables[group_id]
+            if group_id in proposal_inputs.draft_block_tables:
+                if proposal_inputs.draft_block_tables[group_id] is not block_table:
+                    raise RuntimeError(f"Ascend DSpark draft block table identity changed for KV group {group_id}.")
+                block_table = proposal_inputs.draft_block_tables[group_id]
+            block_tables.append(block_table)
+
+        query_slots = self.block_tables.slot_mappings[:, : execution.execution_token_count]
+        for layer_name in self.draft_attn_layer_order:
+            group_id = proposal_inputs.draft_layer_group_ids[layer_name]
+            layer_slots = proposal_inputs.draft_query_slot_mappings[layer_name]
+            group_slots = query_slots[group_id]
+            if (
+                layer_slots.data_ptr() != group_slots.data_ptr()
+                or layer_slots.shape != group_slots.shape
+                or layer_slots.stride() != group_slots.stride()
+            ):
+                raise RuntimeError(f"Ascend DSpark draft query slots changed for layer {layer_name}.")
+
+        query_start_loc_cpu = (
+            torch.arange(proposal_inputs.num_reqs + 1, dtype=torch.int32) * proposal_inputs.num_speculative_tokens
+        )
+        sequence_lengths_np = proposal_inputs.draft_sequence_lengths.detach().cpu().numpy()
+        draft_attn_state = (
+            AscendAttentionState.ChunkedPrefill
+            if bool(proposal_inputs.draft_is_prefilling.any())
+            else AscendAttentionState.DecodeOnly
+        )
+        draft_attn_metadata = build_attn_metadata(
+            attn_groups=self.attn_groups,
+            num_reqs=proposal_inputs.num_reqs,
+            num_tokens=execution.execution_token_count,
+            num_actual_tokens=proposal_inputs.num_query_tokens,
+            num_input_tokens=execution.execution_token_count,
+            query_start_loc_gpu=proposal_inputs.draft_query_start_loc,
+            query_start_loc_cpu=query_start_loc_cpu,
+            max_query_len=proposal_inputs.num_speculative_tokens,
+            seq_lens=proposal_inputs.draft_sequence_lengths,
+            max_seq_len=int(sequence_lengths_np.max()),
+            block_tables=block_tables,
+            slot_mappings=query_slots,
+            kv_cache_config=self.kv_cache_config,
+            seq_lens_np=sequence_lengths_np,
+            positions=proposal_inputs.draft_positions,
+            is_prefilling=proposal_inputs.draft_is_prefilling,
+            attn_state=draft_attn_state,
+            causal=False,
+        )
+        if set(draft_attn_metadata) != set(self.draft_attn_layer_order):
+            raise RuntimeError(
+                "Ascend DSpark draft attention metadata does not match the "
+                f"runtime layers: {tuple(draft_attn_metadata)}."
+            )
+        return {layer_name: draft_attn_metadata[layer_name] for layer_name in self.draft_attn_layer_order}
+
+    @torch.inference_mode()
+    def _run_draft_model_forward(
+        self,
+        execution: AscendDSparkDraftExecution,
+        draft_attn_metadata: dict[str, Any],
+    ) -> torch.Tensor:
+        proposal_inputs = self._validate_draft_execution_current(execution)
+        if self._draft_forward_step_epoch == proposal_inputs.step_epoch:
+            raise RuntimeError("Ascend DSpark proposal inputs were already consumed by draft forward.")
+        if tuple(draft_attn_metadata) != self.draft_attn_layer_order:
+            raise RuntimeError("Ascend DSpark draft forward received incomplete attention metadata.")
+        self._draft_forward_step_epoch = proposal_inputs.step_epoch
+
+        batch_descriptor = BatchDescriptor(
+            num_tokens=execution.execution_token_count,
+            num_reqs=proposal_inputs.num_reqs,
+            uniform=True,
+        )
+        slot_mappings = dict(proposal_inputs.draft_query_slot_mappings)
+        with set_forward_context(
+            draft_attn_metadata,
+            self.vllm_config,
+            num_tokens=execution.execution_token_count,
+            num_tokens_across_dp=proposal_inputs.num_tokens_across_dp,
+            cudagraph_runtime_mode=CUDAGraphMode.NONE,
+            batch_descriptor=batch_descriptor,
+            slot_mapping=slot_mappings,
+            input_ids=proposal_inputs.draft_input_ids,
+            model_instance=self.model,
+        ):
+            forward_context = get_forward_context()
+            draft_context = build_ascend_forward_context(
+                attn_metadata=draft_attn_metadata,
+                vllm_config=self.vllm_config,
+                num_tokens=execution.execution_token_count,
+                num_tokens_across_dp=proposal_inputs.num_tokens_across_dp,
+                dp_metadata=forward_context.dp_metadata,
+                num_actual_tokens=proposal_inputs.num_query_tokens,
+                model_instance=self.model,
+                is_draft_model=True,
+                draft_attn_metadatas=draft_attn_metadata,
+                input_ids=proposal_inputs.draft_input_ids,
+            )
+            draft_context["is_draft_model_prefill"] = True
+            forward_context.additional_kwargs.update(draft_context)
+            output = self.model(
+                input_ids=proposal_inputs.draft_input_ids,
+                positions=proposal_inputs.draft_positions,
+            )
+
+        if not isinstance(output, torch.Tensor):
+            raise TypeError("Ascend DSpark draft backbone must return one rank-local tensor.")
+        expected_shape = (
+            execution.execution_token_count,
+            int(self.draft_model_config.hf_config.hidden_size),
+        )
+        if output.shape != expected_shape:
+            raise RuntimeError(
+                "Ascend DSpark draft backbone output shape does not match its "
+                f"HC-head ABI: {tuple(output.shape)} instead of {expected_shape}."
+            )
+        self._validate_step_tensor("draft backbone output", output, ndim=2)
+        if not output.dtype.is_floating_point or output.numel() == 0 or output.device.type == "meta":
+            raise RuntimeError("Ascend DSpark draft backbone returned an invalid floating-point tensor.")
+        return output
+
+    def _execute_draft_backbone(
+        self,
+        proposal_inputs: AscendDSparkProposalInputs,
+    ) -> torch.Tensor:
+        """Run context precompute, real metadata, and the eager draft backbone."""
+        execution = self._combine_and_precompute_draft_context(proposal_inputs)
+        draft_attn_metadata = self._build_draft_forward_metadata(execution)
+        return self._run_draft_model_forward(execution, draft_attn_metadata)
+
     def _execute_draft(
         self,
         proposal_inputs: AscendDSparkProposalInputs,
     ) -> torch.Tensor:
         self.validate_prepared_inputs_current(proposal_inputs)
-        dspark_runtime_not_wired("V2 draft execution")
+        self._execute_draft_backbone(proposal_inputs)
+        dspark_runtime_not_wired("V2 DSpark Markov sampling")
 
     def set_eplb_state(self, eplb_state: Any) -> None:
         """Accept the runner's EPLB state after a successful model load."""
@@ -840,7 +1309,7 @@ class AscendDSparkSpeculator(BaseSpeculator):
         mm_inputs: tuple[list[torch.Tensor], torch.Tensor] | None = None,
         is_profile: bool = False,
     ) -> torch.Tensor:
-        """Prepare real per-step inputs, then fail before draft execution."""
+        """Run the real draft backbone, then fail before Markov sampling."""
         if dummy_run or is_profile:
             dspark_runtime_not_wired("V2 draft execution (dummy/profile)")
         if skip_attn_for_dummy_run:

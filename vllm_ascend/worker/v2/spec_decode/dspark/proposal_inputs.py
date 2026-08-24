@@ -44,6 +44,7 @@ class AscendDSparkProposalInputs:
     draft_positions: torch.Tensor
     draft_query_start_loc: torch.Tensor
     draft_sequence_lengths: torch.Tensor
+    draft_is_prefilling: torch.Tensor
 
     draft_layer_group_ids: Mapping[str, int]
     draft_block_tables: Mapping[int, torch.Tensor]
@@ -56,4 +57,18 @@ class AscendDSparkProposalInputs:
     num_tokens_across_dp: torch.Tensor | None
 
 
-__all__ = ["AscendDSparkProposalInputs"]
+@dataclass(frozen=True, slots=True)
+class AscendDSparkDraftExecution:
+    """A consumed proposal step whose context KV has been precomputed.
+
+    Construction is intentionally restricted to the speculator's production
+    phase helper. Once published, the associated proposal epoch cannot be
+    prepared or executed again because context KV writes are not reversible
+    without copying the complete cache backing.
+    """
+
+    proposal_inputs: AscendDSparkProposalInputs
+    execution_token_count: int
+
+
+__all__ = ["AscendDSparkDraftExecution", "AscendDSparkProposalInputs"]
