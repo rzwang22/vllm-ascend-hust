@@ -85,6 +85,27 @@ class _FailingAttentionLayer(_FakeAttentionLayer):
         super().__setattr__(name, value)
 
 
+class _LoadedHead(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(1))
+
+
+class _LoadedMarkovHead(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.markov_w1 = _LoadedHead()
+        self.markov_w2 = _LoadedHead()
+
+
+class _LoadedDraftBackbone(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.num_dspark_layers = 3
+        self.markov_head = _LoadedMarkovHead()
+        self.confidence_head = _LoadedHead()
+
+
 def _spec() -> FullAttentionSpec:
     return FullAttentionSpec(
         block_size=16,
@@ -130,6 +151,8 @@ def _loaded_speculator(monkeypatch: pytest.MonkeyPatch):
 
     draft_model = object.__new__(DSparkDeepseekV4ForCausalLM)
     nn.Module.__init__(draft_model)
+    draft_model.lm_head = _LoadedHead()
+    draft_model.model = _LoadedDraftBackbone()
     draft_model.get_draft_kv_cache_layer_names = lambda: list(DRAFT_LAYERS)
 
     def load_draft(_target_model, _vllm_config):
@@ -692,6 +715,29 @@ def test_draft_attention_layer_discovery_is_explicit_and_disjoint(
     assert speculator.target_attn_layer_names == frozenset({TARGET_LAYER})
     assert speculator.draft_attn_layer_names == frozenset(DRAFT_LAYERS)
     assert speculator.target_attn_layer_names.isdisjoint(speculator.draft_attn_layer_names)
+
+
+def test_loaded_speculator_fixture_satisfies_markov_module_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _config_value, speculator, _target_model = _loaded_speculator(monkeypatch)
+
+    model = speculator._model
+    contract = speculator._markov_module_contract
+    assert model is not None
+    assert contract is not None
+    assert contract["lm_head"] is model.lm_head
+    assert contract["markov_head"] is model.model.markov_head
+    assert contract["confidence_head"] is model.model.confidence_head
+    assert contract["lm_head_parameter_names"] == ("mtp.2.head.weight",)
+    assert contract["markov_parameter_names"] == (
+        "mtp.2.markov_head.markov_w1.weight",
+        "mtp.2.markov_head.markov_w2.weight",
+    )
+    assert contract["lm_head_id"] == id(model.lm_head)
+    assert contract["markov_head_id"] == id(model.model.markov_head)
+    assert contract["confidence_head_id"] == id(model.model.confidence_head)
+    assert speculator.draft_attn_layer_order == DRAFT_LAYERS
 
 
 def test_kv_specs_preserve_target_identity_and_publish_draft_view(
