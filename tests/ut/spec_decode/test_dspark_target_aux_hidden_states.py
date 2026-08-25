@@ -64,7 +64,10 @@ class _BoundaryLayer(nn.Module):
         hidden_states: torch.Tensor,
         _residual: torch.Tensor | None,
         _llama_4_scaling: torch.Tensor | None,
+        input_ids: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        assert input_ids is not None
+        assert input_ids.shape[0] == hidden_states.shape[0]
         output = hidden_states + self.increment
         return output, hidden_states
 
