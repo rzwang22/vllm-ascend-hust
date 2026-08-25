@@ -86,9 +86,8 @@ class AscendDSparkMarkovStep:
 class AscendDSparkMarkovResult:
     """An internally complete candidate set owned by one proposal epoch.
 
-    This result is intentionally not a core proposal. It remains private to
-    the Ascend speculator until proposal publication and target verification
-    are wired in a later stage.
+    The Ascend speculator validates this private result before publishing its
+    candidate tensor through the core proposal ABI.
     """
 
     step_epoch: int

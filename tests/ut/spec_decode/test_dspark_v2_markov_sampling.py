@@ -354,7 +354,7 @@ def test_loaded_module_replacement_fails_identity_check() -> None:
     assert speculator._markov_result is None
 
 
-def test_execute_draft_completes_markov_then_fails_before_publication(monkeypatch) -> None:
+def test_execute_draft_publishes_completed_markov_candidates(monkeypatch) -> None:
     speculator, proposal, _model, hidden_states = _ready_markov_step()
     speculator._prepared_step_epoch = proposal.step_epoch
 
@@ -366,12 +366,11 @@ def test_execute_draft_completes_markov_then_fails_before_publication(monkeypatc
 
     monkeypatch.setattr(speculator, "_execute_draft_backbone", execute_backbone)
 
-    with pytest.raises(
-        DSparkRuntimeNotWiredError,
-        match="V2 DSpark proposal publication",
-    ):
-        speculator._execute_draft(proposal)
+    published = speculator._execute_draft(proposal)
 
     assert speculator._markov_result is not None
-    assert speculator._markov_result.candidate_tokens.shape == (2, 5)
+    assert published is speculator._markov_result.candidate_tokens
+    assert published.shape == (2, 5)
     assert speculator._markov_step_epoch == proposal.step_epoch
+    assert speculator._published_candidate_tokens is published
+    assert speculator._proposal_publication_count == 1

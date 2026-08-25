@@ -67,7 +67,7 @@ def test_markov_result_is_epoch_owned_and_published_only_after_all_steps() -> No
     assert "class AscendDSparkMarkovResult" in PROPOSAL_INPUTS.read_text(encoding="utf-8")
     assert any("self._markov_result = None" in segment for segment in source_segments)
     assert source.rfind("self._markov_result = result") < source.rfind("return result")
-    assert 'dspark_runtime_not_wired("V2 DSpark proposal publication")' in source
+    assert "_build_core_proposal" in source
 
 
 def test_model_adapters_delegate_loaded_full_vocab_modules() -> None:

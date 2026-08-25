@@ -46,6 +46,7 @@ EXPECTED_TARGET_LAYER_IDS = (40, 41, 42)
 INDEXER_KV_CACHE_SUFFIX = ".indexer.k_cache"
 PREPARE_ONLY_CACHE_BLOCK_SIZE = 128
 _PREPARED_STEP_CALLBACK = None
+_INITIALIZED_WORKER_CALLBACK = None
 
 enforce_offline_mode()
 
@@ -296,6 +297,22 @@ def test_dspark_proposal_inputs_prepare_only_npu() -> None:
             ),
             flush=True,
         )
+
+        if _INITIALIZED_WORKER_CALLBACK is not None and _INITIALIZED_WORKER_CALLBACK(
+            SimpleNamespace(
+                torch=torch,
+                launch=launch,
+                settings=settings,
+                vllm_config=vllm_config,
+                worker=worker,
+                runner=runner,
+                speculator=speculator,
+                target_model=target_model,
+                draft_model=draft_model,
+                kv_cache_config=kv_cache_config,
+            )
+        ):
+            return
 
         prepare_import_baseline = set(sys.modules)
         req_id = "dspark-prepare-only"

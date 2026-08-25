@@ -217,6 +217,16 @@ class AscendDSparkSpeculator(BaseSpeculator):
         self._markov_result: AscendDSparkMarkovResult | None = None
         self._markov_module_contract: MappingProxyType[str, Any] | None = None
         self._draft_cache_isolation_audit: MappingProxyType[str, int] | None = None
+        self._published_proposal_step_epoch: int | None = None
+        self._published_proposal_request_ids: tuple[str, ...] | None = None
+        self._published_proposal_request_state_indices: torch.Tensor | None = None
+        self._published_candidate_tokens: torch.Tensor | None = None
+        self._proposal_consumer_step_epoch: int | None = None
+        self._published_proposal_consumed = False
+        self._next_proposal_skipped = False
+        self._proposal_publication_count = 0
+        self._proposal_consumption_count = 0
+        self._next_proposal_skip_count = 0
         self.eplb_state: Any | None = None
 
         # These fields are consumed directly by GPUModelRunner's generic V2
@@ -665,6 +675,11 @@ class AscendDSparkSpeculator(BaseSpeculator):
             raise TypeError("Ascend DSpark target attention metadata must be a dictionary.")
         if not isinstance(slot_mappings, dict):
             raise TypeError("Ascend DSpark target slot mappings must be a dictionary.")
+        if self._published_candidate_tokens is not None:
+            raise RuntimeError(
+                "Ascend DSpark must consume the published proposal through the "
+                "core verification lifecycle before preparing another target step."
+            )
 
         num_reqs = input_batch.num_reqs
         num_target_tokens = input_batch.num_tokens
@@ -1587,14 +1602,220 @@ class AscendDSparkSpeculator(BaseSpeculator):
         self._markov_step_epoch = proposal_inputs.step_epoch
         return result
 
+    def _build_core_proposal(
+        self,
+        proposal_inputs: AscendDSparkProposalInputs,
+        result: AscendDSparkMarkovResult,
+    ) -> torch.Tensor:
+        """Atomically publish one complete Markov result through core's ABI."""
+        if self._published_candidate_tokens is not None:
+            raise RuntimeError("Ascend DSpark candidate state was already published.")
+        if result is not self._markov_result:
+            raise RuntimeError("Ascend DSpark proposal must use the current owned Markov result.")
+        if result.step_epoch != proposal_inputs.step_epoch or result.step_epoch != self._proposal_step_epoch:
+            raise RuntimeError("Ascend DSpark proposal belongs to a stale target step.")
+        if result.rank != self.rank or result.rank != proposal_inputs.rank:
+            raise RuntimeError("Ascend DSpark proposal belongs to a different NPU rank.")
+        if result.request_ids != proposal_inputs.request_ids:
+            raise RuntimeError("Ascend DSpark proposal request ownership does not match its target step.")
+        if result.num_reqs != proposal_inputs.num_reqs:
+            raise RuntimeError("Ascend DSpark proposal request count does not match its target step.")
+        if (
+            result.num_speculative_tokens != self.num_speculative_steps
+            or result.num_speculative_tokens != proposal_inputs.num_speculative_tokens
+        ):
+            raise RuntimeError("Ascend DSpark proposal length does not match the configured speculative length.")
+        if len(result.steps) != result.num_speculative_tokens or tuple(
+            step.step_index for step in result.steps
+        ) != tuple(range(result.num_speculative_tokens)):
+            raise RuntimeError("Ascend DSpark proposal requires every Markov step in order.")
+
+        request_state_indices = self._validate_step_tensor(
+            "proposal request-state indices",
+            result.request_state_indices,
+            ndim=1,
+            dtypes=(torch.int32,),
+            min_size=result.num_reqs,
+        )
+        expected_request_state_indices = proposal_inputs.request_state_indices[: result.num_reqs]
+        _assert_markov_tensor_contract(
+            (request_state_indices == expected_request_state_indices).all(),
+            "Ascend DSpark proposal request-state ownership changed before publication.",
+        )
+
+        candidate_tokens = self._validate_step_tensor(
+            "proposal candidate tokens",
+            result.candidate_tokens,
+            ndim=2,
+            dtypes=(torch.int64,),
+        )
+        expected_shape = (result.num_reqs, result.num_speculative_tokens)
+        if candidate_tokens.shape != expected_shape or result.logical_candidate_shape != expected_shape:
+            raise RuntimeError(
+                "Ascend DSpark proposal candidates must use request-major "
+                f"layout {expected_shape}, got {tuple(candidate_tokens.shape)}."
+            )
+        if not candidate_tokens.is_contiguous():
+            raise RuntimeError("Ascend DSpark proposal candidates must be contiguous in request-major order.")
+        _assert_markov_tensor_contract(
+            ((candidate_tokens >= 0) & (candidate_tokens < result.vocab_size)).all(),
+            "Ascend DSpark proposal contains a token outside the shared vocabulary.",
+        )
+
+        # Publish only after the complete provenance, ownership and tensor
+        # contract has been validated. Core receives this exact tensor.
+        self._published_proposal_step_epoch = result.step_epoch
+        self._published_proposal_request_ids = result.request_ids
+        self._published_proposal_request_state_indices = request_state_indices
+        self._published_candidate_tokens = candidate_tokens
+        self._published_proposal_consumed = False
+        self._next_proposal_skipped = False
+        self._proposal_publication_count += 1
+        return candidate_tokens
+
+    def _skip_next_proposal_after_verification(
+        self,
+        input_batch: InputBatch,
+        num_sampled: torch.Tensor,
+        num_rejected: torch.Tensor,
+        temperature: torch.Tensor,
+    ) -> None:
+        """Consume the published proposal and skip the next draft atomically."""
+        candidate_tokens = self._published_candidate_tokens
+        producer_epoch = self._published_proposal_step_epoch
+        request_ids = self._published_proposal_request_ids
+        request_state_indices = self._published_proposal_request_state_indices
+        if candidate_tokens is None or producer_epoch is None or request_ids is None or request_state_indices is None:
+            raise RuntimeError("Ascend DSpark has no published proposal to verify.")
+        if self._published_proposal_consumed:
+            raise RuntimeError("Ascend DSpark proposal was already consumed.")
+        if producer_epoch != self._proposal_step_epoch:
+            raise RuntimeError("Ascend DSpark verification belongs to a stale proposal epoch.")
+        if tuple(input_batch.req_ids) != request_ids or input_batch.num_reqs != len(request_ids):
+            raise RuntimeError("Ascend DSpark verification request ownership does not match the published proposal.")
+        if input_batch.num_draft_tokens_per_req is None:
+            raise RuntimeError("Ascend DSpark verification is missing scheduled proposal lengths.")
+        expected_draft_lengths = np.full(
+            input_batch.num_reqs,
+            self.num_speculative_steps,
+            dtype=np.int32,
+        )
+        if not np.array_equal(input_batch.num_draft_tokens_per_req, expected_draft_lengths):
+            raise RuntimeError(
+                "Ascend DSpark verification must consume exactly the configured number of candidates for every request."
+            )
+        if input_batch.num_draft_tokens != input_batch.num_reqs * self.num_speculative_steps:
+            raise RuntimeError("Ascend DSpark verification draft-token count is inconsistent.")
+
+        active_request_indices = self._validate_step_tensor(
+            "verification request-state indices",
+            input_batch.idx_mapping,
+            ndim=1,
+            dtypes=(torch.int32,),
+            min_size=input_batch.num_reqs,
+        )[: input_batch.num_reqs]
+        _assert_markov_tensor_contract(
+            (active_request_indices == request_state_indices).all(),
+            "Ascend DSpark verification request-state mapping changed after publication.",
+        )
+        query_start_loc = self._validate_step_tensor(
+            "verification query-start locations",
+            input_batch.query_start_loc,
+            ndim=1,
+            dtypes=(torch.int32,),
+            min_size=input_batch.num_reqs + 1,
+        )[: input_batch.num_reqs + 1]
+        expected_query_length = self.num_speculative_steps + 1
+        _assert_markov_tensor_contract(
+            (
+                query_start_loc[1:] - query_start_loc[:-1]
+                == torch.full_like(query_start_loc[:-1], expected_query_length)
+            ).all(),
+            "Ascend DSpark verification input must contain one anchor and K candidates per request.",
+        )
+        target_input_ids = self._validate_step_tensor(
+            "verification target input IDs",
+            input_batch.input_ids,
+            ndim=1,
+            dtypes=(torch.int32,),
+            min_size=input_batch.num_reqs * expected_query_length,
+        )
+        candidate_offsets = torch.arange(
+            1,
+            expected_query_length,
+            dtype=query_start_loc.dtype,
+            device=query_start_loc.device,
+        )
+        candidate_indices = (query_start_loc[:-1, None] + candidate_offsets).reshape(-1)
+        consumed_candidates = target_input_ids[candidate_indices.to(torch.int64)].view(
+            input_batch.num_reqs,
+            self.num_speculative_steps,
+        )
+        _assert_markov_tensor_contract(
+            (consumed_candidates.to(torch.int64) == candidate_tokens).all(),
+            "Ascend DSpark verification inputs do not contain the published candidate set.",
+        )
+
+        num_sampled = self._validate_step_tensor(
+            "verification sampled-token counts",
+            num_sampled,
+            ndim=1,
+            dtypes=(torch.int32,),
+            min_size=input_batch.num_reqs,
+        )[: input_batch.num_reqs]
+        num_rejected = self._validate_step_tensor(
+            "verification rejected-token counts",
+            num_rejected,
+            ndim=1,
+            dtypes=(torch.int32,),
+            min_size=input_batch.num_reqs,
+        )[: input_batch.num_reqs]
+        _assert_markov_tensor_contract(
+            ((num_sampled >= 1) & (num_sampled <= expected_query_length)).all(),
+            "Ascend DSpark verification returned an invalid sampled-token count.",
+        )
+        _assert_markov_tensor_contract(
+            ((num_rejected >= 0) & (num_rejected <= self.num_speculative_steps)).all(),
+            "Ascend DSpark verification returned an invalid rejected-token count.",
+        )
+        _assert_markov_tensor_contract(
+            (num_sampled + num_rejected == expected_query_length).all(),
+            "Ascend DSpark verification sampled/rejected counts do not cover the full proposal window.",
+        )
+        temperatures = self._validate_step_tensor(
+            "verification temperatures",
+            temperature,
+            ndim=1,
+            dtypes=(torch.float32,),
+        )
+        _assert_markov_tensor_contract(
+            (temperatures[active_request_indices.to(torch.int64)] == 0).all(),
+            "Ascend DSpark single-round verification supports deterministic greedy sampling only.",
+        )
+
+        consumer_epoch = producer_epoch + 1
+        self._proposal_step_epoch = consumer_epoch
+        self._proposal_consumer_step_epoch = consumer_epoch
+        self._published_proposal_consumed = True
+        self._next_proposal_skipped = True
+        self._proposal_consumption_count += 1
+        self._next_proposal_skip_count += 1
+        self._prepared_step_epoch = None
+        self._context_kv_step_epoch = None
+        self._draft_forward_step_epoch = None
+        self._markov_attempt_step_epoch = None
+        self._markov_step_epoch = None
+        self._markov_result = None
+        return None
+
     def _execute_draft(
         self,
         proposal_inputs: AscendDSparkProposalInputs,
     ) -> torch.Tensor:
         self.validate_prepared_inputs_current(proposal_inputs)
         hidden_states = self._execute_draft_backbone(proposal_inputs)
-        self._execute_sequential_markov_sampling(proposal_inputs, hidden_states)
-        dspark_runtime_not_wired("V2 DSpark proposal publication")
+        result = self._execute_sequential_markov_sampling(proposal_inputs, hidden_states)
+        return self._build_core_proposal(proposal_inputs, result)
 
     def set_eplb_state(self, eplb_state: Any) -> None:
         """Accept the runner's EPLB state after a successful model load."""
@@ -1630,14 +1851,23 @@ class AscendDSparkSpeculator(BaseSpeculator):
         skip_attn_for_dummy_run: bool = False,
         mm_inputs: tuple[list[torch.Tensor], torch.Tensor] | None = None,
         is_profile: bool = False,
-    ) -> torch.Tensor:
-        """Run the real draft backbone, then fail before Markov sampling."""
+    ) -> torch.Tensor | None:
+        """Publish one proposal, then skip drafting after its verification."""
         if dummy_run or is_profile:
             dspark_runtime_not_wired("V2 draft execution (dummy/profile)")
         if skip_attn_for_dummy_run:
             raise ValueError("skip_attn_for_dummy_run is only valid for a DSpark dummy run.")
         if mm_inputs is not None:
             raise ValueError("Ascend DeepSeek V4 DSpark does not accept multimodal proposal inputs.")
+        if self._next_proposal_skipped:
+            dspark_runtime_not_wired("M2.4B multi-round DSpark lifecycle")
+        if self._published_candidate_tokens is not None:
+            return self._skip_next_proposal_after_verification(
+                input_batch,
+                num_sampled,
+                num_rejected,
+                temperature,
+            )
         proposal_inputs = self.prepare_proposal_inputs(
             input_batch=input_batch,
             attn_metadata=attn_metadata,
