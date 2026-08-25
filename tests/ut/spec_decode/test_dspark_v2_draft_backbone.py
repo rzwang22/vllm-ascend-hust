@@ -10,12 +10,14 @@ import pytest
 import torch
 
 import vllm_ascend.worker.v2.spec_decode.dspark.speculator as speculator_module
+from tests.ut.spec_decode.test_dspark_v2_markov_sampling import (
+    _ready_markov_step,
+)
 from tests.ut.spec_decode.test_dspark_v2_proposal_inputs import (
     DRAFT_LAYERS,
     _ready_speculator,
     _step_kwargs,
 )
-from vllm_ascend.spec_decode import DSparkRuntimeNotWiredError
 
 
 def _prepare():
@@ -360,21 +362,34 @@ def test_forward_rejects_output_shape_from_real_model_abi(monkeypatch) -> None:
         speculator._run_draft_model_forward(execution, metadata)
 
 
-def test_execute_draft_runs_backbone_and_markov_then_fails_at_publication(monkeypatch) -> None:
-    speculator, proposal, _auxiliary_states = _prepare()
-    output = torch.ones(proposal.num_query_tokens, 8)
-    calls = []
+def test_execute_draft_runs_backbone_and_markov_then_publishes_candidates(monkeypatch) -> None:
+    speculator, proposal, _model, hidden_states = _ready_markov_step()
+    backbone_calls = []
+    markov_calls = []
+    execute_markov_impl = speculator._execute_sequential_markov_sampling
 
     def execute_backbone(actual):
-        calls.append(actual)
-        return output
+        backbone_calls.append(actual)
+        return hidden_states
 
-    def execute_markov(actual, hidden_states):
-        calls.extend((actual, hidden_states))
-        return object()
+    def execute_markov(actual, actual_hidden_states):
+        markov_calls.append((actual, actual_hidden_states))
+        return execute_markov_impl(actual, actual_hidden_states)
 
     monkeypatch.setattr(speculator, "_execute_draft_backbone", execute_backbone)
     monkeypatch.setattr(speculator, "_execute_sequential_markov_sampling", execute_markov)
-    with pytest.raises(DSparkRuntimeNotWiredError, match="V2 DSpark proposal publication"):
-        speculator._execute_draft(proposal)
-    assert calls == [proposal, proposal, output]
+
+    published = speculator._execute_draft(proposal)
+    owned_result = speculator._markov_result
+
+    assert backbone_calls == [proposal]
+    assert len(markov_calls) == 1
+    assert markov_calls[0][0] is proposal
+    assert markov_calls[0][1] is hidden_states
+    assert owned_result is not None
+    assert owned_result.backbone_hidden_states is hidden_states
+    assert published is owned_result.candidate_tokens
+    assert speculator._published_candidate_tokens is published
+    assert speculator._proposal_publication_count == 1
+    assert published.shape == (proposal.num_reqs, proposal.num_speculative_tokens)
+    assert published.dtype is torch.int64

@@ -497,30 +497,63 @@ def test_prepared_inputs_reject_different_rank_ownership() -> None:
         )
 
 
-def test_propose_runs_backbone_then_fails_at_proposal_publication(monkeypatch) -> None:
-    speculator = _ready_speculator()
-    kwargs, _aux = _step_kwargs()
-    forwarded: list[AscendDSparkProposalInputs] = []
-
-    def execute_backbone(proposal_inputs):
-        forwarded.append(proposal_inputs)
-        speculator._context_kv_step_epoch = proposal_inputs.step_epoch
-        speculator._draft_forward_step_epoch = proposal_inputs.step_epoch
-        return torch.ones(proposal_inputs.num_query_tokens, 8)
-
-    monkeypatch.setattr(speculator, "_execute_draft_backbone", execute_backbone)
-    monkeypatch.setattr(
-        speculator,
-        "_execute_sequential_markov_sampling",
-        lambda proposal_inputs, hidden_states: (proposal_inputs, hidden_states),
+def test_propose_runs_backbone_and_markov_then_publishes_candidates(monkeypatch) -> None:
+    # Imported here to avoid a circular dependency: the shared Markov test
+    # fixture imports this module's proposal-input helpers.
+    from tests.ut.spec_decode.test_dspark_v2_markov_sampling import (
+        _MarkovDraftModel,
     )
 
-    with pytest.raises(DSparkRuntimeNotWiredError, match="V2 DSpark proposal publication"):
-        speculator.propose(**kwargs)
+    speculator = _ready_speculator()
+    speculator.draft_model_config.hf_config.vocab_size = 256
+    speculator._model = _MarkovDraftModel()
+    speculator._markov_module_contract = None
+    kwargs, _aux = _step_kwargs()
+    backbone_calls: list[AscendDSparkProposalInputs] = []
+    hidden_state_outputs: list[torch.Tensor] = []
+    markov_calls: list[tuple[AscendDSparkProposalInputs, torch.Tensor]] = []
+    execute_markov_impl = speculator._execute_sequential_markov_sampling
+
+    def execute_backbone(proposal_inputs):
+        backbone_calls.append(proposal_inputs)
+        speculator._prepared_step_epoch = None
+        speculator._context_kv_step_epoch = proposal_inputs.step_epoch
+        speculator._draft_forward_step_epoch = proposal_inputs.step_epoch
+        hidden_states = torch.ones(
+            proposal_inputs.num_query_tokens,
+            8,
+            dtype=torch.bfloat16,
+        )
+        hidden_state_outputs.append(hidden_states)
+        return hidden_states
+
+    def execute_markov(proposal_inputs, hidden_states):
+        markov_calls.append((proposal_inputs, hidden_states))
+        return execute_markov_impl(proposal_inputs, hidden_states)
+
+    monkeypatch.setattr(speculator, "_execute_draft_backbone", execute_backbone)
+    monkeypatch.setattr(speculator, "_execute_sequential_markov_sampling", execute_markov)
+
+    published = speculator.propose(**kwargs)
+    owned_result = speculator._markov_result
 
     assert speculator._proposal_step_epoch == 1
-    assert len(forwarded) == 1
-    assert forwarded[0].step_epoch == 1
+    assert len(backbone_calls) == 1
+    assert backbone_calls[0].step_epoch == 1
+    assert len(hidden_state_outputs) == 1
+    assert len(markov_calls) == 1
+    assert markov_calls[0][0] is backbone_calls[0]
+    assert markov_calls[0][1] is hidden_state_outputs[0]
+    assert owned_result is not None
+    assert owned_result.backbone_hidden_states is hidden_state_outputs[0]
+    assert published is owned_result.candidate_tokens
+    assert speculator._published_candidate_tokens is published
+    assert speculator._proposal_publication_count == 1
+    assert published.shape == (
+        backbone_calls[0].num_reqs,
+        backbone_calls[0].num_speculative_tokens,
+    )
+    assert published.dtype is torch.int64
 
 
 @pytest.mark.parametrize("flag", ["dummy_run", "is_profile"])
