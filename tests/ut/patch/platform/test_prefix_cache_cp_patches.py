@@ -7,6 +7,8 @@ from unittest.mock import MagicMock
 import pytest
 import torch
 from vllm.v1.core.block_pool import BlockPool
+from vllm.v1.core.kv_cache_coordinator import UnitaryKVCacheCoordinator
+from vllm.v1.core.kv_cache_manager import KVCacheManager
 from vllm.v1.kv_cache_interface import (
     FullAttentionSpec,
     KVCacheConfig,
@@ -243,6 +245,78 @@ def test_get_kv_cache_coordinator_delegates_single_group(monkeypatch) -> None:
     assert coordinator is sentinel
 
 
+def test_get_kv_cache_coordinator_delegates_single_deepseek_v4_group(
+    monkeypatch,
+) -> None:
+    sentinel = object()
+    kv_cache_config = _make_deepseek_v4_kv_cache_config()
+    single_group_config = KVCacheConfig(
+        num_blocks=kv_cache_config.num_blocks,
+        kv_cache_tensors=kv_cache_config.kv_cache_tensors[:1],
+        kv_cache_groups=kv_cache_config.kv_cache_groups[:1],
+    )
+
+    def _fake_orig(*args, **kwargs):
+        return sentinel
+
+    def _unexpected_hybrid(*args, **kwargs):
+        raise AssertionError("A single DeepSeek-V4 group is not a hybrid topology")
+
+    monkeypatch.setattr(
+        "vllm_ascend.patch.platform.patch_kv_cache_coordinator._orig_get_kv_cache_coordinator",
+        _fake_orig,
+    )
+    monkeypatch.setattr(
+        "vllm_ascend.patch.platform.patch_kv_cache_coordinator.AscendHybridKVCacheCoordinator",
+        _unexpected_hybrid,
+    )
+
+    coordinator = get_kv_cache_coordinator(
+        single_group_config,
+        max_model_len=1024,
+        max_num_batched_tokens=1024,
+        use_eagle=False,
+        enable_caching=True,
+        enable_kv_cache_events=False,
+        dcp_world_size=1,
+        pcp_world_size=1,
+        hash_block_size=128,
+    )
+
+    assert coordinator is sentinel
+
+
+def test_kv_cache_manager_constructs_with_single_deepseek_v4_group() -> None:
+    kv_cache_config = _make_deepseek_v4_kv_cache_config()
+    uniform_group = kv_cache_config.kv_cache_groups[0]
+    uniform_spec = uniform_group.kv_cache_spec
+    assert isinstance(uniform_spec, UniformTypeKVCacheSpecs)
+    layer_name, layer_spec = next(iter(uniform_spec.kv_cache_specs.items()))
+    single_group_config = KVCacheConfig(
+        num_blocks=kv_cache_config.num_blocks,
+        kv_cache_tensors=kv_cache_config.kv_cache_tensors[:1],
+        kv_cache_groups=[
+            KVCacheGroupSpec(
+                layer_names=[layer_name],
+                kv_cache_spec=layer_spec,
+            )
+        ],
+    )
+
+    manager = KVCacheManager(
+        kv_cache_config=single_group_config,
+        max_model_len=1024,
+        max_num_batched_tokens=1024,
+        scheduler_block_size=128,
+        hash_block_size=128,
+        enable_caching=True,
+    )
+
+    assert type(manager.coordinator) is UnitaryKVCacheCoordinator
+    assert manager.kv_cache_config is single_group_config
+    assert manager.kv_cache_config.kv_cache_groups[0].layer_names == [layer_name]
+
+
 def test_get_kv_cache_coordinator_delegates_hybrid_without_caching(monkeypatch) -> None:
     sentinel = object()
     kv_cache_config = _make_hybrid_kv_cache_config(full_block_size=16, mamba_block_size=16)
@@ -265,6 +339,42 @@ def test_get_kv_cache_coordinator_delegates_hybrid_without_caching(monkeypatch) 
         dcp_world_size=2,
         pcp_world_size=2,
         hash_block_size=16,
+    )
+
+    assert coordinator is sentinel
+
+
+def test_get_kv_cache_coordinator_delegates_deepseek_v4_without_caching(
+    monkeypatch,
+) -> None:
+    sentinel = object()
+    kv_cache_config = _make_deepseek_v4_kv_cache_config()
+
+    def _fake_orig(*args, **kwargs):
+        return sentinel
+
+    def _unexpected_hybrid(*args, **kwargs):
+        raise AssertionError("Prefix-disabled DeepSeek-V4 must use the core coordinator")
+
+    monkeypatch.setattr(
+        "vllm_ascend.patch.platform.patch_kv_cache_coordinator._orig_get_kv_cache_coordinator",
+        _fake_orig,
+    )
+    monkeypatch.setattr(
+        "vllm_ascend.patch.platform.patch_kv_cache_coordinator.AscendHybridKVCacheCoordinator",
+        _unexpected_hybrid,
+    )
+
+    coordinator = get_kv_cache_coordinator(
+        kv_cache_config,
+        max_model_len=1024,
+        max_num_batched_tokens=1024,
+        use_eagle=False,
+        enable_caching=False,
+        enable_kv_cache_events=False,
+        dcp_world_size=1,
+        pcp_world_size=1,
+        hash_block_size=128,
     )
 
     assert coordinator is sentinel

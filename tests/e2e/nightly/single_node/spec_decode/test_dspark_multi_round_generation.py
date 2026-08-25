@@ -67,8 +67,68 @@ def _generation_request(runtime: Any, request_id: str) -> Any:
     )
 
 
+def _target_only_kv_topology(runtime: Any, scheduler: Any) -> dict[str, Any]:
+    """Describe the scheduler-visible target KV topology without tensors."""
+    kv_cache_manager = scheduler.kv_cache_manager
+    kv_cache_config = kv_cache_manager.kv_cache_config
+    groups = kv_cache_config.kv_cache_groups
+    unique_specs: list[Any] = []
+    equality_groups: list[list[int]] = []
+    for group_id, group in enumerate(groups):
+        for unique_id, spec in enumerate(unique_specs):
+            if group.kv_cache_spec == spec:
+                equality_groups[unique_id].append(group_id)
+                break
+        else:
+            unique_specs.append(group.kv_cache_spec)
+            equality_groups.append([group_id])
+
+    layer_names = [name for group in groups for name in group.layer_names]
+    expected_layer_names = set(runtime.target_kv_cache_layer_names)
+    actual_layer_names = set(layer_names)
+    missing_layer_names = sorted(expected_layer_names.difference(actual_layer_names))
+    if missing_layer_names:
+        raise RuntimeError(f"The target-only scheduler dropped target KV cache owners: {missing_layer_names}.")
+    unexpected_layer_names = sorted(actual_layer_names.difference(expected_layer_names))
+    if unexpected_layer_names:
+        raise RuntimeError(f"The target-only scheduler added non-target KV cache owners: {unexpected_layer_names}.")
+    draft_layer_names = sorted(name for name in actual_layer_names if name.startswith("mtp.") or ".mtp." in name)
+    if draft_layer_names:
+        raise RuntimeError(f"The target-only scheduler retained draft/MTP KV cache owners: {draft_layer_names}.")
+
+    coordinator = kv_cache_manager.coordinator
+    manager_classes = [type(manager).__name__ for manager in coordinator.single_type_managers]
+    return {
+        "rank": runtime.launch.rank,
+        "raw_group_count": len(groups),
+        "unique_attention_group_count": len(unique_specs),
+        "spec_equality_groups": equality_groups,
+        "spec_classes": [type(group.kv_cache_spec).__name__ for group in groups],
+        "block_sizes": [group.kv_cache_spec.block_size for group in groups],
+        "storage_block_sizes": [
+            getattr(
+                group.kv_cache_spec,
+                "storage_block_size",
+                group.kv_cache_spec.block_size,
+            )
+            for group in groups
+        ],
+        "compress_ratios": [getattr(group.kv_cache_spec, "compress_ratio", 1) for group in groups],
+        "is_eagle_groups": [group.is_eagle_group for group in groups],
+        "manager_classes": manager_classes,
+        "coordinator_class": type(coordinator).__name__,
+        "target_layer_count": len(expected_layer_names),
+        "contains_draft_groups": False,
+    }
+
+
 def _run_target_only_generation(runtime: Any) -> dict[str, Any]:
     scheduler = _build_scheduler(runtime)
+    topology = _target_only_kv_topology(runtime, scheduler)
+    print(
+        "DSPARK_M2_4B_TARGET_KV_TOPOLOGY=" + json.dumps(topology, sort_keys=True),
+        flush=True,
+    )
     request = _generation_request(runtime, "dspark-m24b-target-only")
     scheduler.add_request(request)
     target_forward_count = 0
@@ -331,6 +391,8 @@ def _target_only_runtime(
         max_num_seqs=1,
     )
     vllm_config = engine_args.create_engine_config()
+    if vllm_config.speculative_config is not None:
+        raise RuntimeError("The target-only oracle resolved a speculative config instead of a target-only VllmConfig.")
     contexts.enter_context(dspark_loader_config_context(vllm_config))
     vllm_ascend.register_model()
     worker = NPUWorker(
@@ -344,6 +406,9 @@ def _target_only_runtime(
     worker.init_device()
     worker.load_model()
     kv_cache_specs = worker.get_kv_cache_spec()
+    draft_cache_names = sorted(name for name in kv_cache_specs if name.startswith("mtp.") or ".mtp." in name)
+    if draft_cache_names:
+        raise RuntimeError(f"The target-only worker discovered draft/MTP KV cache owners: {draft_cache_names}.")
     kv_cache_config = get_kv_cache_configs(
         vllm_config,
         [kv_cache_specs],
@@ -358,6 +423,7 @@ def _target_only_runtime(
         worker=worker,
         runner=worker.model_runner,
         kv_cache_config=kv_cache_config,
+        target_kv_cache_layer_names=tuple(kv_cache_specs),
     )
     return runtime
 

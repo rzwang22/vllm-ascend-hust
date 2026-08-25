@@ -455,22 +455,12 @@ def get_kv_cache_coordinator(
     eagle_attn_layer_names: list[str] | None = None,
     metrics_collector: KVCacheMetricsCollector | None = None,
 ) -> KVCacheCoordinator:
-    if _is_deepseek_v4_kv_cache_config(kv_cache_config):
-        return AscendHybridKVCacheCoordinator(
-            kv_cache_config,
-            max_model_len,
-            use_eagle,
-            enable_caching,
-            enable_kv_cache_events,
-            dcp_world_size=dcp_world_size,
-            pcp_world_size=pcp_world_size,
-            hash_block_size=hash_block_size,
-            eagle_attn_layer_names=eagle_attn_layer_names,
-            metrics_collector=metrics_collector,
-            max_num_batched_tokens=max_num_batched_tokens,
-            scheduler_block_size=scheduler_block_size,
-        )
-
+    # Preserve core's coordinator topology invariants before applying the
+    # Ascend hybrid implementation. A DeepSeek-V4 marker describes the model,
+    # not the number of distinct KV attention groups: target-only configs can
+    # legally contain a single group and prefix caching can be disabled for any
+    # number of groups. In both cases the canonical core coordinator is the
+    # authoritative implementation.
     if len(kv_cache_config.kv_cache_groups) == 1 or not enable_caching:
         orig_kwargs = dict(
             kv_cache_config=kv_cache_config,
@@ -486,6 +476,26 @@ def get_kv_cache_coordinator(
         )
         orig_kwargs["scheduler_block_size"] = scheduler_block_size
         return _orig_get_kv_cache_coordinator(**orig_kwargs)
+
+    # Multi-group DeepSeek-V4 and all other genuine hybrid topologies use the
+    # Ascend coordinator. Keep the model check explicit: it documents why a
+    # DeepSeek-V4 config reaches this branch only after satisfying the same
+    # topology guards as paired core.
+    if _is_deepseek_v4_kv_cache_config(kv_cache_config):
+        return AscendHybridKVCacheCoordinator(
+            kv_cache_config,
+            max_model_len,
+            use_eagle,
+            enable_caching,
+            enable_kv_cache_events,
+            dcp_world_size=dcp_world_size,
+            pcp_world_size=pcp_world_size,
+            hash_block_size=hash_block_size,
+            eagle_attn_layer_names=eagle_attn_layer_names,
+            metrics_collector=metrics_collector,
+            max_num_batched_tokens=max_num_batched_tokens,
+            scheduler_block_size=scheduler_block_size,
+        )
 
     return AscendHybridKVCacheCoordinator(
         kv_cache_config,
