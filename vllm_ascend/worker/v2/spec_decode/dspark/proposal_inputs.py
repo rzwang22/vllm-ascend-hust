@@ -71,4 +71,52 @@ class AscendDSparkDraftExecution:
     execution_token_count: int
 
 
-__all__ = ["AscendDSparkDraftExecution", "AscendDSparkProposalInputs"]
+@dataclass(frozen=True, slots=True)
+class AscendDSparkMarkovStep:
+    """One completed dependency edge in fixed-K Markov sampling."""
+
+    step_index: int
+    predecessor_source: str
+    predecessor_token_ids: torch.Tensor
+    markov_input_token_ids: torch.Tensor
+    selected_token_ids: torch.Tensor
+
+
+@dataclass(frozen=True, slots=True)
+class AscendDSparkMarkovResult:
+    """An internally complete candidate set owned by one proposal epoch.
+
+    This result is intentionally not a core proposal. It remains private to
+    the Ascend speculator until proposal publication and target verification
+    are wired in a later stage.
+    """
+
+    step_epoch: int
+    rank: int
+    request_ids: tuple[str, ...]
+    request_state_indices: torch.Tensor
+    num_reqs: int
+    num_speculative_tokens: int
+    backbone_hidden_states: torch.Tensor
+    candidate_tokens: torch.Tensor
+    steps: tuple[AscendDSparkMarkovStep, ...]
+    physical_hidden_shape: tuple[int, ...]
+    physical_base_logits_shape: tuple[int, ...]
+    logical_base_logits_shape: tuple[int, ...]
+    logical_candidate_shape: tuple[int, ...]
+    vocab_size: int
+    lm_head_class: str
+    markov_head_class: str
+    lm_head_parameter_names: tuple[str, ...]
+    markov_parameter_names: tuple[str, ...]
+    loaded_module_identity_preserved: bool
+    confidence_head_present: bool
+    confidence_head_used: bool
+
+
+__all__ = [
+    "AscendDSparkDraftExecution",
+    "AscendDSparkMarkovResult",
+    "AscendDSparkMarkovStep",
+    "AscendDSparkProposalInputs",
+]

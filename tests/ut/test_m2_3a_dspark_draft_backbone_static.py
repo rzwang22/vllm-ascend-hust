@@ -29,15 +29,16 @@ def _calls(node: ast.AST) -> set[str]:
     return names
 
 
-def test_execute_draft_runs_backbone_before_markov_fail_closed() -> None:
+def test_execute_draft_runs_backbone_and_markov_before_publication_fail_closed() -> None:
     tree = ast.parse(SPECULATOR.read_text(encoding="utf-8"))
     method = _class_method(tree, "AscendDSparkSpeculator", "_execute_draft")
     calls = _calls(method)
     source = ast.get_source_segment(SPECULATOR.read_text(encoding="utf-8"), method)
 
     assert "_execute_draft_backbone" in calls
+    assert "_execute_sequential_markov_sampling" in calls
     assert "dspark_runtime_not_wired" in calls
-    assert '"V2 DSpark Markov sampling"' in source
+    assert '"V2 DSpark proposal publication"' in source
     assert '"V2 draft execution"' not in source
     assert not any(isinstance(node, ast.Return) for node in ast.walk(method))
 
@@ -79,12 +80,12 @@ def test_backbone_helper_runs_real_context_metadata_and_wrapper_forward() -> Non
     assert "synchronize" not in _calls(forward)
 
 
-def test_production_does_not_wire_markov_or_proposal_tokens() -> None:
+def test_production_wires_markov_but_not_proposal_publication() -> None:
     source = SPECULATOR.read_text(encoding="utf-8")
-    assert "_sample_sequential" not in source
-    assert "markov_bias(" not in source
-    assert "markov_embed(" not in source
-    assert 'dspark_runtime_not_wired("V2 DSpark Markov sampling")' in source
+    assert "_execute_sequential_markov_sampling" in source
+    assert "markov_bias(" in source
+    assert "markov_embed(" in source
+    assert 'dspark_runtime_not_wired("V2 DSpark proposal publication")' in source
     assert "vllm.v1.worker.gpu.spec_decode.dspark" not in source
     assert "vllm_ascend.ops.triton.spec_decode" not in source
 

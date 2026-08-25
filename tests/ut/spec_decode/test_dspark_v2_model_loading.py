@@ -77,6 +77,15 @@ def _new_ascend_draft_model() -> nn.Module:
     model_type = importlib.import_module("vllm_ascend.models.deepseek_v4_dspark").DSparkDeepseekV4ForCausalLM
     model = object.__new__(model_type)
     nn.Module.__init__(model)
+    model.lm_head = nn.Linear(1, 1, bias=False)
+    markov_head = nn.Module()
+    markov_head.markov_w1 = nn.Linear(1, 1, bias=False)
+    markov_head.markov_w2 = nn.Linear(1, 1, bias=False)
+    backbone = nn.Module()
+    backbone.num_dspark_layers = 3
+    backbone.markov_head = markov_head
+    backbone.confidence_head = None
+    model.model = backbone
     return model
 
 

@@ -360,7 +360,7 @@ def test_forward_rejects_output_shape_from_real_model_abi(monkeypatch) -> None:
         speculator._run_draft_model_forward(execution, metadata)
 
 
-def test_execute_draft_runs_backbone_then_fails_at_markov_boundary(monkeypatch) -> None:
+def test_execute_draft_runs_backbone_and_markov_then_fails_at_publication(monkeypatch) -> None:
     speculator, proposal, _auxiliary_states = _prepare()
     output = torch.ones(proposal.num_query_tokens, 8)
     calls = []
@@ -369,7 +369,12 @@ def test_execute_draft_runs_backbone_then_fails_at_markov_boundary(monkeypatch) 
         calls.append(actual)
         return output
 
+    def execute_markov(actual, hidden_states):
+        calls.extend((actual, hidden_states))
+        return object()
+
     monkeypatch.setattr(speculator, "_execute_draft_backbone", execute_backbone)
-    with pytest.raises(DSparkRuntimeNotWiredError, match="V2 DSpark Markov sampling"):
+    monkeypatch.setattr(speculator, "_execute_sequential_markov_sampling", execute_markov)
+    with pytest.raises(DSparkRuntimeNotWiredError, match="V2 DSpark proposal publication"):
         speculator._execute_draft(proposal)
-    assert calls == [proposal]
+    assert calls == [proposal, proposal, output]

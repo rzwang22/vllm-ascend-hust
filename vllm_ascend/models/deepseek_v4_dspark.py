@@ -397,6 +397,7 @@ class DSparkDeepseekV4ForCausalLM(
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
         super().__init__()
         assert vllm_config.speculative_config is not None
+        self.vllm_config = vllm_config
         self.config = vllm_config.speculative_config.draft_model_config.hf_config
         self.quant_config = vllm_config.quant_config
         last_stage = _get_dspark_num_mtp_layers(self.config) - 1
@@ -462,6 +463,26 @@ class DSparkDeepseekV4ForCausalLM(
             self.lm_head,
             self.logits_processor,
         )
+
+    def compute_draft_logits(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Compute full-vocabulary base logits with the loaded draft head."""
+        logits = self.compute_logits(hidden_states)
+        if logits is None:
+            raise RuntimeError("Ascend DSpark requires full-vocabulary logits on every TP rank.")
+        return logits
+
+    def map_draft_to_target(self, draft_ids: torch.Tensor) -> torch.Tensor:
+        """Map full-vocabulary draft IDs to the identical target vocabulary."""
+        target_model_config = self.vllm_config.speculative_config.target_model_config
+        if target_model_config is None:
+            raise RuntimeError("Ascend DSpark requires a target model vocabulary contract.")
+        target_vocab_size = target_model_config.get_vocab_size()
+        if target_vocab_size != self.config.vocab_size:
+            raise RuntimeError(
+                "Ascend DSpark cannot use identity vocabulary mapping when "
+                f"target={target_vocab_size} and draft={self.config.vocab_size}."
+            )
+        return draft_ids
 
     def markov_embed(self, token_ids: torch.Tensor) -> torch.Tensor:
         return self.model.markov_embed(token_ids)

@@ -37,8 +37,21 @@ from vllm_ascend.spec_decode import dspark_runtime_not_wired
 from vllm_ascend.worker.v2.attn_utils import build_attn_metadata
 from vllm_ascend.worker.v2.spec_decode.dspark.proposal_inputs import (
     AscendDSparkDraftExecution,
+    AscendDSparkMarkovResult,
+    AscendDSparkMarkovStep,
     AscendDSparkProposalInputs,
 )
+
+_DSPARK_MARKOV_FIXED_K = 5
+
+
+def _assert_markov_tensor_contract(predicate: torch.Tensor, message: str) -> None:
+    """Validate device state without synchronizing the NPU hot path."""
+    if predicate.device.type == "cpu":
+        if not bool(predicate):
+            raise ValueError(message)
+        return
+    torch._assert_async(predicate, message)
 
 
 def _iter_cache_tensors(cache: Any):
@@ -199,6 +212,10 @@ class AscendDSparkSpeculator(BaseSpeculator):
         self._prepared_step_epoch: int | None = None
         self._context_kv_step_epoch: int | None = None
         self._draft_forward_step_epoch: int | None = None
+        self._markov_attempt_step_epoch: int | None = None
+        self._markov_step_epoch: int | None = None
+        self._markov_result: AscendDSparkMarkovResult | None = None
+        self._markov_module_contract: MappingProxyType[str, Any] | None = None
         self._draft_cache_isolation_audit: MappingProxyType[str, int] | None = None
         self.eplb_state: Any | None = None
 
@@ -253,6 +270,8 @@ class AscendDSparkSpeculator(BaseSpeculator):
                 f"{type(draft_model).__module__}.{type(draft_model).__name__}."
             )
 
+        markov_module_contract = self._inspect_markov_modules(draft_model)
+
         get_draft_layer_names = getattr(
             draft_model,
             "get_draft_kv_cache_layer_names",
@@ -286,6 +305,7 @@ class AscendDSparkSpeculator(BaseSpeculator):
         # and implementation validation all succeed.
         self._loaded_target_model = target_model
         self._model = draft_model
+        self._markov_module_contract = markov_module_contract
         self.target_attn_layer_names = target_attn_layer_names
         self.draft_attn_layer_names = draft_attn_layer_names
         self.draft_attn_layer_order = tuple(draft_layer_names_list)
@@ -659,6 +679,9 @@ class AscendDSparkSpeculator(BaseSpeculator):
         step_epoch = self._proposal_step_epoch + 1
         self._proposal_step_epoch = step_epoch
         self._prepared_step_epoch = None
+        self._markov_attempt_step_epoch = None
+        self._markov_step_epoch = None
+        self._markov_result = None
 
         if len(input_batch.req_ids) != num_reqs or len(set(input_batch.req_ids)) != num_reqs:
             raise ValueError("Ascend DSpark request IDs must be unique and match the active request count.")
@@ -1266,13 +1289,312 @@ class AscendDSparkSpeculator(BaseSpeculator):
         draft_attn_metadata = self._build_draft_forward_metadata(execution)
         return self._run_draft_model_forward(execution, draft_attn_metadata)
 
+    @staticmethod
+    def _qualified_class_name(instance: Any) -> str:
+        instance_type = type(instance)
+        return f"{instance_type.__module__}.{instance_type.__name__}"
+
+    def _inspect_markov_modules(
+        self,
+        model: torch.nn.Module,
+    ) -> MappingProxyType[str, Any]:
+        lm_head = getattr(model, "lm_head", None)
+        backbone = getattr(model, "model", None)
+        markov_head = getattr(backbone, "markov_head", None)
+        confidence_head = getattr(backbone, "confidence_head", None)
+        if not isinstance(lm_head, torch.nn.Module):
+            raise RuntimeError("Ascend DSpark draft model has no loaded LM head module.")
+        if not isinstance(markov_head, torch.nn.Module):
+            raise RuntimeError("Ascend DSpark draft model has no loaded Markov head module.")
+
+        last_stage = int(getattr(backbone, "num_dspark_layers", 3)) - 1
+        if last_stage < 0:
+            raise RuntimeError("Ascend DSpark draft model has no MTP stages.")
+        lm_head_parameter_names = tuple(
+            f"mtp.{last_stage}.head.{name}" for name, _parameter in lm_head.named_parameters()
+        )
+        markov_parameter_names = tuple(
+            f"mtp.{last_stage}.markov_head.{name}" for name, _parameter in markov_head.named_parameters()
+        )
+        if not lm_head_parameter_names or not markov_parameter_names:
+            raise RuntimeError("Ascend DSpark Markov sampling requires loaded LM and Markov parameters.")
+        return MappingProxyType(
+            {
+                "lm_head": lm_head,
+                "markov_head": markov_head,
+                "confidence_head": confidence_head,
+                "lm_head_id": id(lm_head),
+                "markov_head_id": id(markov_head),
+                "confidence_head_id": id(confidence_head) if confidence_head is not None else None,
+                "lm_head_class": self._qualified_class_name(lm_head),
+                "markov_head_class": self._qualified_class_name(markov_head),
+                "lm_head_parameter_names": lm_head_parameter_names,
+                "markov_parameter_names": markov_parameter_names,
+            }
+        )
+
+    def _validate_markov_inputs(
+        self,
+        proposal_inputs: AscendDSparkProposalInputs,
+        hidden_states: torch.Tensor,
+    ) -> tuple[int, int, int]:
+        if proposal_inputs.step_epoch != self._proposal_step_epoch:
+            raise RuntimeError("Ascend DSpark Markov inputs belong to a stale target step.")
+        if proposal_inputs.rank != self.rank:
+            raise RuntimeError("Ascend DSpark Markov inputs belong to a different NPU rank.")
+        if self._context_kv_step_epoch != proposal_inputs.step_epoch:
+            raise RuntimeError("Ascend DSpark Markov inputs have no matching context-KV write.")
+        if self._draft_forward_step_epoch != proposal_inputs.step_epoch:
+            raise RuntimeError("Ascend DSpark Markov inputs have no matching draft backbone output.")
+        if (
+            len(proposal_inputs.request_ids) != proposal_inputs.num_reqs
+            or len(set(proposal_inputs.request_ids)) != proposal_inputs.num_reqs
+        ):
+            raise RuntimeError("Ascend DSpark Markov request ownership changed after draft forward.")
+
+        num_reqs = proposal_inputs.num_reqs
+        num_speculative_tokens = proposal_inputs.num_speculative_tokens
+        if num_speculative_tokens != _DSPARK_MARKOV_FIXED_K:
+            raise NotImplementedError(
+                f"Ascend DSpark Markov sampling currently requires fixed K=5, got K={num_speculative_tokens}."
+            )
+        expected_tokens = num_reqs * num_speculative_tokens
+        if proposal_inputs.num_query_tokens != expected_tokens:
+            raise ValueError("Ascend DSpark Markov sampling requires B*K draft tokens.")
+
+        hidden_states = self._validate_step_tensor(
+            "Markov backbone hidden states",
+            hidden_states,
+            ndim=2,
+        )
+        hidden_size = int(self.draft_model_config.hf_config.hidden_size)
+        if hidden_states.shape != (expected_tokens, hidden_size):
+            raise ValueError(
+                "Ascend DSpark Markov hidden states must use request-major "
+                f"[B*K,H] layout, got {tuple(hidden_states.shape)}."
+            )
+        if not hidden_states.dtype.is_floating_point:
+            raise TypeError("Ascend DSpark Markov hidden states must be floating point.")
+
+        query_start_loc = self._validate_step_tensor(
+            "Markov draft query-start locations",
+            proposal_inputs.draft_query_start_loc,
+            ndim=1,
+            dtypes=(torch.int32,),
+        )
+        if query_start_loc.shape != (num_reqs + 1,):
+            raise ValueError("Ascend DSpark Markov query layout must contain B+1 offsets.")
+        expected_query_start_loc = (
+            torch.arange(num_reqs + 1, dtype=torch.int32, device=self.device) * num_speculative_tokens
+        )
+        _assert_markov_tensor_contract(
+            torch.all(query_start_loc == expected_query_start_loc),
+            "Ascend DSpark Markov query layout must be request-major with fixed K.",
+        )
+
+        anchor_token_ids = self._validate_step_tensor(
+            "Markov anchor token IDs",
+            proposal_inputs.anchor_token_ids,
+            ndim=1,
+            dtypes=(torch.int32, torch.int64),
+        )
+        if anchor_token_ids.shape != (num_reqs,):
+            raise ValueError("Ascend DSpark Markov sampling requires one anchor per request.")
+        self._validate_step_tensor(
+            "Markov request-state indices",
+            proposal_inputs.request_state_indices,
+            ndim=1,
+            dtypes=(torch.int32,),
+            min_size=num_reqs,
+        )
+        return num_reqs, num_speculative_tokens, expected_tokens
+
+    def _require_greedy_markov_sampling(
+        self,
+        proposal_inputs: AscendDSparkProposalInputs,
+    ) -> None:
+        temperatures = self._validate_step_tensor(
+            "Markov sampling temperatures",
+            proposal_inputs.temperature,
+            ndim=1,
+            dtypes=(torch.float32,),
+        )
+        request_indices = proposal_inputs.request_state_indices[: proposal_inputs.num_reqs].to(torch.int64)
+        _assert_markov_tensor_contract(
+            ((request_indices >= 0) & (request_indices < temperatures.shape[0])).all(),
+            "Ascend DSpark Markov request-state mapping is outside the temperature buffer.",
+        )
+        active_temperatures = temperatures[request_indices]
+        greedy = torch.all(active_temperatures == 0)
+        if active_temperatures.device.type == "cpu":
+            if not bool(greedy):
+                dspark_runtime_not_wired("V2 DSpark stochastic Markov sampling")
+            return
+        torch._assert_async(
+            greedy,
+            "Ascend DSpark V2 DSpark stochastic Markov sampling is not yet wired.",
+        )
+
+    @torch.inference_mode()
+    def _execute_sequential_markov_sampling(
+        self,
+        proposal_inputs: AscendDSparkProposalInputs,
+        hidden_states: torch.Tensor,
+    ) -> AscendDSparkMarkovResult:
+        """Run fixed-K greedy Markov recurrence without publishing a proposal."""
+        if proposal_inputs.step_epoch != self._proposal_step_epoch:
+            raise RuntimeError("Ascend DSpark Markov inputs belong to a stale target step.")
+        if self._markov_attempt_step_epoch == proposal_inputs.step_epoch:
+            raise RuntimeError("Ascend DSpark Markov sampling already attempted this consumed proposal epoch.")
+
+        # Clear visibility before any head execution. A failed step remains
+        # consumed because the context KV write and draft forward are not
+        # reversible, while no partial candidate state becomes observable.
+        self._markov_attempt_step_epoch = proposal_inputs.step_epoch
+        self._markov_step_epoch = None
+        self._markov_result = None
+        num_reqs, num_speculative_tokens, expected_tokens = self._validate_markov_inputs(
+            proposal_inputs,
+            hidden_states,
+        )
+        self._require_greedy_markov_sampling(proposal_inputs)
+
+        module_contract = self._markov_module_contract
+        if module_contract is None:
+            module_contract = self._inspect_markov_modules(self.model)
+            self._markov_module_contract = module_contract
+        current_contract = self._inspect_markov_modules(self.model)
+        if (
+            current_contract["lm_head_id"] != module_contract["lm_head_id"]
+            or current_contract["markov_head_id"] != module_contract["markov_head_id"]
+            or current_contract["confidence_head_id"] != module_contract["confidence_head_id"]
+        ):
+            raise RuntimeError("Ascend DSpark loaded LM/Markov module identity changed before sampling.")
+
+        base_logits = self.model.compute_draft_logits(hidden_states)
+        if not isinstance(base_logits, torch.Tensor):
+            raise TypeError("Ascend DSpark draft LM head must return full-vocabulary logits on every rank.")
+        self._validate_step_tensor("Markov base logits", base_logits, ndim=2)
+        vocab_size = int(self.draft_model_config.hf_config.vocab_size)
+        if base_logits.shape != (expected_tokens, vocab_size):
+            raise RuntimeError(
+                "Ascend DSpark cannot sample a local vocabulary shard: "
+                f"expected {(expected_tokens, vocab_size)}, got {tuple(base_logits.shape)}."
+            )
+        if not base_logits.dtype.is_floating_point:
+            raise TypeError("Ascend DSpark Markov base logits must be floating point.")
+        _assert_markov_tensor_contract(
+            ~torch.isnan(base_logits).any(),
+            "Ascend DSpark Markov base logits contain NaN.",
+        )
+        logical_base_logits = base_logits.view(
+            num_reqs,
+            num_speculative_tokens,
+            vocab_size,
+        )
+
+        predecessor = proposal_inputs.anchor_token_ids
+        _assert_markov_tensor_contract(
+            ((predecessor >= 0) & (predecessor < vocab_size)).all(),
+            "Ascend DSpark Markov anchor token is outside the shared target/draft vocabulary.",
+        )
+        steps: list[AscendDSparkMarkovStep] = []
+        selected_steps: list[torch.Tensor] = []
+        for step_index in range(num_speculative_tokens):
+            markov_input = predecessor
+            markov_embed = self.model.markov_embed(markov_input)
+            if not isinstance(markov_embed, torch.Tensor):
+                raise TypeError("Ascend DSpark Markov embedding must be a tensor.")
+            self._validate_step_tensor("Markov embedding", markov_embed, ndim=2)
+            if markov_embed.shape[0] != num_reqs or not markov_embed.dtype.is_floating_point:
+                raise RuntimeError("Ascend DSpark Markov embedding must contain one floating-point row per request.")
+            _assert_markov_tensor_contract(
+                ~torch.isnan(markov_embed).any(),
+                "Ascend DSpark Markov embedding contains NaN.",
+            )
+            markov_bias = self.model.markov_bias(markov_embed)
+            if not isinstance(markov_bias, torch.Tensor):
+                raise TypeError("Ascend DSpark Markov head must return a tensor bias.")
+            self._validate_step_tensor("Markov vocabulary bias", markov_bias, ndim=2)
+            if markov_bias.shape != (num_reqs, vocab_size):
+                raise RuntimeError(
+                    f"Ascend DSpark Markov bias must cover the full vocabulary, got {tuple(markov_bias.shape)}."
+                )
+            step_logits = logical_base_logits[:, step_index, :] + markov_bias
+            _assert_markov_tensor_contract(
+                ~torch.isnan(step_logits).any(),
+                "Ascend DSpark Markov logits contain NaN.",
+            )
+            _assert_markov_tensor_contract(
+                torch.isfinite(step_logits).any(dim=-1).all(),
+                "Ascend DSpark Markov logits contain a row with no selectable finite token.",
+            )
+            draft_selected = torch.argmax(step_logits, dim=-1)
+            selected = self.model.map_draft_to_target(draft_selected)
+            if selected is not draft_selected:
+                raise RuntimeError(
+                    "Ascend DSpark 0731 full-vocabulary checkpoint requires identity draft-to-target mapping."
+                )
+            self._validate_step_tensor(
+                "Markov selected token IDs",
+                selected,
+                ndim=1,
+                dtypes=(torch.int64,),
+            )
+            if selected.shape != (num_reqs,):
+                raise RuntimeError("Ascend DSpark Markov sampling returned an invalid request dimension.")
+            _assert_markov_tensor_contract(
+                ((selected >= 0) & (selected < vocab_size)).all(),
+                "Ascend DSpark Markov sampling returned a token outside the full vocabulary.",
+            )
+            steps.append(
+                AscendDSparkMarkovStep(
+                    step_index=step_index,
+                    predecessor_source=("anchor_token_ids" if step_index == 0 else "previous_sampled_token"),
+                    predecessor_token_ids=predecessor,
+                    markov_input_token_ids=markov_input,
+                    selected_token_ids=selected,
+                )
+            )
+            selected_steps.append(selected)
+            predecessor = selected
+
+        candidate_tokens = torch.stack(selected_steps, dim=1)
+        result = AscendDSparkMarkovResult(
+            step_epoch=proposal_inputs.step_epoch,
+            rank=proposal_inputs.rank,
+            request_ids=proposal_inputs.request_ids,
+            request_state_indices=proposal_inputs.request_state_indices[:num_reqs].clone(),
+            num_reqs=num_reqs,
+            num_speculative_tokens=num_speculative_tokens,
+            backbone_hidden_states=hidden_states,
+            candidate_tokens=candidate_tokens,
+            steps=tuple(steps),
+            physical_hidden_shape=tuple(hidden_states.shape),
+            physical_base_logits_shape=tuple(base_logits.shape),
+            logical_base_logits_shape=tuple(logical_base_logits.shape),
+            logical_candidate_shape=tuple(candidate_tokens.shape),
+            vocab_size=vocab_size,
+            lm_head_class=module_contract["lm_head_class"],
+            markov_head_class=module_contract["markov_head_class"],
+            lm_head_parameter_names=module_contract["lm_head_parameter_names"],
+            markov_parameter_names=module_contract["markov_parameter_names"],
+            loaded_module_identity_preserved=True,
+            confidence_head_present=module_contract["confidence_head"] is not None,
+            confidence_head_used=False,
+        )
+        self._markov_result = result
+        self._markov_step_epoch = proposal_inputs.step_epoch
+        return result
+
     def _execute_draft(
         self,
         proposal_inputs: AscendDSparkProposalInputs,
     ) -> torch.Tensor:
         self.validate_prepared_inputs_current(proposal_inputs)
-        self._execute_draft_backbone(proposal_inputs)
-        dspark_runtime_not_wired("V2 DSpark Markov sampling")
+        hidden_states = self._execute_draft_backbone(proposal_inputs)
+        self._execute_sequential_markov_sampling(proposal_inputs, hidden_states)
+        dspark_runtime_not_wired("V2 DSpark proposal publication")
 
     def set_eplb_state(self, eplb_state: Any) -> None:
         """Accept the runner's EPLB state after a successful model load."""

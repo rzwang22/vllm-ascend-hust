@@ -7,6 +7,8 @@ from vllm.config import VllmConfig
 
 from vllm_ascend.worker.v2.spec_decode.dspark.proposal_inputs import (
     AscendDSparkDraftExecution,
+    AscendDSparkMarkovResult,
+    AscendDSparkMarkovStep,
     AscendDSparkProposalInputs,
 )
 from vllm_ascend.worker.v2.spec_decode.dspark.speculator import (
@@ -24,6 +26,8 @@ def create_dspark_speculator(
 
 __all__ = [
     "AscendDSparkDraftExecution",
+    "AscendDSparkMarkovResult",
+    "AscendDSparkMarkovStep",
     "AscendDSparkProposalInputs",
     "AscendDSparkSpeculator",
     "create_dspark_speculator",

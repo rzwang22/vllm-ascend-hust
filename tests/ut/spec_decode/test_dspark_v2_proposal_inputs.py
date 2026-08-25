@@ -103,6 +103,7 @@ def _config():
                     dspark_noise_token_id=127,
                     dspark_target_layer_ids=list(TARGET_LAYER_IDS),
                     hidden_size=8,
+                    vocab_size=16,
                 ),
             ),
             num_speculative_tokens=5,
@@ -496,18 +497,25 @@ def test_prepared_inputs_reject_different_rank_ownership() -> None:
         )
 
 
-def test_propose_runs_backbone_then_fails_at_markov_sampling(monkeypatch) -> None:
+def test_propose_runs_backbone_then_fails_at_proposal_publication(monkeypatch) -> None:
     speculator = _ready_speculator()
     kwargs, _aux = _step_kwargs()
     forwarded: list[AscendDSparkProposalInputs] = []
 
     def execute_backbone(proposal_inputs):
         forwarded.append(proposal_inputs)
+        speculator._context_kv_step_epoch = proposal_inputs.step_epoch
+        speculator._draft_forward_step_epoch = proposal_inputs.step_epoch
         return torch.ones(proposal_inputs.num_query_tokens, 8)
 
     monkeypatch.setattr(speculator, "_execute_draft_backbone", execute_backbone)
+    monkeypatch.setattr(
+        speculator,
+        "_execute_sequential_markov_sampling",
+        lambda proposal_inputs, hidden_states: (proposal_inputs, hidden_states),
+    )
 
-    with pytest.raises(DSparkRuntimeNotWiredError, match="V2 DSpark Markov sampling"):
+    with pytest.raises(DSparkRuntimeNotWiredError, match="V2 DSpark proposal publication"):
         speculator.propose(**kwargs)
 
     assert speculator._proposal_step_epoch == 1
