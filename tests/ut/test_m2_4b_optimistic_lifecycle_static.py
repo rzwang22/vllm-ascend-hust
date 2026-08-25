@@ -14,13 +14,18 @@ MODEL_RUNNER = ROOT / "vllm_ascend/worker/v2/model_runner.py"
 PREPARE_HARNESS = ROOT / ("tests/e2e/nightly/single_node/spec_decode/test_dspark_proposal_inputs_prepare.py")
 MULTI_ROUND_HARNESS = ROOT / ("tests/e2e/nightly/single_node/spec_decode/test_dspark_multi_round_generation.py")
 KV_COORDINATOR = ROOT / ("vllm_ascend/patch/platform/patch_kv_cache_coordinator.py")
+ATTN_UTILS = ROOT / "vllm_ascend/worker/v2/attn_utils.py"
 
 
 def _load_function(path: Path, name: str):
     tree = ast.parse(path.read_text(encoding="utf-8"))
-    function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == name)
-    module = ast.Module(body=[function], type_ignores=[])
-    namespace = {"Any": object}
+    required_names = {name}
+    if name == "_target_only_kv_topology":
+        required_names.add("_group_specs_by_equality")
+    functions = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in required_names]
+    assert {function.name for function in functions} == required_names
+    module = ast.Module(body=functions, type_ignores=[])
+    namespace = {"Any": object, "VllmConfig": object}
     exec(compile(module, str(path), "exec"), namespace)
     return namespace[name]
 
@@ -121,7 +126,7 @@ def test_target_only_topology_reports_single_unitary_group() -> None:
     assert result["contains_draft_groups"] is False
 
 
-def test_target_only_topology_groups_equivalent_raw_specs() -> None:
+def test_target_only_topology_exposes_invalid_equivalent_raw_specs() -> None:
     topology = _load_function(
         MULTI_ROUND_HARNESS,
         "_target_only_kv_topology",
@@ -157,6 +162,47 @@ def test_target_only_topology_groups_equivalent_raw_specs() -> None:
     assert result["raw_group_count"] == 2
     assert result["unique_attention_group_count"] == 1
     assert result["spec_equality_groups"] == [[0, 1]]
+
+
+def test_target_only_topology_preserves_distinct_c4_c128_specs() -> None:
+    topology = _load_function(
+        MULTI_ROUND_HARNESS,
+        "_target_only_kv_topology",
+    )
+    groups = [
+        SimpleNamespace(
+            kv_cache_spec=SimpleNamespace(
+                block_size=128,
+                storage_block_size=128,
+                compress_ratio=compress_ratio,
+            ),
+            layer_names=[f"model.layers.{index}.self_attn.attn"],
+            is_eagle_group=False,
+        )
+        for index, compress_ratio in enumerate((4, 128))
+    ]
+
+    class _AscendHybridKVCacheCoordinator:
+        single_type_managers = (SimpleNamespace(), SimpleNamespace())
+
+    runtime = SimpleNamespace(
+        launch=SimpleNamespace(rank=0),
+        target_kv_cache_layer_names=tuple(name for group in groups for name in group.layer_names),
+    )
+    scheduler = SimpleNamespace(
+        kv_cache_manager=SimpleNamespace(
+            kv_cache_config=SimpleNamespace(kv_cache_groups=groups),
+            coordinator=_AscendHybridKVCacheCoordinator(),
+        )
+    )
+
+    result = topology(runtime, scheduler)
+
+    assert result["raw_group_count"] == 2
+    assert result["unique_attention_group_count"] == 2
+    assert result["spec_equality_groups"] == [[0], [1]]
+    assert result["compress_ratios"] == [4, 128]
+    assert result["coordinator_class"] == "_AscendHybridKVCacheCoordinator"
 
 
 def test_target_only_topology_rejects_draft_cache_owners() -> None:
@@ -195,3 +241,87 @@ def test_deepseek_detection_follows_core_topology_guards() -> None:
     topology_guard = "if len(kv_cache_config.kv_cache_groups) == 1 or not enable_caching:"
     deepseek_dispatch = "if _is_deepseek_v4_kv_cache_config(kv_cache_config):"
     assert factory.index(topology_guard) < factory.index(deepseek_dispatch)
+
+
+@pytest.mark.parametrize("method", [None, "dspark", "mtp", "eagle", "dflash"])
+def test_dsv4_kv_lifecycle_detection_is_model_specific(
+    method: str | None,
+) -> None:
+    uses_dsv4 = _load_function(
+        ATTN_UTILS,
+        "_uses_ascend_dsv4_kv_lifecycle",
+    )
+    speculative_config = None if method is None else SimpleNamespace(method=method)
+    dsv4_config = SimpleNamespace(
+        model_config=SimpleNamespace(
+            hf_config=SimpleNamespace(compress_ratios=[1, 4, 128]),
+        ),
+        speculative_config=speculative_config,
+    )
+    ordinary_config = SimpleNamespace(
+        model_config=SimpleNamespace(hf_config=SimpleNamespace()),
+        speculative_config=speculative_config,
+    )
+
+    assert uses_dsv4(dsv4_config) is True
+    assert uses_dsv4(ordinary_config) is False
+
+
+def test_target_only_diagnostic_runs_before_scheduler_dispatch() -> None:
+    source = MULTI_ROUND_HARNESS.read_text(encoding="utf-8")
+    run_start = source.index("def _run_target_only_generation(")
+    run_end = source.index("\ndef ", run_start + 1)
+    run_source = source[run_start:run_end]
+    runtime_start = source.index("def _target_only_runtime(")
+    runtime_end = source.index("\ndef ", runtime_start + 1)
+    runtime_source = source[runtime_start:runtime_end]
+
+    assert runtime_source.index("_target_only_kv_topology_pre_dispatch(") < runtime_source.index(
+        "worker.initialize_from_config(kv_cache_config)"
+    )
+    assert "DSPARK_M2_4B_TARGET_KV_TOPOLOGY_PRE_DISPATCH=" in runtime_source
+    assert run_source.index("runtime.target_only_kv_topology_pre_dispatch") < run_source.index(
+        "_build_scheduler(runtime)"
+    )
+    for field in (
+        "raw_group_count_before",
+        "normalized_group_count",
+        "unique_group_count_after",
+        "selected_coordinator",
+        "layer_set_preserved",
+        "layer_multiplicity_preserved",
+    ):
+        assert field in source
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ({"draft_layer_count": 1}, "draft/MTP KV cache owners"),
+        ({"layer_set_preserved": False}, "target KV owner set"),
+        ({"layer_multiplicity_preserved": False}, "owner multiplicity"),
+        (
+            {"dispatch_route": "invalid-equivalent-multi-group"},
+            "multiple equivalent KV groups",
+        ),
+    ],
+)
+def test_target_only_pre_dispatch_validation_rejects_invalid_topology(
+    mutation: dict[str, object],
+    message: str,
+) -> None:
+    validate = _load_function(
+        MULTI_ROUND_HARNESS,
+        "_validate_target_only_kv_topology_pre_dispatch",
+    )
+    topology = {
+        "draft_layer_count": 0,
+        "layer_set_preserved": True,
+        "layer_multiplicity_preserved": True,
+        "dispatch_route": "ascend-hybrid",
+    }
+
+    validate(topology)
+    topology.update(mutation)
+    with pytest.raises(RuntimeError, match=message):
+        validate(topology)

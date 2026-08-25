@@ -9,6 +9,7 @@ import torch
 from vllm.v1.core.block_pool import BlockPool
 from vllm.v1.core.kv_cache_coordinator import UnitaryKVCacheCoordinator
 from vllm.v1.core.kv_cache_manager import KVCacheManager
+from vllm.v1.core.kv_cache_utils import generate_scheduler_kv_cache_config
 from vllm.v1.kv_cache_interface import (
     FullAttentionSpec,
     KVCacheConfig,
@@ -315,6 +316,56 @@ def test_kv_cache_manager_constructs_with_single_deepseek_v4_group() -> None:
     assert type(manager.coordinator) is UnitaryKVCacheCoordinator
     assert manager.kv_cache_config is single_group_config
     assert manager.kv_cache_config.kv_cache_groups[0].layer_names == [layer_name]
+
+
+def test_equivalent_multi_group_topology_keeps_hybrid_invariant() -> None:
+    base_config = generate_scheduler_kv_cache_config([_make_deepseek_v4_kv_cache_config()])
+    spec = base_config.kv_cache_groups[0].kv_cache_spec
+    equivalent_config = KVCacheConfig(
+        num_blocks=base_config.num_blocks,
+        kv_cache_tensors=base_config.kv_cache_tensors,
+        kv_cache_groups=[
+            KVCacheGroupSpec(layer_names=["c4_attn.0"], kv_cache_spec=spec),
+            KVCacheGroupSpec(layer_names=["c4_attn.1"], kv_cache_spec=spec),
+        ],
+    )
+
+    with pytest.raises(
+        AssertionError,
+        match="HybridKVCacheCoordinator requires at least two attention groups",
+    ):
+        get_kv_cache_coordinator(
+            equivalent_config,
+            max_model_len=1024,
+            max_num_batched_tokens=1024,
+            use_eagle=False,
+            enable_caching=True,
+            enable_kv_cache_events=False,
+            dcp_world_size=1,
+            pcp_world_size=1,
+            hash_block_size=128,
+        )
+
+
+def test_kv_cache_manager_constructs_target_only_dsv4_hybrid_topology() -> None:
+    scheduler_config = generate_scheduler_kv_cache_config([_make_deepseek_v4_kv_cache_config()])
+    specs = [group.kv_cache_spec for group in scheduler_config.kv_cache_groups]
+
+    manager = KVCacheManager(
+        kv_cache_config=scheduler_config,
+        max_model_len=1024,
+        max_num_batched_tokens=1024,
+        scheduler_block_size=128,
+        hash_block_size=128,
+        enable_caching=True,
+    )
+
+    assert len(scheduler_config.kv_cache_groups) == 2
+    assert specs[0].compress_ratio == 4
+    assert specs[1].compress_ratio == 128
+    assert specs[0] != specs[1]
+    assert type(manager.coordinator) is AscendHybridKVCacheCoordinator
+    assert len(manager.coordinator.attention_groups) == 2
 
 
 def test_get_kv_cache_coordinator_delegates_hybrid_without_caching(monkeypatch) -> None:

@@ -66,18 +66,20 @@ from vllm_ascend.utils import (
 _ATTENTION_MASK_BUILDER = None
 
 
-def _uses_dspark_dsv4(vllm_config: VllmConfig) -> bool:
+def _uses_ascend_dsv4_kv_lifecycle(vllm_config: VllmConfig) -> bool:
+    """Whether V2 owns the complete Ascend DeepSeek-V4 KV lifecycle.
+
+    Indexer, compressor-state, and SWA cache layers belong to the target model,
+    so their lifecycle is independent of whether speculative decoding is
+    configured. In particular, a target-only runner has no speculative config
+    but must discover and initialize the same target cache owners as DSpark.
+    """
     model_config = getattr(vllm_config, "model_config", None)
     hf_config = getattr(model_config, "hf_config", None)
-    speculative_config = getattr(vllm_config, "speculative_config", None)
-    return (
-        hf_config is not None
-        and hasattr(hf_config, "compress_ratios")
-        and getattr(speculative_config, "method", None) == "dspark"
-    )
+    return hf_config is not None and hasattr(hf_config, "compress_ratios")
 
 
-def _dspark_cache_binding_key(layer_name: str) -> tuple[int, int, str]:
+def _dsv4_cache_binding_key(layer_name: str) -> tuple[int, int, str]:
     """Return a stable target-before-draft key without losing cache identity."""
     parts = layer_name.split(".")
     if len(parts) >= 2 and parts[0] == "mtp" and parts[1].isdigit():
@@ -98,10 +100,10 @@ def _kv_cache_binding_order(
 ) -> list[str]:
     """Order runner caches while retaining every full layer-name identity."""
     vllm_config = get_current_vllm_config_or_none()
-    if vllm_config is not None and _uses_dspark_dsv4(vllm_config):
-        return sorted(layer_names, key=_dspark_cache_binding_key)
+    if vllm_config is not None and _uses_ascend_dsv4_kv_lifecycle(vllm_config):
+        return sorted(layer_names, key=_dsv4_cache_binding_key)
 
-    # Keep core's legacy primary ordering for non-DSpark models. The original
+    # Keep core's legacy primary ordering for non-DeepSeek-V4 models. The original
     # dict order is the tie-breaker for multiple attention modules in one
     # decoder layer.
     indexed_names = [
@@ -135,13 +137,13 @@ def bind_kv_cache(
         return
 
     vllm_config = get_current_vllm_config_or_none()
-    uses_dspark_dsv4 = vllm_config is not None and _uses_dspark_dsv4(vllm_config)
-    if uses_dspark_dsv4:
+    uses_ascend_dsv4 = vllm_config is not None and _uses_ascend_dsv4_kv_lifecycle(vllm_config)
+    if uses_ascend_dsv4:
         assert vllm_config is not None
         authoritative_context = vllm_config.compilation_config.static_forward_context
         if forward_context is not authoritative_context:
             raise RuntimeError(
-                "Ascend DSpark KV binding did not receive the authoritative VllmConfig static_forward_context."
+                "Ascend DeepSeek-V4 KV binding did not receive the authoritative VllmConfig static_forward_context."
             )
 
     missing_layers = sorted(set(kv_caches).difference(forward_context))
@@ -152,7 +154,7 @@ def bind_kv_cache(
         layer_name
         for layer_name in kv_caches
         if not hasattr(forward_context[layer_name], "kv_cache")
-        or (uses_dspark_dsv4 and not isinstance(forward_context[layer_name], AttentionLayerBase))
+        or (uses_ascend_dsv4 and not isinstance(forward_context[layer_name], AttentionLayerBase))
     )
     if invalid_layers:
         raise RuntimeError(f"Ascend V2 KV cache registry contains non-attention cache owners: {invalid_layers}.")
@@ -218,7 +220,7 @@ def get_kv_cache_spec(vllm_config: VllmConfig) -> dict[str, KVCacheSpec]:
         # tensors and must participate in the same V2 cache lifecycle. Keep
         # the generic AttentionLayerBase contract used by core while retaining
         # the Ascend MLAAttention rewrite above.
-        if not _uses_dspark_dsv4(vllm_config):
+        if not _uses_ascend_dsv4_kv_lifecycle(vllm_config):
             continue
         if spec := attn_module.get_kv_cache_spec(vllm_config):
             if isinstance(spec, AttentionSpec):
@@ -602,8 +604,8 @@ def _allocate_kv_cache(
         physical shared-KV backing tensor.
     """
     vllm_config = get_current_vllm_config()
-    uses_dspark_dsv4 = _uses_dspark_dsv4(vllm_config)
-    if uses_dspark_dsv4:
+    uses_ascend_dsv4 = _uses_ascend_dsv4_kv_lifecycle(vllm_config)
+    if uses_ascend_dsv4:
         _validate_dsv4_packed_layout(kv_cache_config)
 
     # init kv cache tensors
@@ -622,8 +624,8 @@ def _allocate_kv_cache(
 
         # DeepSeek V4 DSA owns a single physical shared-KV page per cache
         # layer. Generic K/V splitting would halve that page and give the
-        # DSpark model a tuple it cannot pass to DSA cache operators.
-        if uses_dspark_dsv4:
+        # DSA layer a tuple it cannot pass to its cache operators.
+        if uses_ascend_dsv4:
             if kv_cache_tensor.block_stride > 0 and packed_backing is not None:
                 if packed_backing.numel() != kv_cache_tensor.size:
                     raise ValueError("All packed DSA cache tensors must share one allocation size.")
@@ -808,8 +810,8 @@ def _reshape_kv_cache_v2(
     if kv_cache_config is None:
         raise ValueError("Reshape KV cache requires KVCacheConfig.")
     vllm_config = get_current_vllm_config()
-    uses_dspark_dsv4 = _uses_dspark_dsv4(vllm_config)
-    if uses_dspark_dsv4:
+    uses_ascend_dsv4 = _uses_ascend_dsv4_kv_lifecycle(vllm_config)
+    if uses_ascend_dsv4:
         _validate_dsv4_packed_layout(kv_cache_config)
     is_kv_consumer = (
         vllm_config.kv_transfer_config.is_kv_consumer if vllm_config.kv_transfer_config is not None else False
@@ -841,7 +843,7 @@ def _reshape_kv_cache_v2(
             assert isinstance(kv_cache_spec, AttentionSpec)
 
             raw_cache = kv_cache_raw_tensors[layer_name]
-            if uses_dspark_dsv4 and isinstance(
+            if uses_ascend_dsv4 and isinstance(
                 kv_cache_spec,
                 (AscendMLAAttentionSpec, AscendSlidingWindowMLASpec),
             ):

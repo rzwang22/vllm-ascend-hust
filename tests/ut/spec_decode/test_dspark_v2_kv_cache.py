@@ -17,6 +17,7 @@ from vllm.config import set_current_vllm_config
 from vllm.config.compilation import CUDAGraphMode
 from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
 from vllm.model_executor.models.utils import extract_layer_index
+from vllm.v1.core.single_type_kv_cache_manager import SlidingWindowManager
 from vllm.v1.kv_cache_interface import (
     FullAttentionSpec,
     KVCacheConfig,
@@ -24,6 +25,7 @@ from vllm.v1.kv_cache_interface import (
     KVCacheTensor,
     UniformTypeKVCacheSpecs,
 )
+from vllm.v1.kv_cache_spec_registry import KVCacheSpecRegistry
 from vllm.v1.worker.gpu import model_runner as vllm_model_runner
 from vllm.v1.worker.gpu.cudagraph_utils import ModelCudaGraphManager
 
@@ -31,8 +33,12 @@ from vllm_ascend.core.kv_cache_interface import (
     AscendMLAAttentionSpec,
     AscendSlidingWindowMLASpec,
 )
+from vllm_ascend.core.single_type_kv_cache_manager import (
+    CompressAttentionManager,
+)
 from vllm_ascend.patch.platform.patch_kv_cache_utils import (
     _get_kv_cache_config_deepseek_v4,
+    group_and_unify_kv_cache_specs,
 )
 from vllm_ascend.worker.v2 import attn_utils
 from vllm_ascend.worker.v2.spec_decode.dspark import (
@@ -319,9 +325,10 @@ def test_bind_kv_cache_failure_restores_layers_and_runner() -> None:
     assert all(context[name].kv_cache is previous_caches[name] for name in names)
 
 
-def test_bind_kv_cache_preserves_non_dspark_numeric_order() -> None:
+def test_bind_kv_cache_preserves_non_dsv4_numeric_order() -> None:
     config = _config()
     config.speculative_config = None
+    config.model_config.hf_config = SimpleNamespace()
     names = (
         "model.layers.1.self_attn",
         "model.layers.0.self_attn",
@@ -337,6 +344,30 @@ def test_bind_kv_cache_preserves_non_dspark_numeric_order() -> None:
 
     assert runner_caches[0] is caches[names[1]]
     assert runner_caches[1] is caches[names[0]]
+
+
+def test_target_only_dsv4_binding_preserves_full_name_identity() -> None:
+    config = _config()
+    config.speculative_config = None
+    names = tuple(reversed(TARGET_LAYER_2_CACHES))
+    context = config.compilation_config.static_forward_context
+    caches = {name: torch.tensor([index]) for index, name in enumerate(names)}
+    for name in names:
+        context[name] = _FakeAttentionLayer(_spec())
+    runner_caches = []
+
+    with set_current_vllm_config(config):
+        attn_utils.bind_kv_cache(caches, context, runner_caches)
+
+    assert len(runner_caches) == len(TARGET_LAYER_2_CACHES)
+    assert all(
+        runner_cache is caches[layer_name]
+        for runner_cache, layer_name in zip(
+            runner_caches,
+            TARGET_LAYER_2_CACHES,
+        )
+    )
+    assert all(context[name].kv_cache is caches[name] for name in names)
 
 
 def test_v2_patch_installs_full_name_binder_at_core_call_site() -> None:
@@ -358,19 +389,97 @@ def test_custom_dsv4_cache_layer_participates_in_kv_spec_discovery() -> None:
     assert specs[DRAFT_LAYERS[0]].indexes_kv_by_block_stride is True
 
 
-@pytest.mark.parametrize("method", [None, "mtp", "eagle", "dflash"])
-def test_custom_dsv4_kv_discovery_does_not_change_non_dspark_paths(
+@pytest.mark.parametrize("method", [None, "dspark", "mtp", "eagle", "dflash"])
+def test_custom_dsv4_kv_discovery_is_model_specific(
     method: str | None,
 ) -> None:
     config = _config()
     config.speculative_config = None if method is None else SimpleNamespace(method=method)
-    config.compilation_config.static_forward_context[DRAFT_LAYERS[0]] = _FakeAttentionLayer(_spec())
+    layer = _FakeAttentionLayer(_spec())
+    config.compilation_config.static_forward_context[TARGET_LAYER] = layer
+
+    specs = attn_utils.get_kv_cache_spec(config)
+
+    assert specs.keys() == {TARGET_LAYER}
+    assert specs[TARGET_LAYER] is not layer.spec
+    assert specs[TARGET_LAYER].indexes_kv_by_block_stride is True
+
+
+@pytest.mark.parametrize("method", [None, "dspark", "mtp", "eagle", "dflash"])
+def test_custom_cache_discovery_does_not_change_non_dsv4_paths(
+    method: str | None,
+) -> None:
+    config = _config()
+    config.model_config.hf_config = SimpleNamespace()
+    config.speculative_config = None if method is None else SimpleNamespace(method=method)
+    config.compilation_config.static_forward_context[TARGET_LAYER] = _FakeAttentionLayer(_spec())
 
     assert attn_utils.get_kv_cache_spec(config) == {}
 
 
-def test_dsv4_allocator_keeps_single_shared_kv_page() -> None:
+def test_target_only_dsv4_discovers_distinct_c4_c128_and_swa_specs() -> None:
     config = _config()
+    config.speculative_config = None
+    c4_name = "model.layers.2.self_attn.indexer.k_cache"
+    c128_name = "model.layers.3.self_attn.attn"
+    swa_name = "model.layers.0.self_attn.swa_cache"
+    c4_spec = AscendMLAAttentionSpec(
+        block_size=128,
+        num_kv_heads=1,
+        head_size=128,
+        dtype=torch.bfloat16,
+        model_version="deepseek_v4",
+        compress_ratio=4,
+    )
+    c128_spec = AscendMLAAttentionSpec(
+        block_size=128,
+        num_kv_heads=1,
+        head_size=128,
+        dtype=torch.bfloat16,
+        model_version="deepseek_v4",
+        compress_ratio=128,
+    )
+    swa_spec = AscendSlidingWindowMLASpec(
+        block_size=128,
+        num_kv_heads=1,
+        head_size=128,
+        dtype=torch.bfloat16,
+        sliding_window=128,
+        model_version="deepseek_v4",
+    )
+    context = config.compilation_config.static_forward_context
+    for layer_name, spec in (
+        (c4_name, c4_spec),
+        (c128_name, c128_spec),
+        (swa_name, swa_spec),
+    ):
+        context[layer_name] = _FakeAttentionLayer(spec)
+
+    specs = attn_utils.get_kv_cache_spec(config)
+    grouped_specs = group_and_unify_kv_cache_specs(specs)
+
+    assert set(specs) == {c4_name, c128_name, swa_name}
+    assert not any(name.startswith("mtp.") for name in specs)
+    assert specs[c4_name].compress_ratio == 4
+    assert specs[c128_name].compress_ratio == 128
+    assert specs[c4_name] != specs[c128_name]
+    assert type(specs[swa_name]) is AscendSlidingWindowMLASpec
+    assert KVCacheSpecRegistry.get_manager_class(specs[c4_name]) is CompressAttentionManager
+    assert KVCacheSpecRegistry.get_manager_class(specs[c128_name]) is CompressAttentionManager
+    assert KVCacheSpecRegistry.get_manager_class(specs[swa_name]) is SlidingWindowManager
+    assert grouped_specs is not None
+    assert len(grouped_specs) == 3
+    scheduler_specs = [next(iter(group.kv_cache_specs.values())) for group in grouped_specs]
+    assert len({spec.compress_ratio for spec in scheduler_specs[:2]}) == 2
+    assert scheduler_specs[0] != scheduler_specs[1]
+    assert scheduler_specs[0] != scheduler_specs[2]
+    assert scheduler_specs[1] != scheduler_specs[2]
+
+
+@pytest.mark.parametrize("method", [None, "dspark"])
+def test_dsv4_allocator_keeps_single_shared_kv_page(method: str | None) -> None:
+    config = _config()
+    config.speculative_config = None if method is None else config.speculative_config
     config.model_config = SimpleNamespace(
         hf_config=SimpleNamespace(compress_ratios=[1]),
     )
@@ -388,12 +497,12 @@ def test_dsv4_allocator_keeps_single_shared_kv_page() -> None:
         kv_cache_tensors=[
             KVCacheTensor(
                 size=spec.page_size_bytes * 2,
-                shared_by=[DRAFT_LAYERS[0]],
+                shared_by=[TARGET_LAYER],
             ),
         ],
         kv_cache_groups=[
             KVCacheGroupSpec(
-                layer_names=[DRAFT_LAYERS[0]],
+                layer_names=[TARGET_LAYER],
                 kv_cache_spec=spec,
             ),
         ],
@@ -414,7 +523,7 @@ def test_dsv4_allocator_keeps_single_shared_kv_page() -> None:
         kv_cache_group_id = 0
         kv_cache_spec = spec
         backend = _DSABackend
-        layer_names = [DRAFT_LAYERS[0]]
+        layer_names = [TARGET_LAYER]
 
     with set_current_vllm_config(config):
         raw_caches = attn_utils._allocate_kv_cache(
@@ -431,12 +540,12 @@ def test_dsv4_allocator_keeps_single_shared_kv_page() -> None:
             kv_cache_config,
         )
 
-    raw_cache = raw_caches[DRAFT_LAYERS[0]]
+    raw_cache = raw_caches[TARGET_LAYER]
     assert isinstance(raw_cache, torch.Tensor)
-    assert isinstance(caches[DRAFT_LAYERS[0]], list)
-    assert len(caches[DRAFT_LAYERS[0]]) == 1
-    assert caches[DRAFT_LAYERS[0]][0].shape == (2, 16, 1, 64)
-    assert caches[DRAFT_LAYERS[0]][0].data_ptr() == raw_cache.data_ptr()
+    assert isinstance(caches[TARGET_LAYER], list)
+    assert len(caches[TARGET_LAYER]) == 1
+    assert caches[TARGET_LAYER][0].shape == (2, 16, 1, 64)
+    assert caches[TARGET_LAYER][0].data_ptr() == raw_cache.data_ptr()
 
 
 @pytest.mark.parametrize("compress_ratio", [4, 128])

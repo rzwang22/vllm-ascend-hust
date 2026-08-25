@@ -6,6 +6,7 @@ from __future__ import annotations
 import gc
 import json
 import os
+from collections import Counter
 from contextlib import ExitStack
 from types import SimpleNamespace
 from typing import Any
@@ -67,21 +68,145 @@ def _generation_request(runtime: Any, request_id: str) -> Any:
     )
 
 
+def _group_specs_by_equality(groups: list[Any]) -> tuple[list[Any], list[int]]:
+    unique_specs: list[Any] = []
+    equality_group_ids: list[int] = []
+    for group in groups:
+        for unique_id, spec in enumerate(unique_specs):
+            if group.kv_cache_spec == spec:
+                equality_group_ids.append(unique_id)
+                break
+        else:
+            unique_specs.append(group.kv_cache_spec)
+            equality_group_ids.append(len(unique_specs) - 1)
+    return unique_specs, equality_group_ids
+
+
+def _target_only_kv_topology_pre_dispatch(runtime: Any) -> dict[str, Any]:
+    """Describe target KV topology after config generation, before dispatch."""
+    from vllm.v1.core.kv_cache_utils import generate_scheduler_kv_cache_config
+    from vllm.v1.kv_cache_spec_registry import KVCacheSpecRegistry
+
+    raw_groups = runtime.kv_cache_config.kv_cache_groups
+    scheduler_config = generate_scheduler_kv_cache_config([runtime.kv_cache_config])
+    normalized_groups = scheduler_config.kv_cache_groups
+    unique_specs, equality_group_ids = _group_specs_by_equality(normalized_groups)
+
+    expected_names = list(runtime.target_kv_cache_layer_names)
+    actual_names = [name for group in normalized_groups for name in group.layer_names]
+    expected_counter = Counter(expected_names)
+    actual_counter = Counter(actual_names)
+    draft_names = sorted(name for name in actual_names if name.startswith("mtp.") or ".mtp." in name)
+    prefix_caching_enabled = bool(runtime.vllm_config.cache_config.enable_prefix_caching)
+
+    if not prefix_caching_enabled:
+        dispatch_route = "core-no-prefix"
+        coordinator_class = "KVCacheCoordinatorNoPrefixCache"
+    elif len(normalized_groups) == 1:
+        dispatch_route = "core-unitary"
+        coordinator_class = "UnitaryKVCacheCoordinator"
+    elif len(unique_specs) > 1:
+        dispatch_route = "ascend-hybrid"
+        coordinator_class = "AscendHybridKVCacheCoordinator"
+    else:
+        dispatch_route = "invalid-equivalent-multi-group"
+        coordinator_class = "invalid"
+
+    raw_group_records = []
+    for group_index, group in enumerate(raw_groups):
+        raw_spec = group.kv_cache_spec
+        nested_specs = getattr(raw_spec, "kv_cache_specs", None)
+        representative_specs = list(nested_specs.values()) if isinstance(nested_specs, dict) else [raw_spec]
+        manager_classes = {
+            manager_class.__name__
+            for spec in representative_specs
+            if (manager_class := KVCacheSpecRegistry.get_manager_class(spec)) is not None
+        }
+        raw_group_records.append(
+            {
+                "group_index": group_index,
+                "spec_class": type(raw_spec).__name__,
+                "nested_spec_classes": sorted({type(spec).__name__ for spec in representative_specs}),
+                "manager_classes": sorted(manager_classes),
+                "block_size": raw_spec.block_size,
+                "storage_block_sizes": sorted({spec.storage_block_size for spec in representative_specs}),
+                "compress_ratios": sorted({getattr(spec, "compress_ratio", 1) for spec in representative_specs}),
+                "is_eagle_group": group.is_eagle_group,
+                "layer_count": len(group.layer_names),
+                "layer_names": list(group.layer_names),
+            }
+        )
+
+    group_records = []
+    for group_index, group in enumerate(normalized_groups):
+        spec = group.kv_cache_spec
+        manager_class = KVCacheSpecRegistry.get_manager_class(spec)
+        group_records.append(
+            {
+                "group_index": group_index,
+                "spec_class": type(spec).__name__,
+                "manager_class": (manager_class.__name__ if manager_class is not None else None),
+                "block_size": spec.block_size,
+                "storage_block_size": spec.storage_block_size,
+                "compress_ratio": getattr(spec, "compress_ratio", 1),
+                "dtype": str(getattr(spec, "dtype", None)),
+                "num_kv_heads": getattr(spec, "num_kv_heads", None),
+                "head_size": getattr(spec, "head_size", None),
+                "sliding_window": getattr(spec, "sliding_window", None),
+                "is_eagle_group": group.is_eagle_group,
+                "layer_count": len(group.layer_names),
+                "layer_names": list(group.layer_names),
+                "equality_group_id": equality_group_ids[group_index],
+            }
+        )
+
+    return {
+        "rank": runtime.launch.rank,
+        "prefix_caching_enabled": prefix_caching_enabled,
+        "raw_group_count_before": len(raw_groups),
+        "normalized_group_count": len(normalized_groups),
+        "unique_group_count_after": len(unique_specs),
+        "raw_groups": raw_group_records,
+        "groups": group_records,
+        "target_layer_count": len(expected_names),
+        "draft_layer_count": len(draft_names),
+        "draft_layer_names": draft_names,
+        "dispatch_route": dispatch_route,
+        "coordinator_class": coordinator_class,
+        "layer_set_preserved": set(expected_names) == set(actual_names),
+        "layer_multiplicity_preserved": expected_counter == actual_counter,
+    }
+
+
+def _validate_target_only_kv_topology_pre_dispatch(
+    topology: dict[str, Any],
+) -> None:
+    if topology["draft_layer_count"]:
+        raise RuntimeError("The target-only scheduler input retained draft/MTP KV cache owners.")
+    if not topology["layer_set_preserved"]:
+        raise RuntimeError("The target-only scheduler input changed the target KV owner set.")
+    if not topology["layer_multiplicity_preserved"]:
+        raise RuntimeError("The target-only scheduler input changed target KV owner multiplicity.")
+    if topology["dispatch_route"] == "invalid-equivalent-multi-group":
+        raise RuntimeError(
+            "The target-only scheduler input contains multiple equivalent KV groups and has no valid coordinator route."
+        )
+
+
 def _target_only_kv_topology(runtime: Any, scheduler: Any) -> dict[str, Any]:
     """Describe the scheduler-visible target KV topology without tensors."""
     kv_cache_manager = scheduler.kv_cache_manager
     kv_cache_config = kv_cache_manager.kv_cache_config
     groups = kv_cache_config.kv_cache_groups
-    unique_specs: list[Any] = []
-    equality_groups: list[list[int]] = []
-    for group_id, group in enumerate(groups):
-        for unique_id, spec in enumerate(unique_specs):
-            if group.kv_cache_spec == spec:
-                equality_groups[unique_id].append(group_id)
-                break
-        else:
-            unique_specs.append(group.kv_cache_spec)
-            equality_groups.append([group_id])
+    unique_specs, equality_group_ids = _group_specs_by_equality(groups)
+    equality_groups = [
+        [
+            group_index
+            for group_index, equality_group_id in enumerate(equality_group_ids)
+            if equality_group_id == unique_id
+        ]
+        for unique_id in range(len(unique_specs))
+    ]
 
     layer_names = [name for group in groups for name in group.layer_names]
     expected_layer_names = set(runtime.target_kv_cache_layer_names)
@@ -123,8 +248,24 @@ def _target_only_kv_topology(runtime: Any, scheduler: Any) -> dict[str, Any]:
 
 
 def _run_target_only_generation(runtime: Any) -> dict[str, Any]:
+    pre_dispatch_topology = runtime.target_only_kv_topology_pre_dispatch
     scheduler = _build_scheduler(runtime)
     topology = _target_only_kv_topology(runtime, scheduler)
+    topology.update(
+        raw_group_count_before=pre_dispatch_topology["raw_group_count_before"],
+        normalized_group_count=pre_dispatch_topology["normalized_group_count"],
+        unique_group_count_after=pre_dispatch_topology["unique_group_count_after"],
+        prefix_caching_enabled=pre_dispatch_topology["prefix_caching_enabled"],
+        layer_set_preserved=pre_dispatch_topology["layer_set_preserved"],
+        layer_multiplicity_preserved=pre_dispatch_topology["layer_multiplicity_preserved"],
+        selected_coordinator=topology["coordinator_class"],
+    )
+    if topology["coordinator_class"] != pre_dispatch_topology["coordinator_class"]:
+        raise RuntimeError(
+            "Target-only KV coordinator differs from the pre-dispatch route: "
+            f"expected {pre_dispatch_topology['coordinator_class']}, "
+            f"got {topology['coordinator_class']}."
+        )
     print(
         "DSPARK_M2_4B_TARGET_KV_TOPOLOGY=" + json.dumps(topology, sort_keys=True),
         flush=True,
@@ -406,6 +547,8 @@ def _target_only_runtime(
     worker.init_device()
     worker.load_model()
     kv_cache_specs = worker.get_kv_cache_spec()
+    if not kv_cache_specs:
+        raise RuntimeError("The target-only DeepSeek-V4 worker discovered no KV cache owners.")
     draft_cache_names = sorted(name for name in kv_cache_specs if name.startswith("mtp.") or ".mtp." in name)
     if draft_cache_names:
         raise RuntimeError(f"The target-only worker discovered draft/MTP KV cache owners: {draft_cache_names}.")
@@ -414,6 +557,18 @@ def _target_only_runtime(
         [kv_cache_specs],
         [_kv_cache_budget(os.environ)],
     )[0]
+    topology_runtime = SimpleNamespace(
+        launch=launch,
+        vllm_config=vllm_config,
+        kv_cache_config=kv_cache_config,
+        target_kv_cache_layer_names=tuple(kv_cache_specs),
+    )
+    pre_dispatch_topology = _target_only_kv_topology_pre_dispatch(topology_runtime)
+    print(
+        "DSPARK_M2_4B_TARGET_KV_TOPOLOGY_PRE_DISPATCH=" + json.dumps(pre_dispatch_topology, sort_keys=True),
+        flush=True,
+    )
+    _validate_target_only_kv_topology_pre_dispatch(pre_dispatch_topology)
     worker.initialize_from_config(kv_cache_config)
     runtime = SimpleNamespace(
         torch=torch,
@@ -424,6 +579,7 @@ def _target_only_runtime(
         runner=worker.model_runner,
         kv_cache_config=kv_cache_config,
         target_kv_cache_layer_names=tuple(kv_cache_specs),
+        target_only_kv_topology_pre_dispatch=pre_dispatch_topology,
     )
     return runtime
 
