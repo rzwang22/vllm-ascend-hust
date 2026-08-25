@@ -216,7 +216,7 @@ def test_third_proposer_fails_closed_at_multi_round_boundary() -> None:
 
 
 @pytest.mark.parametrize(
-    ("mutate", "match"),
+    ("mutate", "expected_exception", "match"),
     [
         (
             lambda batch: setattr(
@@ -224,34 +224,67 @@ def test_third_proposer_fails_closed_at_multi_round_boundary() -> None:
                 "num_draft_tokens_per_req",
                 np.array([5, 4], dtype=np.int32),
             ),
+            RuntimeError,
             "exactly the configured",
         ),
         (
             lambda batch: batch.input_ids.__setitem__(1, 255),
+            ValueError,
             "published candidate set",
         ),
         (
             lambda batch: setattr(batch, "req_ids", ["wrong", "request"]),
+            RuntimeError,
             "request ownership",
         ),
     ],
 )
-def test_consumer_mismatch_does_not_consume_published_proposal(mutate, match) -> None:
-    speculator, proposal_inputs, _result, proposal = _publish_proposal()
+def test_consumer_mismatch_does_not_consume_published_proposal(
+    mutate,
+    expected_exception,
+    match,
+    monkeypatch,
+) -> None:
+    speculator, proposal_inputs, markov_result, proposal = _publish_proposal()
     consumer = _consumer_batch(proposal_inputs, proposal)
     mutate(consumer)
 
-    with pytest.raises(RuntimeError, match=match):
-        speculator._skip_next_proposal_after_verification(
+    request_state_indices = speculator._published_proposal_request_state_indices
+    draft_forward_epoch = speculator._draft_forward_step_epoch
+    markov_attempt_epoch = speculator._markov_attempt_step_epoch
+    markov_epoch = speculator._markov_step_epoch
+
+    def fail_unexpected_execution(*_args, **_kwargs):
+        pytest.fail("verification mismatch started another draft or Markov step")
+
+    monkeypatch.setattr(speculator, "_execute_draft_backbone", fail_unexpected_execution)
+    monkeypatch.setattr(speculator, "_execute_sequential_markov_sampling", fail_unexpected_execution)
+
+    return_sentinel = object()
+    return_value = return_sentinel
+    with pytest.raises(expected_exception, match=match):
+        return_value = speculator._skip_next_proposal_after_verification(
             consumer,
             num_sampled=torch.tensor([1, 1], dtype=torch.int32),
             num_rejected=torch.tensor([5, 5], dtype=torch.int32),
             temperature=torch.zeros(2, dtype=torch.float32),
         )
 
+    assert return_value is return_sentinel
+    assert speculator._proposal_step_epoch == proposal_inputs.step_epoch
+    assert speculator._published_proposal_step_epoch == proposal_inputs.step_epoch
+    assert speculator._published_candidate_tokens is proposal
+    assert speculator._published_proposal_request_ids == proposal_inputs.request_ids
+    assert speculator._published_proposal_request_state_indices is request_state_indices
     assert speculator._published_proposal_consumed is False
     assert speculator._next_proposal_skipped is False
+    assert speculator._proposal_consumer_step_epoch is None
     assert speculator._proposal_consumption_count == 0
+    assert speculator._next_proposal_skip_count == 0
+    assert speculator._draft_forward_step_epoch == draft_forward_epoch
+    assert speculator._markov_attempt_step_epoch == markov_attempt_epoch
+    assert speculator._markov_step_epoch == markov_epoch
+    assert speculator._markov_result is markov_result
 
 
 def test_stochastic_consumer_fails_before_skip_publication() -> None:
