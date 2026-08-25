@@ -100,8 +100,11 @@ class _MarkovDraftModel(nn.Module):
 def _ready_markov_step(
     *,
     seeds: torch.Tensor | None = None,
+    continue_after_verification: bool = False,
 ) -> tuple[object, object, _MarkovDraftModel, torch.Tensor]:
-    speculator = _ready_speculator()
+    speculator = _ready_speculator(
+        continue_after_verification=continue_after_verification,
+    )
     speculator.draft_model_config.hf_config.vocab_size = 256
     model = _MarkovDraftModel()
     speculator._model = model

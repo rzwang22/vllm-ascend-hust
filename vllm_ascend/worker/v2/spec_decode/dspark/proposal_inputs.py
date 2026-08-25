@@ -113,9 +113,31 @@ class AscendDSparkMarkovResult:
     confidence_head_used: bool
 
 
+@dataclass(frozen=True, slots=True)
+class AscendDSparkProposalLifecycle:
+    """Ownership state for one proposal crossing the core draft-token ABI.
+
+    ``installed`` is confirmed only when a later target input consumes the
+    exact candidate tensor. A proposal generated optimistically for a request
+    that the scheduler subsequently finishes is instead marked terminal and
+    discarded when that finished request reaches the runner cleanup step.
+    """
+
+    proposal_epoch: int
+    owner_epoch: int
+    consumer_epoch: int | None
+    request_ids: tuple[str, ...]
+    generated: bool
+    returned_to_core: bool
+    installed: bool
+    consumed: bool
+    discarded_terminal: bool
+
+
 __all__ = [
     "AscendDSparkDraftExecution",
     "AscendDSparkMarkovResult",
     "AscendDSparkMarkovStep",
+    "AscendDSparkProposalLifecycle",
     "AscendDSparkProposalInputs",
 ]

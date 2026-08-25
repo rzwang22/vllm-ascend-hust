@@ -14,8 +14,10 @@ from tests.ut.spec_decode.test_dspark_v2_proposal_inputs import _step_kwargs
 from vllm_ascend.spec_decode import DSparkRuntimeNotWiredError
 
 
-def _publish_proposal():
-    speculator, proposal_inputs, _model, hidden_states = _ready_markov_step()
+def _publish_proposal(*, continue_after_verification: bool = False):
+    speculator, proposal_inputs, _model, hidden_states = _ready_markov_step(
+        continue_after_verification=continue_after_verification,
+    )
     result = speculator._execute_sequential_markov_sampling(
         proposal_inputs,
         hidden_states,

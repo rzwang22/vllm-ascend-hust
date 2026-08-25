@@ -50,22 +50,30 @@ def test_dspark_publication_uses_exact_markov_candidate_tensor() -> None:
 
 
 def test_consumer_validates_scheduled_candidates_then_returns_none() -> None:
-    method = ast.unparse(
+    skip_method = ast.unparse(
         _method(
             SPECULATOR,
             "AscendDSparkSpeculator",
             "_skip_next_proposal_after_verification",
         )
     )
+    consume_method = ast.unparse(
+        _method(
+            SPECULATOR,
+            "AscendDSparkSpeculator",
+            "_consume_published_proposal_after_verification",
+        )
+    )
 
-    assert "num_draft_tokens_per_req" in method
-    assert "consumed_candidates" in method
-    assert "candidate_tokens" in method
-    assert "self._published_proposal_consumed = True" in method
-    assert "self._next_proposal_skipped = True" in method
-    assert method.rstrip().endswith("return None")
-    assert "_execute_draft_backbone" not in method
-    assert "_execute_sequential_markov_sampling" not in method
+    assert "num_draft_tokens_per_req" in consume_method
+    assert "consumed_candidates" in consume_method
+    assert "candidate_tokens" in consume_method
+    assert "self._published_proposal_consumed = True" in consume_method
+    assert "_consume_published_proposal_after_verification" in skip_method
+    assert "self._next_proposal_skipped = True" in skip_method
+    assert skip_method.rstrip().endswith("return None")
+    assert "_execute_draft_backbone" not in skip_method
+    assert "_execute_sequential_markov_sampling" not in skip_method
 
 
 def test_third_proposal_stops_at_m2_4b_without_plugin_verifier() -> None:

@@ -166,6 +166,21 @@ class NPUModelRunner(GPUModelRunner):
         with include_ascend_dspark_in_core_load_lifecycle(self.vllm_config):
             super().load_model(load_dummy_weights, *args, **kwargs)
 
+    def finish_requests(self, scheduler_output: SchedulerOutput) -> None:
+        """Discard terminal DSpark proposals before releasing request state."""
+        from vllm_ascend.worker.v2.spec_decode.dspark import (
+            AscendDSparkSpeculator,
+        )
+
+        speculator = self.speculator
+        try:
+            if isinstance(speculator, AscendDSparkSpeculator):
+                speculator.discard_terminal_proposal(
+                    scheduler_output.finished_req_ids,
+                )
+        finally:
+            super().finish_requests(scheduler_output)
+
     def get_kv_cache_spec(self):
         kv_cache_specs = super().get_kv_cache_spec()
         from vllm_ascend.worker.v2.spec_decode.dspark import (

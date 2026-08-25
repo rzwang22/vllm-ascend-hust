@@ -88,8 +88,11 @@ class _BlockTables:
         ]
 
 
-def _config():
+def _config(*, continue_after_verification: bool = False):
     return SimpleNamespace(
+        additional_config={
+            "dspark_continue_after_verification": continue_after_verification,
+        },
         model_config=SimpleNamespace(max_model_len=64),
         compilation_config=SimpleNamespace(static_forward_context={}),
         parallel_config=SimpleNamespace(
@@ -111,8 +114,11 @@ def _config():
     )
 
 
-def _ready_speculator():
-    speculator = create_dspark_speculator(_config(), torch.device("cpu"))
+def _ready_speculator(*, continue_after_verification: bool = False):
+    speculator = create_dspark_speculator(
+        _config(continue_after_verification=continue_after_verification),
+        torch.device("cpu"),
+    )
     speculator._model = _DraftModel()
     speculator._loaded_target_model = _TargetModel()
     speculator.target_attn_layer_names = frozenset()

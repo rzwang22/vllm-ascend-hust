@@ -10,6 +10,7 @@ from vllm_ascend.worker.v2.spec_decode.dspark.proposal_inputs import (
     AscendDSparkMarkovResult,
     AscendDSparkMarkovStep,
     AscendDSparkProposalInputs,
+    AscendDSparkProposalLifecycle,
 )
 from vllm_ascend.worker.v2.spec_decode.dspark.speculator import (
     AscendDSparkSpeculator,
@@ -28,6 +29,7 @@ __all__ = [
     "AscendDSparkDraftExecution",
     "AscendDSparkMarkovResult",
     "AscendDSparkMarkovStep",
+    "AscendDSparkProposalLifecycle",
     "AscendDSparkProposalInputs",
     "AscendDSparkSpeculator",
     "create_dspark_speculator",

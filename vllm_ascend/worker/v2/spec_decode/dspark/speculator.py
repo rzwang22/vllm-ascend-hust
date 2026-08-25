@@ -2,6 +2,8 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # Copyright (c) 2026 Huawei Technologies Co., Ltd. All Rights Reserved.
 
+from collections.abc import Mapping
+from dataclasses import replace
 from itertools import product
 from types import MappingProxyType
 from typing import Any, cast
@@ -40,9 +42,11 @@ from vllm_ascend.worker.v2.spec_decode.dspark.proposal_inputs import (
     AscendDSparkMarkovResult,
     AscendDSparkMarkovStep,
     AscendDSparkProposalInputs,
+    AscendDSparkProposalLifecycle,
 )
 
 _DSPARK_MARKOV_FIXED_K = 5
+_DSPARK_CONTINUE_AFTER_VERIFICATION = "dspark_continue_after_verification"
 
 
 def _assert_markov_tensor_contract(predicate: torch.Tensor, message: str) -> None:
@@ -193,6 +197,19 @@ class AscendDSparkSpeculator(BaseSpeculator):
         self.num_speculative_steps = num_speculative_steps
         self.parallel_drafting_token_id = parallel_drafting_token_id
         self.target_layer_ids = tuple(target_layer_ids)
+        additional_config = getattr(vllm_config, "additional_config", None)
+        continue_after_verification = True
+        if isinstance(additional_config, Mapping):
+            continue_after_verification = additional_config.get(
+                _DSPARK_CONTINUE_AFTER_VERIFICATION,
+                True,
+            )
+        if type(continue_after_verification) is not bool:
+            raise TypeError(
+                "additional_config.dspark_continue_after_verification must "
+                f"be a bool, got {continue_after_verification!r}."
+            )
+        self.continue_after_verification = continue_after_verification
         self._model: torch.nn.Module | None = None
         self._loaded_target_model: torch.nn.Module | None = None
         self.target_attn_layer_names: frozenset[str] | None = None
@@ -227,6 +244,13 @@ class AscendDSparkSpeculator(BaseSpeculator):
         self._proposal_publication_count = 0
         self._proposal_consumption_count = 0
         self._next_proposal_skip_count = 0
+        self._current_proposal_lifecycle: AscendDSparkProposalLifecycle | None = None
+        self._last_consumed_proposal_lifecycle: AscendDSparkProposalLifecycle | None = None
+        self._terminal_proposal_lifecycle: AscendDSparkProposalLifecycle | None = None
+        self._proposal_generated_count = 0
+        self._proposal_returned_count = 0
+        self._proposal_installed_count = 0
+        self._terminal_proposal_discard_count = 0
         self.eplb_state: Any | None = None
 
         # These fields are consumed directly by GPUModelRunner's generic V2
@@ -1671,16 +1695,29 @@ class AscendDSparkSpeculator(BaseSpeculator):
         self._published_proposal_consumed = False
         self._next_proposal_skipped = False
         self._proposal_publication_count += 1
+        self._proposal_generated_count += 1
+        self._proposal_returned_count += 1
+        self._current_proposal_lifecycle = AscendDSparkProposalLifecycle(
+            proposal_epoch=result.step_epoch,
+            owner_epoch=result.step_epoch,
+            consumer_epoch=None,
+            request_ids=result.request_ids,
+            generated=True,
+            returned_to_core=True,
+            installed=False,
+            consumed=False,
+            discarded_terminal=False,
+        )
         return candidate_tokens
 
-    def _skip_next_proposal_after_verification(
+    def _consume_published_proposal_after_verification(
         self,
         input_batch: InputBatch,
         num_sampled: torch.Tensor,
         num_rejected: torch.Tensor,
         temperature: torch.Tensor,
     ) -> None:
-        """Consume the published proposal and skip the next draft atomically."""
+        """Validate and consume the proposal installed for this target step."""
         candidate_tokens = self._published_candidate_tokens
         producer_epoch = self._published_proposal_step_epoch
         request_ids = self._published_proposal_request_ids
@@ -1793,20 +1830,96 @@ class AscendDSparkSpeculator(BaseSpeculator):
             "Ascend DSpark single-round verification supports deterministic greedy sampling only.",
         )
 
+        lifecycle = self._current_proposal_lifecycle
+        if lifecycle is None or lifecycle.proposal_epoch != producer_epoch:
+            raise RuntimeError("Ascend DSpark proposal lifecycle ownership is missing or stale.")
+
         consumer_epoch = producer_epoch + 1
-        self._proposal_step_epoch = consumer_epoch
         self._proposal_consumer_step_epoch = consumer_epoch
         self._published_proposal_consumed = True
-        self._next_proposal_skipped = True
         self._proposal_consumption_count += 1
-        self._next_proposal_skip_count += 1
+        lifecycle = replace(
+            lifecycle,
+            consumer_epoch=consumer_epoch,
+            installed=True,
+            consumed=True,
+        )
+        self._current_proposal_lifecycle = lifecycle
+        self._last_consumed_proposal_lifecycle = lifecycle
+        self._proposal_installed_count += 1
         self._prepared_step_epoch = None
         self._context_kv_step_epoch = None
         self._draft_forward_step_epoch = None
         self._markov_attempt_step_epoch = None
         self._markov_step_epoch = None
         self._markov_result = None
+
+    def _skip_next_proposal_after_verification(
+        self,
+        input_batch: InputBatch,
+        num_sampled: torch.Tensor,
+        num_rejected: torch.Tensor,
+        temperature: torch.Tensor,
+    ) -> None:
+        """Consume one proposal and retain M2.4A's explicit stop mode."""
+        self._consume_published_proposal_after_verification(
+            input_batch,
+            num_sampled,
+            num_rejected,
+            temperature,
+        )
+        self._next_proposal_skipped = True
+        self._next_proposal_skip_count += 1
         return None
+
+    def _release_consumed_proposal(self) -> None:
+        lifecycle = self._current_proposal_lifecycle
+        if lifecycle is None or not lifecycle.consumed:
+            raise RuntimeError("Ascend DSpark cannot release an unconsumed proposal.")
+        self._published_proposal_step_epoch = None
+        self._published_proposal_request_ids = None
+        self._published_proposal_request_state_indices = None
+        self._published_candidate_tokens = None
+        self._published_proposal_consumed = False
+        self._current_proposal_lifecycle = None
+
+    def discard_terminal_proposal(self, finished_request_ids: set[str]) -> bool:
+        """Invalidate an optimistic proposal rejected by request completion.
+
+        The runner invokes this from the normal ``finished_req_ids`` cleanup
+        step. This notification arrives before another model forward and is the
+        first plugin-visible proof that core did not install the proposal.
+        """
+        if not finished_request_ids:
+            return False
+        lifecycle = self._current_proposal_lifecycle
+        request_ids = self._published_proposal_request_ids
+        if lifecycle is None or request_ids is None:
+            return False
+        overlap = set(request_ids).intersection(finished_request_ids)
+        if not overlap:
+            return False
+        if lifecycle.consumed:
+            self._release_consumed_proposal()
+            return False
+        if overlap != set(request_ids):
+            raise RuntimeError("Ascend DSpark cannot terminal-discard only part of a proposal batch.")
+        terminal = replace(lifecycle, discarded_terminal=True)
+        self._terminal_proposal_lifecycle = terminal
+        self._terminal_proposal_discard_count += 1
+        self._published_proposal_step_epoch = None
+        self._published_proposal_request_ids = None
+        self._published_proposal_request_state_indices = None
+        self._published_candidate_tokens = None
+        self._published_proposal_consumed = False
+        self._current_proposal_lifecycle = None
+        self._prepared_step_epoch = None
+        self._context_kv_step_epoch = None
+        self._draft_forward_step_epoch = None
+        self._markov_attempt_step_epoch = None
+        self._markov_step_epoch = None
+        self._markov_result = None
+        return True
 
     def _execute_draft(
         self,
@@ -1852,7 +1965,7 @@ class AscendDSparkSpeculator(BaseSpeculator):
         mm_inputs: tuple[list[torch.Tensor], torch.Tensor] | None = None,
         is_profile: bool = False,
     ) -> torch.Tensor | None:
-        """Publish one proposal, then skip drafting after its verification."""
+        """Publish DSpark proposals using core's optimistic V2 lifecycle."""
         if dummy_run or is_profile:
             dspark_runtime_not_wired("V2 draft execution (dummy/profile)")
         if skip_attn_for_dummy_run:
@@ -1862,12 +1975,20 @@ class AscendDSparkSpeculator(BaseSpeculator):
         if self._next_proposal_skipped:
             dspark_runtime_not_wired("M2.4B multi-round DSpark lifecycle")
         if self._published_candidate_tokens is not None:
-            return self._skip_next_proposal_after_verification(
+            if not self.continue_after_verification:
+                return self._skip_next_proposal_after_verification(
+                    input_batch,
+                    num_sampled,
+                    num_rejected,
+                    temperature,
+                )
+            self._consume_published_proposal_after_verification(
                 input_batch,
                 num_sampled,
                 num_rejected,
                 temperature,
             )
+            self._release_consumed_proposal()
         proposal_inputs = self.prepare_proposal_inputs(
             input_batch=input_batch,
             attn_metadata=attn_metadata,

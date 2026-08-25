@@ -47,6 +47,7 @@ INDEXER_KV_CACHE_SUFFIX = ".indexer.k_cache"
 PREPARE_ONLY_CACHE_BLOCK_SIZE = 128
 _PREPARED_STEP_CALLBACK = None
 _INITIALIZED_WORKER_CALLBACK = None
+_CONTINUE_AFTER_VERIFICATION = False
 
 enforce_offline_mode()
 
@@ -150,6 +151,9 @@ def test_dspark_proposal_inputs_prepare_only_npu() -> None:
             enforce_eager=True,
             block_size=PREPARE_ONLY_CACHE_BLOCK_SIZE,
             max_num_seqs=1,
+            additional_config={
+                "dspark_continue_after_verification": (_CONTINUE_AFTER_VERIFICATION),
+            },
             speculative_config={
                 "method": "dspark",
                 "model": str(settings.draft_model),
