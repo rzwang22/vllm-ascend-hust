@@ -11,7 +11,7 @@ import torch
 
 import vllm_ascend.worker.v2.spec_decode.dspark.speculator as speculator_module
 from tests.ut.spec_decode.test_dspark_v2_markov_sampling import (
-    _ready_markov_step,
+    _MarkovDraftModel,
 )
 from tests.ut.spec_decode.test_dspark_v2_proposal_inputs import (
     DRAFT_LAYERS,
@@ -363,13 +363,24 @@ def test_forward_rejects_output_shape_from_real_model_abi(monkeypatch) -> None:
 
 
 def test_execute_draft_runs_backbone_and_markov_then_publishes_candidates(monkeypatch) -> None:
-    speculator, proposal, _model, hidden_states = _ready_markov_step()
+    speculator, proposal, _auxiliary_states = _prepare()
+    speculator.draft_model_config.hf_config.vocab_size = 256
+    speculator._model = _MarkovDraftModel()
+    speculator._markov_module_contract = None
+    hidden_states = torch.ones(
+        proposal.num_query_tokens,
+        8,
+        dtype=torch.bfloat16,
+    )
     backbone_calls = []
     markov_calls = []
     execute_markov_impl = speculator._execute_sequential_markov_sampling
 
     def execute_backbone(actual):
         backbone_calls.append(actual)
+        speculator._prepared_step_epoch = None
+        speculator._context_kv_step_epoch = actual.step_epoch
+        speculator._draft_forward_step_epoch = actual.step_epoch
         return hidden_states
 
     def execute_markov(actual, actual_hidden_states):
@@ -379,10 +390,15 @@ def test_execute_draft_runs_backbone_and_markov_then_publishes_candidates(monkey
     monkeypatch.setattr(speculator, "_execute_draft_backbone", execute_backbone)
     monkeypatch.setattr(speculator, "_execute_sequential_markov_sampling", execute_markov)
 
+    assert speculator._prepared_step_epoch == proposal.step_epoch
+    assert speculator._proposal_step_epoch == proposal.step_epoch
     published = speculator._execute_draft(proposal)
     owned_result = speculator._markov_result
 
     assert backbone_calls == [proposal]
+    assert speculator._prepared_step_epoch is None
+    assert speculator._context_kv_step_epoch == proposal.step_epoch
+    assert speculator._draft_forward_step_epoch == proposal.step_epoch
     assert len(markov_calls) == 1
     assert markov_calls[0][0] is proposal
     assert markov_calls[0][1] is hidden_states
