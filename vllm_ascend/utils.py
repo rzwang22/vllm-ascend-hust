@@ -71,7 +71,6 @@ _IS_MOE_MODEL = None
 _IS_DRAFTER_MOE_MODEL = None
 _IS_VL_MODEL = None
 _ENABLE_SP = None
-_HAS_LAYER_IDX = None
 _HAS_ROPE = None
 _ATNN_CALCULATION_STREAM = None
 _CUSTOM_OP_VENDOR_DIR = "custom_transformer"
@@ -1333,14 +1332,12 @@ def should_skip_allreduce_across_dp_group(vllm_config, is_draft_model: bool = Fa
     return decode_must_use_mc2 and (prefill_must_use_mc2 or get_ascend_config().recompute_scheduler_enable)
 
 
-def has_layer_idx(model_instance: torch.nn.Module) -> bool:
+def has_layer_idx(model_instance: torch.nn.Module | None) -> bool:
     if model_instance is None:
         return False
 
-    global _HAS_LAYER_IDX
-    if _HAS_LAYER_IDX is None:
-        _HAS_LAYER_IDX = hasattr(model_instance, "model") and hasattr(model_instance.model, "start_layer")
-    return _HAS_LAYER_IDX
+    model = getattr(model_instance, "model", None)
+    return hasattr(model, "start_layer")
 
 
 def flashcomm2_enable() -> bool:

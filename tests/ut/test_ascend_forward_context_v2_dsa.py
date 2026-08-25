@@ -17,6 +17,7 @@ from vllm.forward_context import ForwardContext
 from vllm_ascend import ascend_forward_context
 from vllm_ascend.ascend_forward_context import _EXTRA_CTX, MoECommType
 from vllm_ascend.platform import NPUPlatform
+from vllm_ascend.utils import has_layer_idx
 
 CORE_FORWARD_CONTEXT_FIELDS = {
     "no_compile_layers",
@@ -78,9 +79,18 @@ def _vllm_config(
     )
 
 
-def _model_with_layer_range() -> torch.nn.Module:
+def _model_with_layer_range(start_layer: int = 0) -> torch.nn.Module:
     model = torch.nn.Module()
-    model.model = SimpleNamespace(start_layer=0)
+    model.model = SimpleNamespace(start_layer=start_layer)
+    return model
+
+
+def _draft_model_without_layer_range() -> torch.nn.Module:
+    model = torch.nn.Module()
+    model.model = SimpleNamespace(
+        mtp_start_layer_idx=64,
+        layers={"64": object(), "65": object(), "66": object()},
+    )
     return model
 
 
@@ -218,6 +228,99 @@ def test_v2_context_bridges_current_model_input_identity_and_lifetime(
         assert context.additional_kwargs["model_instance"] is model
         assert _EXTRA_CTX.input_ids is input_ids
         assert _EXTRA_CTX.model_instance is model
+
+    with pytest.raises(AssertionError, match="Forward context is not set"):
+        core_forward_context.get_forward_context()
+
+
+def test_layer_idx_capability_is_model_specific_in_both_call_orders(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = _model_with_layer_range(start_layer=7)
+    draft = _draft_model_without_layer_range()
+
+    assert has_layer_idx(target)
+    assert not has_layer_idx(draft)
+    assert draft.model.mtp_start_layer_idx == 64
+
+    observed: list[int | None] = []
+    with _npu_platform_runtime(monkeypatch):
+        for model in (target, draft, draft, target, target, draft):
+            with _set_forward_context(
+                _vllm_config(),
+                model_instance=model,
+            ):
+                observed.append(_EXTRA_CTX.layer_idx)
+
+    assert observed == [7, None, None, 7, 7, None]
+    with pytest.raises(AssertionError, match="Forward context is not set"):
+        core_forward_context.get_forward_context()
+
+
+def test_layer_idx_capability_handles_absent_model_wrappers() -> None:
+    assert not has_layer_idx(None)
+    assert not has_layer_idx(torch.nn.Module())
+
+    wrapper = torch.nn.Module()
+    wrapper.model = SimpleNamespace()
+    assert not has_layer_idx(wrapper)
+
+
+def test_nested_layer_idx_context_restores_normally(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = _model_with_layer_range(start_layer=9)
+    draft = _draft_model_without_layer_range()
+
+    with (
+        _npu_platform_runtime(monkeypatch),
+        _set_forward_context(
+            _vllm_config(),
+            model_instance=draft,
+        ),
+    ):
+        outer = core_forward_context.get_forward_context()
+        assert _EXTRA_CTX.layer_idx is None
+        with _set_forward_context(
+            _vllm_config(),
+            model_instance=target,
+        ):
+            assert core_forward_context.get_forward_context() is not outer
+            assert _EXTRA_CTX.layer_idx == 9
+
+        assert core_forward_context.get_forward_context() is outer
+        assert _EXTRA_CTX.layer_idx is None
+
+
+def test_nested_layer_idx_context_restores_after_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = _model_with_layer_range(start_layer=11)
+    draft = _draft_model_without_layer_range()
+
+    with (
+        _npu_platform_runtime(monkeypatch),
+        _set_forward_context(
+            _vllm_config(),
+            model_instance=target,
+        ),
+    ):
+        outer = core_forward_context.get_forward_context()
+        assert _EXTRA_CTX.layer_idx == 11
+        with (
+            pytest.raises(RuntimeError, match="draft failure"),
+            _set_forward_context(
+                _vllm_config(),
+                model_instance=draft,
+            ),
+        ):
+            inner = core_forward_context.get_forward_context()
+            assert inner is not outer
+            assert _EXTRA_CTX.layer_idx is None
+            raise RuntimeError("draft failure")
+
+        assert core_forward_context.get_forward_context() is outer
+        assert _EXTRA_CTX.layer_idx == 11
 
     with pytest.raises(AssertionError, match="Forward context is not set"):
         core_forward_context.get_forward_context()
