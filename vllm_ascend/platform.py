@@ -596,6 +596,14 @@ class NPUPlatform(Platform):
                 f"additional_config.layer_sharding must be a list of non-empty strings, got {layer_sharding!r}."
             )
 
+    @staticmethod
+    def _validate_rejection_sampling_config(vllm_config: VllmConfig) -> None:
+        speculative_config = getattr(vllm_config, "speculative_config", None)
+        if speculative_config is None:
+            return
+        if getattr(speculative_config, "rejection_sample_method", None) == "block":
+            raise NotImplementedError("Ascend V2 rejection sampler does not support block verification.")
+
     @classmethod
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
         from vllm_ascend.quantization.utils import maybe_auto_detect_quantization
@@ -607,6 +615,8 @@ class NPUPlatform(Platform):
                 device_config.device_type,
             )
             return
+
+        cls._validate_rejection_sampling_config(vllm_config)
 
         if vllm_config.model_config is None:
             logger.warning("Model config is missing. Skipping Ascend-specific config updates.")
