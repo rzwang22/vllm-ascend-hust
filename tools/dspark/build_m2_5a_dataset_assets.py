@@ -65,14 +65,19 @@ def _parse_args() -> argparse.Namespace:
 
 def _load_tokenizer(path: Path) -> Any:
     try:
-        from transformers import AutoTokenizer
+        from vllm.tokenizers.deepseek_v4 import DeepseekV4Tokenizer
     except ImportError as exc:
-        raise RuntimeError("Building assets requires transformers, but verification does not.") from exc
-    return AutoTokenizer.from_pretrained(
-        str(path.expanduser().resolve()),
-        local_files_only=True,
-        trust_remote_code=True,
-    )
+        raise RuntimeError(
+            "Building assets requires the vLLM DeepSeek V4 tokenizer, but verification does not."
+        ) from exc
+    tokenizer_path = path.expanduser().resolve()
+    try:
+        return DeepseekV4Tokenizer.from_pretrained(
+            str(tokenizer_path),
+            local_files_only=True,
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Unable to load the DeepSeek V4 tokenizer from {tokenizer_path}.") from exc
 
 
 def _render_and_tokenize(tokenizer: Any, messages: Sequence[Mapping[str, str]]) -> tuple[str, list[int]]:

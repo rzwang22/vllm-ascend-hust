@@ -14,7 +14,12 @@ M2_4B = ROOT / "tests/e2e/nightly/single_node/spec_decode/test_dspark_multi_roun
 def test_asset_builder_is_offline_and_uses_exact_template_contract() -> None:
     source = BUILDER.read_text(encoding="utf-8")
 
+    assert "from vllm.tokenizers.deepseek_v4 import DeepseekV4Tokenizer" in source
+    assert "DeepseekV4Tokenizer.from_pretrained" in source
     assert "local_files_only=True" in source
+    assert "AutoTokenizer" not in source
+    assert "AutoConfig" not in source
+    assert "trust_remote_code" not in source
     assert "apply_chat_template" in source
     assert "add_generation_prompt=True" in source
     assert "add_special_tokens=False" in source

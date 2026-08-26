@@ -4,13 +4,17 @@
 from __future__ import annotations
 
 import argparse
+import builtins
 import json
+import sys
+import types
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from tools.dspark import build_m2_5a_dataset_assets as asset_builder
 from tools.dspark.build_m2_5a_dataset_assets import build_assets
 from tools.dspark.m2_5a_common import (
     ASSET_FILES,
@@ -46,6 +50,81 @@ class _FakeTokenizer:
     def __call__(self, text: str, *, add_special_tokens: bool) -> dict[str, list[int]]:
         assert add_special_tokens is False
         return {"input_ids": list(range(10, 10 + len(text.split())))}
+
+
+def _install_deepseek_tokenizer_module(
+    monkeypatch: pytest.MonkeyPatch,
+    tokenizer_class: type,
+) -> None:
+    vllm = types.ModuleType("vllm")
+    vllm.__path__ = []
+    tokenizers = types.ModuleType("vllm.tokenizers")
+    tokenizers.__path__ = []
+    deepseek_v4 = types.ModuleType("vllm.tokenizers.deepseek_v4")
+    deepseek_v4.DeepseekV4Tokenizer = tokenizer_class
+    monkeypatch.setitem(sys.modules, "vllm", vllm)
+    monkeypatch.setitem(sys.modules, "vllm.tokenizers", tokenizers)
+    monkeypatch.setitem(sys.modules, "vllm.tokenizers.deepseek_v4", deepseek_v4)
+
+
+def test_tokenizer_loader_uses_local_vllm_deepseek_v4_tokenizer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, dict[str, Any]]] = []
+    expected_tokenizer = object()
+
+    class _DeepseekV4Tokenizer:
+        @classmethod
+        def from_pretrained(cls, path: str, **kwargs: Any) -> object:
+            calls.append((path, kwargs))
+            return expected_tokenizer
+
+    _install_deepseek_tokenizer_module(monkeypatch, _DeepseekV4Tokenizer)
+    checkpoint = tmp_path / "checkpoint"
+
+    tokenizer = asset_builder._load_tokenizer(checkpoint)
+
+    assert tokenizer is expected_tokenizer
+    assert calls == [(str(checkpoint.resolve()), {"local_files_only": True})]
+
+
+def test_tokenizer_loader_reports_missing_vllm_tokenizer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_import = builtins.__import__
+
+    def reject_deepseek_tokenizer(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "vllm.tokenizers.deepseek_v4":
+            raise ImportError("DeepSeek V4 tokenizer is unavailable")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", reject_deepseek_tokenizer)
+    for name in ("vllm.tokenizers.deepseek_v4", "vllm.tokenizers", "vllm"):
+        monkeypatch.delitem(sys.modules, name, raising=False)
+
+    with pytest.raises(RuntimeError, match="requires the vLLM DeepSeek V4 tokenizer") as error:
+        asset_builder._load_tokenizer(tmp_path)
+
+    assert isinstance(error.value.__cause__, ImportError)
+
+
+def test_tokenizer_loader_reports_checkpoint_load_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FailingDeepseekV4Tokenizer:
+        @classmethod
+        def from_pretrained(cls, path: str, **kwargs: Any) -> object:
+            raise ValueError(f"invalid tokenizer at {path}: {kwargs}")
+
+    _install_deepseek_tokenizer_module(monkeypatch, _FailingDeepseekV4Tokenizer)
+
+    with pytest.raises(RuntimeError, match="Unable to load the DeepSeek V4 tokenizer") as error:
+        asset_builder._load_tokenizer(tmp_path)
+
+    assert isinstance(error.value.__cause__, ValueError)
 
 
 def _write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
@@ -139,6 +218,27 @@ def _assets(tmp_path: Path, *, template: str = "CHAT {messages} ASSISTANT", name
 @pytest.fixture(scope="module")
 def frozen_assets(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return _assets(tmp_path_factory.mktemp("m25a"))
+
+
+def test_verify_only_does_not_import_tokenizer_runtime(
+    frozen_assets: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_import = builtins.__import__
+
+    def reject_runtime_imports(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "vllm" or name.startswith(("vllm.", "torch", "transformers")):
+            raise AssertionError(f"verify-only imported runtime dependency {name}")
+        return original_import(name, *args, **kwargs)
+
+    def reject_tokenizer_load(path: Path) -> Any:
+        raise AssertionError(f"verify-only loaded tokenizer {path}")
+
+    monkeypatch.setattr(builtins, "__import__", reject_runtime_imports)
+    monkeypatch.setattr(asset_builder, "_load_tokenizer", reject_tokenizer_load)
+    monkeypatch.setattr(sys, "argv", [str(asset_builder.__file__), "--verify-only", str(frozen_assets)])
+
+    assert asset_builder.main() == 0
 
 
 def test_repeated_asset_build_is_byte_identical(tmp_path: Path) -> None:
