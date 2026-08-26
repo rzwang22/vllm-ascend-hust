@@ -7,6 +7,7 @@ import json
 import os
 from collections.abc import Mapping
 from contextlib import ExitStack
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -152,6 +153,51 @@ def _counter_snapshot(speculator: Any | None) -> dict[str, int | None]:
     }
 
 
+@dataclass
+class _FinishedRequestLifecycle:
+    """Track the one-shot scheduler event through worker cleanup."""
+
+    request_id: str
+    observed_count: int = 0
+    worker_delivery_count: int = 0
+
+    def observe(self, scheduler_output: Any) -> bool:
+        finished_req_ids = scheduler_output.finished_req_ids
+        unexpected = finished_req_ids.difference({self.request_id})
+        if unexpected:
+            raise RuntimeError(f"Per-request cleanup observed stale finished request events: {sorted(unexpected)!r}.")
+        if self.request_id not in finished_req_ids:
+            return False
+        if self.observed_count:
+            raise RuntimeError(f"Finished request {self.request_id!r} was published more than once.")
+        self.observed_count += 1
+        return True
+
+    def record_worker_delivery(self, included_finished_event: bool) -> None:
+        if included_finished_event:
+            self.worker_delivery_count += 1
+
+    def assert_delivered_once(self) -> None:
+        if self.observed_count != 1 or self.worker_delivery_count != 1:
+            raise RuntimeError(
+                f"Finished request {self.request_id!r} must be published and "
+                "delivered to the worker exactly once; "
+                f"observed={self.observed_count}, "
+                f"delivered={self.worker_delivery_count}."
+            )
+
+
+def _execute_scheduler_output(
+    runtime: Any,
+    scheduler_output: Any,
+    finished_lifecycle: _FinishedRequestLifecycle,
+) -> Any:
+    included_finished_event = finished_lifecycle.observe(scheduler_output)
+    output = runtime.worker.execute_model(scheduler_output)
+    finished_lifecycle.record_worker_delivery(included_finished_event)
+    return output
+
+
 def _assert_released_request_state(runtime: Any, scheduler: Any, request_id: str) -> None:
     runner = runtime.runner
     registries = {
@@ -163,6 +209,39 @@ def _assert_released_request_state(runtime: Any, scheduler: Any, request_id: str
     stale_registries = sorted(name for name, registry in registries.items() if request_id in registry)
     if stale_registries:
         raise RuntimeError(f"Finished request {request_id!r} remains in: {stale_registries}.")
+    queues = {
+        "scheduler running": getattr(scheduler, "running", ()),
+        "scheduler waiting": getattr(scheduler, "waiting", ()),
+        "scheduler skipped waiting": getattr(scheduler, "skipped_waiting", ()),
+    }
+    stale_queues = sorted(
+        name
+        for name, queue in queues.items()
+        if any(getattr(request, "request_id", None) == request_id for request in queue)
+    )
+    if stale_queues:
+        raise RuntimeError(f"Finished request {request_id!r} remains in: {stale_queues}.")
+    if request_id in getattr(scheduler, "finished_req_ids", set()):
+        raise RuntimeError(f"Finished request {request_id!r} remains pending in the scheduler event set.")
+
+    kv_cache_manager = scheduler.kv_cache_manager
+    block_ids = kv_cache_manager.get_block_ids(request_id)
+    owned_block_ids = [block_id for group in block_ids for block_id in group]
+    if owned_block_ids:
+        raise RuntimeError(f"Finished request {request_id!r} retains KV block ownership: {owned_block_ids!r}.")
+    coordinator = kv_cache_manager.coordinator
+    stale_kv_managers = [
+        index for index, manager in enumerate(coordinator.single_type_managers) if request_id in manager.req_to_blocks
+    ]
+    if stale_kv_managers:
+        raise RuntimeError(f"Finished request {request_id!r} remains in KV manager groups: {stale_kv_managers!r}.")
+    for state_name in (
+        "_compressed_request_physical_tokens",
+        "_compression_destination_reservations",
+    ):
+        state = getattr(kv_cache_manager, state_name, {})
+        if request_id in state:
+            raise RuntimeError(f"Finished request {request_id!r} remains in KV state {state_name}.")
     speculator = getattr(runtime, "speculator", None)
     if speculator is None:
         return
@@ -184,17 +263,24 @@ def _assert_released_request_state(runtime: Any, scheduler: Any, request_id: str
         raise RuntimeError(f"Finished request retained DSpark logical state: {stale}.")
 
 
-def _flush_finished_request(runtime: Any, scheduler: Any, request_id: str) -> None:
+def _flush_finished_request(
+    runtime: Any,
+    scheduler: Any,
+    finished_lifecycle: _FinishedRequestLifecycle,
+) -> None:
+    request_id = finished_lifecycle.request_id
+    finished_lifecycle.assert_delivered_once()
     cleanup_output = scheduler.schedule()
     if cleanup_output.total_num_scheduled_tokens != 0:
         raise RuntimeError("Per-request cleanup unexpectedly scheduled another model forward.")
-    if cleanup_output.finished_req_ids != {request_id}:
+    if cleanup_output.finished_req_ids:
         raise RuntimeError(
-            f"Per-request cleanup expected finished_req_ids={{{request_id!r}}}, "
-            f"got {cleanup_output.finished_req_ids!r}."
+            "The schedule after one-shot request cleanup must not repeat or "
+            f"retain finished request events, got {cleanup_output.finished_req_ids!r}."
         )
-    if runtime.worker.execute_model(cleanup_output) is not None:
+    if _execute_scheduler_output(runtime, cleanup_output, finished_lifecycle) is not None:
         raise RuntimeError("Per-request cleanup unexpectedly returned model output.")
+    finished_lifecycle.assert_delivered_once()
     _assert_released_request_state(runtime, scheduler, request_id)
 
 
@@ -216,6 +302,7 @@ def _run_case(
     completed_rounds = 0
     terminal_partial_commit = False
     consumer_epochs: list[int] = []
+    finished_lifecycle = _FinishedRequestLifecycle(request_id)
     _marker(
         REAL_DATA_CASE_STARTED,
         {
@@ -232,13 +319,14 @@ def _run_case(
     while scheduler.has_requests():
         scheduler_output = scheduler.schedule()
         if scheduler_output.total_num_scheduled_tokens == 0:
-            runtime.worker.execute_model(scheduler_output)
+            if _execute_scheduler_output(runtime, scheduler_output, finished_lifecycle) is not None:
+                raise RuntimeError("A zero-token scheduler output unexpectedly returned model output.")
             continue
         is_verification = bool(scheduler_output.scheduled_spec_decode_tokens)
         output_length_before = len(request.output_token_ids)
         if request.is_finished():
             raise RuntimeError("A finished request reached another target forward.")
-        if runtime.worker.execute_model(scheduler_output) is not None:
+        if _execute_scheduler_output(runtime, scheduler_output, finished_lifecycle) is not None:
             raise RuntimeError("PP=1 execution must defer model output to sampling.")
         target_forward_count += 1
         async_output = runtime.worker.sample_tokens(None)
@@ -268,7 +356,7 @@ def _run_case(
         elif committed_tokens != raw_tokens:
             raise RuntimeError("Active scheduler commit differs from raw sampled/verified tokens.")
 
-    _flush_finished_request(runtime, scheduler, request_id)
+    _flush_finished_request(runtime, scheduler, finished_lifecycle)
     after = _counter_snapshot(speculator)
     if case["ignore_eos"] and len(request.output_token_ids) != case["output_cap"]:
         raise RuntimeError("Synthetic ignore_eos request stopped before its fixed output cap.")

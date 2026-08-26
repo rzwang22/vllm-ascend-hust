@@ -98,7 +98,16 @@ def test_harness_uses_real_scheduler_and_strict_greedy_sampling() -> None:
 def test_per_request_cleanup_and_state_isolation_are_explicit() -> None:
     source = HARNESS.read_text(encoding="utf-8")
 
-    assert "cleanup_output.finished_req_ids != {request_id}" in source
+    assert "class _FinishedRequestLifecycle:" in source
+    assert "finished_lifecycle.assert_delivered_once()" in source
+    assert "cleanup_output.finished_req_ids" in source
+    assert "must not repeat or" in source
+    assert "retain finished request events" in source
+    assert "kv_cache_manager.get_block_ids(request_id)" in source
+    assert "coordinator.single_type_managers" in source
+    assert '"scheduler running"' in source
+    assert '"scheduler waiting"' in source
+    assert '"scheduler skipped waiting"' in source
     assert "_assert_released_request_state(runtime, scheduler, request_id)" in source
     for field in (
         "_published_candidate_tokens",
@@ -114,6 +123,16 @@ def test_per_request_cleanup_and_state_isolation_are_explicit() -> None:
         "_markov_result",
     ):
         assert field in source
+
+
+def test_generation_error_remains_primary_over_process_cleanup_errors() -> None:
+    source = HARNESS.read_text(encoding="utf-8")
+
+    assert "target_primary_error = exc" in source
+    assert "if cleanup_errors and target_primary_error is None:" in source
+    assert source.index("scheduler.update_from_output") < source.index(
+        "_flush_finished_request(runtime, scheduler, finished_lifecycle)"
+    )
 
 
 def test_stochastic_sampling_and_invalid_runtime_shape_fail_closed() -> None:

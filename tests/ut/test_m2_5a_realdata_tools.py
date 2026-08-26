@@ -55,6 +55,69 @@ class _FakeTokenizer:
         return {"input_ids": list(range(10, 10 + len(text.split())))}
 
 
+class _CleanupWorker:
+    def __init__(self) -> None:
+        self.outputs: list[Any] = []
+
+    def execute_model(self, scheduler_output: Any) -> None:
+        self.outputs.append(scheduler_output)
+
+
+def _cleanup_runtime(mode: str) -> SimpleNamespace:
+    runner = SimpleNamespace(
+        req_states=SimpleNamespace(req_id_to_index={}),
+        input_batch=SimpleNamespace(req_id_to_index={}),
+        requests={},
+    )
+    runtime = SimpleNamespace(runner=runner, worker=_CleanupWorker())
+    if mode == "dspark":
+        runtime.speculator = SimpleNamespace(
+            _published_candidate_tokens=None,
+            _published_proposal_step_epoch=None,
+            _published_proposal_request_ids=None,
+            _published_proposal_request_state_indices=None,
+            _current_proposal_lifecycle=None,
+            _prepared_step_epoch=None,
+            _context_kv_step_epoch=None,
+            _draft_forward_step_epoch=None,
+            _markov_attempt_step_epoch=None,
+            _markov_step_epoch=None,
+            _markov_result=None,
+        )
+    return runtime
+
+
+def _cleanup_scheduler(*outputs: Any) -> SimpleNamespace:
+    scheduled_outputs = list(outputs)
+    manager = SimpleNamespace(req_to_blocks={})
+    kv_cache_manager = SimpleNamespace(
+        coordinator=SimpleNamespace(single_type_managers=[manager]),
+        get_block_ids=lambda _request_id: ([], []),
+        _compressed_request_physical_tokens={},
+        _compression_destination_reservations={},
+    )
+
+    def schedule() -> Any:
+        return scheduled_outputs.pop(0)
+
+    return SimpleNamespace(
+        schedule=schedule,
+        requests={},
+        running=[],
+        waiting=[],
+        skipped_waiting=[],
+        finished_req_ids=set(),
+        kv_cache_manager=kv_cache_manager,
+    )
+
+
+def _scheduler_output(*, finished_req_ids: set[str]) -> SimpleNamespace:
+    return SimpleNamespace(
+        total_num_scheduled_tokens=0,
+        finished_req_ids=finished_req_ids,
+    )
+
+
 def _install_deepseek_tokenizer_module(
     monkeypatch: pytest.MonkeyPatch,
     tokenizer_class: type,
@@ -332,6 +395,106 @@ def test_m2_5a_runtime_contract_reports_prefix_and_block_failures_separately() -
             "smoke",
             2147483648,
         )
+
+
+@pytest.mark.parametrize("mode", ["target_only", "dspark"])
+def test_finished_request_event_is_delivered_once_before_empty_flush(mode: str) -> None:
+    request_id = f"request-{mode}"
+    runtime = _cleanup_runtime(mode)
+    empty_output = _scheduler_output(finished_req_ids=set())
+    scheduler = _cleanup_scheduler(empty_output)
+    lifecycle = realdata_harness._FinishedRequestLifecycle(request_id)
+    finished_output = _scheduler_output(finished_req_ids={request_id})
+
+    assert realdata_harness._execute_scheduler_output(runtime, finished_output, lifecycle) is None
+    realdata_harness._flush_finished_request(runtime, scheduler, lifecycle)
+
+    assert lifecycle.observed_count == 1
+    assert lifecycle.worker_delivery_count == 1
+    assert runtime.worker.outputs == [finished_output, empty_output]
+
+
+def test_missing_finished_event_with_live_request_fails_closed() -> None:
+    request_id = "request-missing-event"
+    runtime = _cleanup_runtime("target_only")
+    scheduler = _cleanup_scheduler(_scheduler_output(finished_req_ids=set()))
+    scheduler.requests[request_id] = SimpleNamespace(request_id=request_id)
+    lifecycle = realdata_harness._FinishedRequestLifecycle(request_id)
+
+    with pytest.raises(RuntimeError, match="published and delivered.*exactly once"):
+        realdata_harness._flush_finished_request(runtime, scheduler, lifecycle)
+
+
+def test_repeated_finished_event_is_rejected_without_second_worker_cleanup() -> None:
+    request_id = "request-duplicate-event"
+    runtime = _cleanup_runtime("target_only")
+    duplicate_output = _scheduler_output(finished_req_ids={request_id})
+    scheduler = _cleanup_scheduler(duplicate_output)
+    lifecycle = realdata_harness._FinishedRequestLifecycle(request_id)
+    first_output = _scheduler_output(finished_req_ids={request_id})
+    realdata_harness._execute_scheduler_output(runtime, first_output, lifecycle)
+
+    with pytest.raises(RuntimeError, match="must not repeat or retain"):
+        realdata_harness._flush_finished_request(runtime, scheduler, lifecycle)
+
+    assert runtime.worker.outputs == [first_output]
+
+
+@pytest.mark.parametrize(
+    ("state_owner", "message"),
+    [
+        ("runner_requests", "runner cached requests"),
+        ("runner_req_states", "runner request tensors"),
+        ("runner_input_batch", "runner input batch"),
+        ("kv_blocks", "retains KV block ownership"),
+        ("kv_manager", "remains in KV manager groups"),
+    ],
+)
+def test_finished_request_must_be_absent_from_runner_and_kv_ownership(
+    state_owner: str,
+    message: str,
+) -> None:
+    request_id = f"request-stale-{state_owner}"
+    runtime = _cleanup_runtime("target_only")
+    scheduler = _cleanup_scheduler(_scheduler_output(finished_req_ids=set()))
+    if state_owner == "runner_requests":
+        runtime.runner.requests[request_id] = object()
+    elif state_owner == "runner_req_states":
+        runtime.runner.req_states.req_id_to_index[request_id] = 0
+    elif state_owner == "runner_input_batch":
+        runtime.runner.input_batch.req_id_to_index[request_id] = 0
+    elif state_owner == "kv_blocks":
+        scheduler.kv_cache_manager.get_block_ids = lambda _request_id: ([7], [])
+    else:
+        scheduler.kv_cache_manager.coordinator.single_type_managers[0].req_to_blocks[request_id] = [object()]
+    lifecycle = realdata_harness._FinishedRequestLifecycle(request_id)
+    realdata_harness._execute_scheduler_output(
+        runtime,
+        _scheduler_output(finished_req_ids={request_id}),
+        lifecycle,
+    )
+
+    with pytest.raises(RuntimeError, match=message):
+        realdata_harness._flush_finished_request(runtime, scheduler, lifecycle)
+
+
+@pytest.mark.parametrize("mode", ["target_only", "dspark"])
+def test_consecutive_request_cleanup_does_not_retain_prior_event(mode: str) -> None:
+    request_ids = tuple(f"request-{mode}-{index}" for index in range(10))
+    runtime = _cleanup_runtime(mode)
+    scheduler = _cleanup_scheduler(*(_scheduler_output(finished_req_ids=set()) for _ in request_ids))
+
+    for request_id in request_ids:
+        lifecycle = realdata_harness._FinishedRequestLifecycle(request_id)
+        realdata_harness._execute_scheduler_output(
+            runtime,
+            _scheduler_output(finished_req_ids={request_id}),
+            lifecycle,
+        )
+        realdata_harness._flush_finished_request(runtime, scheduler, lifecycle)
+
+    delivered_events = [output.finished_req_ids for output in runtime.worker.outputs]
+    assert delivered_events == [event for request_id in request_ids for event in ({request_id}, set())]
 
 
 def test_m2_5a_prepare_launch_config_restores_default_after_failure() -> None:
