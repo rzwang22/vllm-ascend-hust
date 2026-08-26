@@ -509,6 +509,9 @@ def _target_only_runtime(
     launch: Any,
     contexts: ExitStack,
     state: dict[str, Any],
+    *,
+    enable_prefix_caching: bool | None = None,
+    kv_cache_bytes: int | None = None,
 ) -> Any:
     import torch
     from vllm.engine.arg_utils import EngineArgs
@@ -529,6 +532,7 @@ def _target_only_runtime(
         distributed_executor_backend="external_launcher",
         enforce_eager=True,
         block_size=prepare_harness.PREPARE_ONLY_CACHE_BLOCK_SIZE,
+        enable_prefix_caching=enable_prefix_caching,
         max_num_seqs=1,
     )
     vllm_config = engine_args.create_engine_config()
@@ -555,7 +559,7 @@ def _target_only_runtime(
     kv_cache_config = get_kv_cache_configs(
         vllm_config,
         [kv_cache_specs],
-        [_kv_cache_budget(os.environ)],
+        [kv_cache_bytes if kv_cache_bytes is not None else _kv_cache_budget(os.environ)],
     )[0]
     topology_runtime = SimpleNamespace(
         launch=launch,

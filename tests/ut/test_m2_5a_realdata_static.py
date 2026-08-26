@@ -9,6 +9,7 @@ VALIDATOR = ROOT / "tools/dspark/validate_m2_5a_results.py"
 HARNESS = ROOT / "tests/e2e/nightly/single_node/spec_decode/test_dspark_single_request_realdata.py"
 M2_4A = ROOT / "tests/e2e/nightly/single_node/spec_decode/test_dspark_single_round_verification.py"
 M2_4B = ROOT / "tests/e2e/nightly/single_node/spec_decode/test_dspark_multi_round_generation.py"
+PREPARE = ROOT / "tests/e2e/nightly/single_node/spec_decode/test_dspark_proposal_inputs_prepare.py"
 
 
 def test_asset_builder_is_offline_and_uses_exact_template_contract() -> None:
@@ -26,6 +27,58 @@ def test_asset_builder_is_offline_and_uses_exact_template_contract() -> None:
     assert "truncate" not in source.lower()
     assert "requests.get" not in source
     assert "hf_hub_download" not in source
+
+
+def test_m2_5a_engine_args_disable_prefix_cache_before_config_creation() -> None:
+    harness = HARNESS.read_text(encoding="utf-8")
+    target_builder = M2_4B.read_text(encoding="utf-8")
+    dspark_builder = PREPARE.read_text(encoding="utf-8")
+
+    assert harness.count("enable_prefix_caching=False") == 2
+    assert "enable_prefix_caching=enable_prefix_caching" in target_builder
+    assert "enable_prefix_caching=launch_config.enable_prefix_caching" in dspark_builder
+    assert target_builder.index("enable_prefix_caching=enable_prefix_caching") < target_builder.index(
+        "vllm_config = engine_args.create_engine_config()"
+    )
+    assert dspark_builder.index("enable_prefix_caching=launch_config.enable_prefix_caching") < dspark_builder.index(
+        "vllm_config = engine_args.create_engine_config()"
+    )
+    assert "cache.enable_prefix_caching =" not in harness
+    assert "cache_config.enable_prefix_caching =" not in harness
+
+
+def test_m2_5a_budget_is_preflighted_and_forwarded_without_changing_other_harness_defaults() -> None:
+    harness = HARNESS.read_text(encoding="utf-8")
+    target_builder = M2_4B.read_text(encoding="utf-8")
+    dspark_builder = PREPARE.read_text(encoding="utf-8")
+
+    assert 'if "DSPARK_KV_CACHE_BYTES" not in environ:' in harness
+    assert "MINIMUM_KV_CACHE_BYTES = 2 * 1024 * 1024 * 1024" in harness
+    assert harness.count("kv_cache_bytes=kv_cache_bytes") == 2
+    assert "enable_prefix_caching: bool | None = None" in target_builder
+    assert "kv_cache_bytes: int | None = None" in target_builder
+    assert "class _PrepareOnlyLaunchConfig:" in dspark_builder
+    assert "enable_prefix_caching: bool | None = None" in dspark_builder
+    assert "kv_cache_bytes: int | None = None" in dspark_builder
+    assert "_PREPARE_ONLY_LAUNCH_CONFIG.reset(token)" in dspark_builder
+    assert "def test_dspark_proposal_inputs_prepare_only_npu() -> None:" in dspark_builder
+    assert "prepare_only_launch_config(" in harness
+
+
+def test_m2_5a_runtime_marker_reads_final_config_fields() -> None:
+    source = HARNESS.read_text(encoding="utf-8")
+
+    assert 'RUNTIME_CONTRACT = "DSPARK_M2_5A_RUNTIME_CONTRACT"' in source
+    for expression in (
+        '"max_model_len": config.model_config.max_model_len',
+        '"block_size": cache.block_size',
+        '"prefix_caching_enabled": cache.enable_prefix_caching',
+        '"enforce_eager": config.model_config.enforce_eager',
+        '"tp_size": parallel.tensor_parallel_size',
+        '"pp_size": parallel.pipeline_parallel_size',
+        '"expert_parallel": parallel.enable_expert_parallel',
+    ):
+        assert expression in source
 
 
 def test_harness_uses_real_scheduler_and_strict_greedy_sampling() -> None:

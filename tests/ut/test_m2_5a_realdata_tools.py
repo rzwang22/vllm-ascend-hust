@@ -10,10 +10,13 @@ import sys
 import types
 from copy import deepcopy
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
+import tests.e2e.nightly.single_node.spec_decode.test_dspark_proposal_inputs_prepare as prepare_harness
+import tests.e2e.nightly.single_node.spec_decode.test_dspark_single_request_realdata as realdata_harness
 from tools.dspark import build_m2_5a_dataset_assets as asset_builder
 from tools.dspark.build_m2_5a_dataset_assets import build_assets
 from tools.dspark.m2_5a_common import (
@@ -239,6 +242,115 @@ def test_verify_only_does_not_import_tokenizer_runtime(
     monkeypatch.setattr(sys, "argv", [str(asset_builder.__file__), "--verify-only", str(frozen_assets)])
 
     assert asset_builder.main() == 0
+
+
+def _runtime_contract_fixture(
+    mode: str,
+    *,
+    prefix_caching: bool = False,
+    block_size: int = realdata_harness.EXPECTED_BLOCK_SIZE,
+    rank: int = 0,
+) -> SimpleNamespace:
+    speculative_config = None
+    if mode == "dspark":
+        speculative_config = SimpleNamespace(
+            method="dspark",
+            num_speculative_tokens=realdata_harness.EXPECTED_K,
+        )
+    return SimpleNamespace(
+        launch=SimpleNamespace(rank=rank),
+        vllm_config=SimpleNamespace(
+            parallel_config=SimpleNamespace(
+                tensor_parallel_size=realdata_harness.EXPECTED_TP_SIZE,
+                pipeline_parallel_size=1,
+                enable_expert_parallel=True,
+            ),
+            cache_config=SimpleNamespace(
+                enable_prefix_caching=prefix_caching,
+                block_size=block_size,
+            ),
+            model_config=SimpleNamespace(
+                enforce_eager=True,
+                max_model_len=realdata_harness.EXPECTED_MAX_MODEL_LEN,
+            ),
+            speculative_config=speculative_config,
+        ),
+    )
+
+
+def test_m2_5a_kv_budget_preflight_is_explicit_and_preserves_two_gib() -> None:
+    with pytest.raises(ValueError, match="explicitly set before model loading"):
+        realdata_harness._m2_5a_kv_cache_budget({})
+    with pytest.raises(ValueError, match=r"got 536870912 bytes.*2147483648 bytes.*max_model_len=8192"):
+        realdata_harness._m2_5a_kv_cache_budget({"DSPARK_KV_CACHE_BYTES": "536870912"})
+
+    assert realdata_harness._m2_5a_kv_cache_budget({"DSPARK_KV_CACHE_BYTES": "2147483648"}) == 2147483648
+
+
+@pytest.mark.parametrize("mode", ["target_only", "dspark"])
+def test_m2_5a_runtime_contract_disables_prefix_cache_for_both_modes(
+    mode: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    runtime = _runtime_contract_fixture(mode, rank=3)
+
+    contract = realdata_harness._validate_runtime_contract(
+        runtime,
+        mode,
+        "smoke",
+        2147483648,
+    )
+
+    assert contract == {
+        "rank": 3,
+        "mode": mode,
+        "profile": "smoke",
+        "max_model_len": 8192,
+        "kv_cache_bytes": 2147483648,
+        "block_size": 128,
+        "prefix_caching_enabled": False,
+        "enforce_eager": True,
+        "tp_size": 8,
+        "pp_size": 1,
+        "expert_parallel": True,
+    }
+    assert f"{realdata_harness.RUNTIME_CONTRACT}=" in capsys.readouterr().out
+
+
+def test_m2_5a_runtime_contract_reports_prefix_and_block_failures_separately() -> None:
+    with pytest.raises(RuntimeError, match=r"prefix caching disabled, got True\.$"):
+        realdata_harness._validate_runtime_contract(
+            _runtime_contract_fixture("target_only", prefix_caching=True),
+            "target_only",
+            "smoke",
+            2147483648,
+        )
+    with pytest.raises(RuntimeError, match=r"block_size=128, got 64\.$"):
+        realdata_harness._validate_runtime_contract(
+            _runtime_contract_fixture("target_only", block_size=64),
+            "target_only",
+            "smoke",
+            2147483648,
+        )
+
+
+def test_m2_5a_prepare_launch_config_restores_default_after_failure() -> None:
+    assert prepare_harness._PREPARE_ONLY_LAUNCH_CONFIG.get() is None
+
+    with (
+        pytest.raises(RuntimeError, match="injected failure"),
+        prepare_harness.prepare_only_launch_config(
+            enable_prefix_caching=False,
+            kv_cache_bytes=2147483648,
+        ),
+    ):
+        launch_config = prepare_harness._PREPARE_ONLY_LAUNCH_CONFIG.get()
+        assert launch_config is not None
+        assert launch_config.enable_prefix_caching is False
+        assert launch_config.kv_cache_bytes == 2147483648
+        raise RuntimeError("injected failure")
+
+    assert prepare_harness._PREPARE_ONLY_LAUNCH_CONFIG.get() is None
 
 
 def test_repeated_asset_build_is_byte_identical(tmp_path: Path) -> None:

@@ -7,7 +7,10 @@ import gc
 import json
 import os
 import sys
-from contextlib import ExitStack
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 
@@ -48,6 +51,18 @@ PREPARE_ONLY_CACHE_BLOCK_SIZE = 128
 _PREPARED_STEP_CALLBACK = None
 _INITIALIZED_WORKER_CALLBACK = None
 _CONTINUE_AFTER_VERIFICATION = False
+
+
+@dataclass(frozen=True)
+class _PrepareOnlyLaunchConfig:
+    enable_prefix_caching: bool | None = None
+    kv_cache_bytes: int | None = None
+
+
+_PREPARE_ONLY_LAUNCH_CONFIG: ContextVar[_PrepareOnlyLaunchConfig | None] = ContextVar(
+    "_PREPARE_ONLY_LAUNCH_CONFIG",
+    default=None,
+)
 
 enforce_offline_mode()
 
@@ -106,6 +121,24 @@ def _prompt_token_id(config: dict[str, Any]) -> int:
     )
 
 
+@contextmanager
+def prepare_only_launch_config(
+    *,
+    enable_prefix_caching: bool | None = None,
+    kv_cache_bytes: int | None = None,
+) -> Iterator[None]:
+    token = _PREPARE_ONLY_LAUNCH_CONFIG.set(
+        _PrepareOnlyLaunchConfig(
+            enable_prefix_caching=enable_prefix_caching,
+            kv_cache_bytes=kv_cache_bytes,
+        )
+    )
+    try:
+        yield
+    finally:
+        _PREPARE_ONLY_LAUNCH_CONFIG.reset(token)
+
+
 def test_dspark_proposal_inputs_prepare_only_npu() -> None:
     try:
         settings = parse_loader_settings(os.environ)
@@ -138,6 +171,7 @@ def test_dspark_proposal_inputs_prepare_only_npu() -> None:
         )
         from vllm_ascend.worker.worker import NPUWorker
 
+        launch_config = _PREPARE_ONLY_LAUNCH_CONFIG.get() or _PrepareOnlyLaunchConfig()
         engine_args = EngineArgs(
             model=str(settings.target_model),
             tokenizer=str(settings.target_model),
@@ -150,6 +184,7 @@ def test_dspark_proposal_inputs_prepare_only_npu() -> None:
             distributed_executor_backend="external_launcher",
             enforce_eager=True,
             block_size=PREPARE_ONLY_CACHE_BLOCK_SIZE,
+            enable_prefix_caching=launch_config.enable_prefix_caching,
             max_num_seqs=1,
             additional_config={
                 "dspark_continue_after_verification": (_CONTINUE_AFTER_VERIFICATION),
@@ -208,7 +243,9 @@ def test_dspark_proposal_inputs_prepare_only_npu() -> None:
         assert all(spec.block_size == PREPARE_ONLY_CACHE_BLOCK_SIZE for spec in indexer_kv_specs.values())
         assert all(spec.block_size == PREPARE_ONLY_CACHE_BLOCK_SIZE for spec in compressed_kv_specs.values())
         assert all(spec.storage_block_size == PREPARE_ONLY_CACHE_BLOCK_SIZE for spec in compressed_kv_specs.values())
-        available_memory = _kv_cache_budget(os.environ)
+        available_memory = (
+            launch_config.kv_cache_bytes if launch_config.kv_cache_bytes is not None else _kv_cache_budget(os.environ)
+        )
         kv_cache_config = get_kv_cache_configs(
             vllm_config,
             [kv_cache_specs],

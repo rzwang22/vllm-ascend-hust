@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Mapping
 from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,9 @@ from tests.e2e.nightly.single_node.spec_decode.dspark_loader_harness import (
     HarnessNotConfigured,
     parse_launch_context,
     parse_loader_settings,
+)
+from tests.e2e.nightly.single_node.spec_decode.test_dspark_kv_cache_init import (
+    _kv_cache_budget,
 )
 from tests.e2e.nightly.single_node.spec_decode.test_dspark_multi_round_generation import (
     _build_scheduler,
@@ -41,6 +45,8 @@ EXPECTED_MAX_MODEL_LEN = 8192
 EXPECTED_TP_SIZE = 8
 EXPECTED_K = 5
 EXPECTED_BLOCK_SIZE = 128
+MINIMUM_KV_CACHE_BYTES = 2 * 1024 * 1024 * 1024
+RUNTIME_CONTRACT = "DSPARK_M2_5A_RUNTIME_CONTRACT"
 
 
 def _marker(name: str, record: dict[str, Any]) -> None:
@@ -66,7 +72,25 @@ def _request(case: dict[str, Any], request_id: str) -> Any:
     )
 
 
-def _validate_runtime_contract(runtime: Any, mode: str) -> None:
+def _m2_5a_kv_cache_budget(environ: Mapping[str, str]) -> int:
+    if "DSPARK_KV_CACHE_BYTES" not in environ:
+        raise ValueError("M2.5A requires DSPARK_KV_CACHE_BYTES to be explicitly set before model loading.")
+    kv_cache_bytes = _kv_cache_budget(environ)
+    if kv_cache_bytes < MINIMUM_KV_CACHE_BYTES:
+        raise ValueError(
+            "M2.5A KV budget preflight failed before model loading: "
+            f"got {kv_cache_bytes} bytes, require at least {MINIMUM_KV_CACHE_BYTES} bytes "
+            f"for max_model_len={EXPECTED_MAX_MODEL_LEN}."
+        )
+    return kv_cache_bytes
+
+
+def _validate_runtime_contract(
+    runtime: Any,
+    mode: str,
+    profile: str,
+    kv_cache_bytes: int,
+) -> dict[str, Any]:
     config = runtime.vllm_config
     parallel = config.parallel_config
     cache = config.cache_config
@@ -78,8 +102,12 @@ def _validate_runtime_contract(runtime: Any, mode: str) -> None:
         raise RuntimeError("M2.5A requires TP=8, EP enabled, and PP=1.")
     if not config.model_config.enforce_eager:
         raise RuntimeError("M2.5A requires eager execution.")
-    if cache.enable_prefix_caching or cache.block_size != EXPECTED_BLOCK_SIZE:
-        raise RuntimeError("M2.5A requires prefix caching disabled and block_size=128.")
+    if config.model_config.max_model_len != EXPECTED_MAX_MODEL_LEN:
+        raise RuntimeError(f"M2.5A requires max_model_len={EXPECTED_MAX_MODEL_LEN}.")
+    if cache.enable_prefix_caching is not False:
+        raise RuntimeError(f"M2.5A requires prefix caching disabled, got {cache.enable_prefix_caching!r}.")
+    if cache.block_size != EXPECTED_BLOCK_SIZE:
+        raise RuntimeError(f"M2.5A requires block_size={EXPECTED_BLOCK_SIZE}, got {cache.block_size}.")
     speculative = config.speculative_config
     if mode == "target_only" and speculative is not None:
         raise RuntimeError("The target-only M2.5A process must not construct a speculator.")
@@ -87,6 +115,21 @@ def _validate_runtime_contract(runtime: Any, mode: str) -> None:
         speculative is None or speculative.method != "dspark" or speculative.num_speculative_tokens != EXPECTED_K
     ):
         raise RuntimeError("The DSpark M2.5A process must use method=dspark and K=5.")
+    contract = {
+        "rank": runtime.launch.rank,
+        "mode": mode,
+        "profile": profile,
+        "max_model_len": config.model_config.max_model_len,
+        "kv_cache_bytes": kv_cache_bytes,
+        "block_size": cache.block_size,
+        "prefix_caching_enabled": cache.enable_prefix_caching,
+        "enforce_eager": config.model_config.enforce_eager,
+        "tp_size": parallel.tensor_parallel_size,
+        "pp_size": parallel.pipeline_parallel_size,
+        "expert_parallel": parallel.enable_expert_parallel,
+    }
+    _marker(RUNTIME_CONTRACT, contract)
+    return contract
 
 
 def _counter_snapshot(speculator: Any | None) -> dict[str, int | None]:
@@ -336,7 +379,7 @@ def _write_results(result_dir: Path, rank: int, records: list[dict[str, Any]]) -
     return path
 
 
-def _settings_and_matrix() -> tuple[Any, Any, str, str, Path, str, list[dict[str, Any]]]:
+def _settings_and_matrix() -> tuple[Any, Any, str, str, Path, str, list[dict[str, Any]], int]:
     manifest_value = os.environ.get("DSPARK_M25A_MANIFEST")
     if not manifest_value:
         pytest.skip("Set DSPARK_M25A_MANIFEST to the offline frozen manifest.")
@@ -356,15 +399,25 @@ def _settings_and_matrix() -> tuple[Any, Any, str, str, Path, str, list[dict[str
         raise ValueError("M2.5A requires TP=8 and max_model_len=8192.")
     if settings.num_speculative_tokens != EXPECTED_K:
         raise ValueError("M2.5A requires DSpark K=5.")
+    kv_cache_bytes = _m2_5a_kv_cache_budget(os.environ)
     manifest_path = Path(manifest_value).expanduser().resolve()
     _, cases = load_profile_cases(manifest_path, profile)
     lifecycle_repeat = int(os.environ.get("DSPARK_M25A_LIFECYCLE_REPEAT", "1"))
     plan = build_execution_plan(cases, lifecycle_repeat)
-    return settings, launch, mode, profile, Path(result_value).expanduser().resolve(), sha256_file(manifest_path), plan
+    return (
+        settings,
+        launch,
+        mode,
+        profile,
+        Path(result_value).expanduser().resolve(),
+        sha256_file(manifest_path),
+        plan,
+        kv_cache_bytes,
+    )
 
 
 def test_dspark_single_request_realdata_npu() -> None:
-    settings, launch, mode, profile, result_dir, manifest_hash, plan = _settings_and_matrix()
+    settings, launch, mode, profile, result_dir, manifest_hash, plan, kv_cache_bytes = _settings_and_matrix()
     records: list[dict[str, Any]] = []
     try:
         if mode == "target_only":
@@ -372,8 +425,15 @@ def test_dspark_single_request_realdata_npu() -> None:
             state: dict[str, Any] = {}
             target_primary_error: BaseException | None = None
             try:
-                runtime = _target_only_runtime(settings, launch, contexts, state)
-                _validate_runtime_contract(runtime, mode)
+                runtime = _target_only_runtime(
+                    settings,
+                    launch,
+                    contexts,
+                    state,
+                    enable_prefix_caching=False,
+                    kv_cache_bytes=kv_cache_bytes,
+                )
+                _validate_runtime_contract(runtime, mode, profile, kv_cache_bytes)
                 records = _run_plan(
                     runtime,
                     plan,
@@ -393,7 +453,7 @@ def test_dspark_single_request_realdata_npu() -> None:
             captured: dict[str, list[dict[str, Any]]] = {}
 
             def callback(runtime: Any) -> bool:
-                _validate_runtime_contract(runtime, mode)
+                _validate_runtime_contract(runtime, mode, profile, kv_cache_bytes)
                 captured["records"] = _run_plan(
                     runtime,
                     plan,
@@ -409,7 +469,11 @@ def test_dspark_single_request_realdata_npu() -> None:
             prepare_harness._CONTINUE_AFTER_VERIFICATION = True
             prepare_harness._INITIALIZED_WORKER_CALLBACK = callback
             try:
-                prepare_harness.test_dspark_proposal_inputs_prepare_only_npu()
+                with prepare_harness.prepare_only_launch_config(
+                    enable_prefix_caching=False,
+                    kv_cache_bytes=kv_cache_bytes,
+                ):
+                    prepare_harness.test_dspark_proposal_inputs_prepare_only_npu()
             finally:
                 prepare_harness._INITIALIZED_WORKER_CALLBACK = None
                 prepare_harness._CONTINUE_AFTER_VERIFICATION = previous_continue
