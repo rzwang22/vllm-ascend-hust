@@ -125,6 +125,21 @@ def test_per_request_cleanup_and_state_isolation_are_explicit() -> None:
         assert field in source
 
 
+def test_zero_token_runner_output_is_validated_without_sampling_or_forward_count() -> None:
+    source = HARNESS.read_text(encoding="utf-8")
+    zero_token_branch = source[
+        source.index("if scheduler_output.total_num_scheduled_tokens == 0:") : source.index(
+            "is_verification = bool(scheduler_output.scheduled_spec_decode_tokens)"
+        )
+    ]
+
+    assert "_assert_canonical_zero_token_runner_output(runner_output)" in zero_token_branch
+    assert "sample_tokens" not in zero_token_branch
+    assert "target_forward_count += 1" not in zero_token_branch
+    assert "verification_count += 1" not in zero_token_branch
+    assert "continue" in zero_token_branch
+
+
 def test_generation_error_remains_primary_over_process_cleanup_errors() -> None:
     source = HARNESS.read_text(encoding="utf-8")
 

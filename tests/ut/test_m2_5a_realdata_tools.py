@@ -58,9 +58,11 @@ class _FakeTokenizer:
 class _CleanupWorker:
     def __init__(self) -> None:
         self.outputs: list[Any] = []
+        self.runner_outputs: list[Any] = []
 
-    def execute_model(self, scheduler_output: Any) -> None:
+    def execute_model(self, scheduler_output: Any) -> Any:
         self.outputs.append(scheduler_output)
+        return self.runner_outputs.pop(0) if self.runner_outputs else None
 
 
 def _cleanup_runtime(mode: str) -> SimpleNamespace:
@@ -116,6 +118,28 @@ def _scheduler_output(*, finished_req_ids: set[str]) -> SimpleNamespace:
         total_num_scheduled_tokens=0,
         finished_req_ids=finished_req_ids,
     )
+
+
+def _empty_model_runner_output(**overrides: Any) -> SimpleNamespace:
+    fields = {
+        "req_ids": [],
+        "req_id_to_index": {},
+        "sampled_token_ids": [],
+        "logprobs": None,
+        "prompt_logprobs_dict": {},
+        "pooler_output": None,
+        "kv_connector_output": None,
+        "ec_connector_output": None,
+        "kv_cache_compression_plans": None,
+        "num_nans_in_logits": None,
+        "cudagraph_stats": None,
+        "spec_decode_proposer_latency_seconds": 0.0,
+        "spec_decode_verification_latency_seconds": 0.0,
+        "spec_decode_num_forwards": 0,
+        "routed_experts": None,
+    }
+    fields.update(overrides)
+    return SimpleNamespace(**fields)
 
 
 def _install_deepseek_tokenizer_module(
@@ -412,6 +436,67 @@ def test_finished_request_event_is_delivered_once_before_empty_flush(mode: str) 
     assert lifecycle.observed_count == 1
     assert lifecycle.worker_delivery_count == 1
     assert runtime.worker.outputs == [finished_output, empty_output]
+
+
+@pytest.mark.parametrize(
+    "connector_wrapped",
+    [
+        False,
+        True,
+    ],
+)
+@pytest.mark.parametrize("mode", ["target_only", "dspark"])
+def test_zero_token_cleanup_accepts_canonical_and_connector_empty_outputs(
+    mode: str,
+    connector_wrapped: bool,
+) -> None:
+    request_id = f"request-{mode}"
+    connector_output = (
+        SimpleNamespace(finished_sending={request_id}, finished_recving=None) if connector_wrapped else None
+    )
+    runner_output = _empty_model_runner_output(
+        kv_connector_output=connector_output,
+    )
+    runtime = _cleanup_runtime(mode)
+    runtime.worker.runner_outputs.extend([runner_output, _empty_model_runner_output()])
+    scheduler = _cleanup_scheduler(_scheduler_output(finished_req_ids=set()))
+    lifecycle = realdata_harness._FinishedRequestLifecycle(request_id)
+    finished_output = _scheduler_output(finished_req_ids={request_id})
+
+    first_runner_output = realdata_harness._execute_scheduler_output(
+        runtime,
+        finished_output,
+        lifecycle,
+    )
+    realdata_harness._assert_canonical_zero_token_runner_output(first_runner_output)
+    realdata_harness._flush_finished_request(runtime, scheduler, lifecycle)
+
+    assert lifecycle.observed_count == 1
+    assert lifecycle.worker_delivery_count == 1
+
+
+@pytest.mark.parametrize(
+    ("runner_output", "message"),
+    [
+        (_empty_model_runner_output(req_ids=["request"]), "req_ids"),
+        (
+            _empty_model_runner_output(
+                req_id_to_index={"request": 0},
+            ),
+            "req_id_to_index",
+        ),
+        (_empty_model_runner_output(sampled_token_ids=[[7]]), "sampled_token_ids"),
+        (_empty_model_runner_output(logprobs=object()), "logprobs"),
+        (_empty_model_runner_output(pooler_output=[object()]), "pooler"),
+        (_empty_model_runner_output(spec_decode_num_forwards=1), "model forwards"),
+    ],
+)
+def test_zero_token_output_with_execution_payload_fails_closed(
+    runner_output: Any,
+    message: str,
+) -> None:
+    with pytest.raises(RuntimeError, match=message):
+        realdata_harness._assert_canonical_zero_token_runner_output(runner_output)
 
 
 def test_missing_finished_event_with_live_request_fails_closed() -> None:

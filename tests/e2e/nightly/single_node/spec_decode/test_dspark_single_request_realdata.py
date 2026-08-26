@@ -198,6 +198,44 @@ def _execute_scheduler_output(
     return output
 
 
+def _assert_canonical_zero_token_runner_output(output: Any) -> None:
+    """Accept only the current core's semantically empty runner envelope."""
+    if output is None:
+        return
+
+    empty_sequence_fields = ("req_ids", "sampled_token_ids")
+    empty_mapping_fields = ("req_id_to_index", "prompt_logprobs_dict")
+    for field_name in empty_sequence_fields:
+        value = getattr(output, field_name, None)
+        if not isinstance(value, (list, tuple)) or value:
+            raise RuntimeError(
+                f"A zero-token scheduler output returned request/token payload in {field_name}: {value!r}."
+            )
+    for field_name in empty_mapping_fields:
+        value = getattr(output, field_name, None)
+        if not isinstance(value, dict) or value:
+            raise RuntimeError(f"A zero-token scheduler output returned request payload in {field_name}: {value!r}.")
+    for field_name in ("logprobs", "routed_experts", "cudagraph_stats"):
+        value = getattr(output, field_name, None)
+        if value is not None:
+            raise RuntimeError(f"A zero-token scheduler output returned model-forward payload in {field_name}.")
+    pooler_output = getattr(output, "pooler_output", None)
+    if pooler_output is not None and (not isinstance(pooler_output, (list, tuple)) or pooler_output):
+        raise RuntimeError("A zero-token scheduler output returned pooler payload.")
+    for field_name in ("kv_cache_compression_plans", "num_nans_in_logits"):
+        value = getattr(output, field_name, None)
+        if value not in (None, [], {}):
+            raise RuntimeError(f"A zero-token scheduler output returned execution payload in {field_name}: {value!r}.")
+    if getattr(output, "spec_decode_num_forwards", 0) != 0:
+        raise RuntimeError("A zero-token scheduler output reported speculative model forwards.")
+    for field_name in (
+        "spec_decode_proposer_latency_seconds",
+        "spec_decode_verification_latency_seconds",
+    ):
+        if getattr(output, field_name, 0.0) != 0.0:
+            raise RuntimeError(f"A zero-token scheduler output reported speculative execution latency in {field_name}.")
+
+
 def _assert_released_request_state(runtime: Any, scheduler: Any, request_id: str) -> None:
     runner = runtime.runner
     registries = {
@@ -278,8 +316,8 @@ def _flush_finished_request(
             "The schedule after one-shot request cleanup must not repeat or "
             f"retain finished request events, got {cleanup_output.finished_req_ids!r}."
         )
-    if _execute_scheduler_output(runtime, cleanup_output, finished_lifecycle) is not None:
-        raise RuntimeError("Per-request cleanup unexpectedly returned model output.")
+    runner_output = _execute_scheduler_output(runtime, cleanup_output, finished_lifecycle)
+    _assert_canonical_zero_token_runner_output(runner_output)
     finished_lifecycle.assert_delivered_once()
     _assert_released_request_state(runtime, scheduler, request_id)
 
@@ -319,8 +357,8 @@ def _run_case(
     while scheduler.has_requests():
         scheduler_output = scheduler.schedule()
         if scheduler_output.total_num_scheduled_tokens == 0:
-            if _execute_scheduler_output(runtime, scheduler_output, finished_lifecycle) is not None:
-                raise RuntimeError("A zero-token scheduler output unexpectedly returned model output.")
+            runner_output = _execute_scheduler_output(runtime, scheduler_output, finished_lifecycle)
+            _assert_canonical_zero_token_runner_output(runner_output)
             continue
         is_verification = bool(scheduler_output.scheduled_spec_decode_tokens)
         output_length_before = len(request.output_token_ids)
