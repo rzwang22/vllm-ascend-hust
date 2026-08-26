@@ -70,7 +70,8 @@ def test_proposal_lifecycle_fields_and_terminal_cleanup_are_explicit() -> None:
         assert field in lifecycle_source
     assert "def discard_terminal_proposal(" in speculator_source
     assert "_terminal_proposal_discard_count += 1" in speculator_source
-    assert "speculator.discard_terminal_proposal(" in runner_source
+    assert "speculator.reconcile_scheduler_proposal(" in runner_source
+    assert "finished_request_ids=scheduler_output.finished_req_ids" in runner_source
     assert "finally:\n            super().finish_requests" in runner_source
 
 

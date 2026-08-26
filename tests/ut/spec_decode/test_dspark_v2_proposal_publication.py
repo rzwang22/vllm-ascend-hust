@@ -224,10 +224,10 @@ def test_third_proposer_fails_closed_at_multi_round_boundary() -> None:
             lambda batch: setattr(
                 batch,
                 "num_draft_tokens_per_req",
-                np.array([5, 4], dtype=np.int32),
+                np.array([5, 6], dtype=np.int32),
             ),
             RuntimeError,
-            "exactly the configured",
+            "invalid scheduled proposal length",
         ),
         (
             lambda batch: batch.input_ids.__setitem__(1, 255),

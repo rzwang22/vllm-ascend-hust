@@ -301,6 +301,32 @@ def _assert_released_request_state(runtime: Any, scheduler: Any, request_id: str
         raise RuntimeError(f"Finished request retained DSpark logical state: {stale}.")
 
 
+def _assert_scheduler_proposal_disposition(
+    speculator: Any,
+    scheduler_output: Any,
+) -> None:
+    lifecycle = speculator._current_proposal_lifecycle
+    if lifecycle is None:
+        raise RuntimeError("A scheduler-installed DSpark proposal has no active lifecycle.")
+    scheduled_lengths = tuple(
+        len(scheduler_output.scheduled_spec_decode_tokens[request_id]) for request_id in lifecycle.request_ids
+    )
+    published_length = speculator._published_candidate_tokens.shape[1]
+    expected_disposition = (
+        "INSTALLED" if all(length == published_length for length in scheduled_lengths) else "TRUNCATED"
+    )
+    if (
+        lifecycle.disposition != expected_disposition
+        or lifecycle.scheduled_lengths != scheduled_lengths
+        or not lifecycle.installed
+        or lifecycle.consumed
+    ):
+        raise RuntimeError(
+            "DSpark proposal disposition was not reconciled from the current "
+            "SchedulerOutput before target verification."
+        )
+
+
 def _flush_finished_request(
     runtime: Any,
     scheduler: Any,
@@ -361,11 +387,29 @@ def _run_case(
             _assert_canonical_zero_token_runner_output(runner_output)
             continue
         is_verification = bool(scheduler_output.scheduled_spec_decode_tokens)
+        proposal_pending_before_execute = bool(mode == "dspark" and speculator._published_candidate_tokens is not None)
         output_length_before = len(request.output_token_ids)
         if request.is_finished():
             raise RuntimeError("A finished request reached another target forward.")
         if _execute_scheduler_output(runtime, scheduler_output, finished_lifecycle) is not None:
             raise RuntimeError("PP=1 execution must defer model output to sampling.")
+        if mode == "dspark" and is_verification:
+            _assert_scheduler_proposal_disposition(
+                speculator,
+                scheduler_output,
+            )
+        elif mode == "dspark" and proposal_pending_before_execute:
+            dropped = speculator._dropped_proposal_lifecycle
+            if (
+                speculator._current_proposal_lifecycle is not None
+                or speculator._published_candidate_tokens is not None
+                or dropped is None
+                or dropped.disposition != "DROPPED"
+                or dropped.request_ids != (request_id,)
+            ):
+                raise RuntimeError(
+                    "An uninstalled DSpark proposal was not atomically retired before the next target step."
+                )
         target_forward_count += 1
         async_output = runtime.worker.sample_tokens(None)
         if async_output is None:

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 import torch
+from vllm.v1.core.sched.output import SchedulerOutput
 
 from tests.ut.spec_decode.test_dspark_v2_proposal_inputs import (
     DRAFT_LAYERS,
@@ -344,6 +345,9 @@ def test_runner_finish_discards_terminal_proposal_before_base_cleanup(
     )
     runner = object.__new__(NPUModelRunner)
     runner.speculator = speculator
+    runner.req_states = SimpleNamespace(
+        req_id_to_index={request_id: index for index, request_id in enumerate(proposal_inputs.request_ids)}
+    )
     calls = []
 
     def finish_base(self, output):
@@ -357,9 +361,8 @@ def test_runner_finish_discards_terminal_proposal_before_base_cleanup(
         )
 
     monkeypatch.setattr(GPUModelRunner, "finish_requests", finish_base)
-    scheduler_output = SimpleNamespace(
-        finished_req_ids=set(proposal_inputs.request_ids),
-    )
+    scheduler_output = SchedulerOutput.make_empty()
+    scheduler_output.finished_req_ids = set(proposal_inputs.request_ids)
 
     runner.finish_requests(scheduler_output)
 
@@ -383,15 +386,17 @@ def test_runner_finish_keeps_base_cleanup_on_terminal_discard_error(
     )
     runner = object.__new__(NPUModelRunner)
     runner.speculator = speculator
+    runner.req_states = SimpleNamespace(
+        req_id_to_index={request_id: index for index, request_id in enumerate(proposal_inputs.request_ids)}
+    )
     calls = []
     monkeypatch.setattr(
         GPUModelRunner,
         "finish_requests",
         lambda self, output: calls.append((self, output)),
     )
-    scheduler_output = SimpleNamespace(
-        finished_req_ids={proposal_inputs.request_ids[0]},
-    )
+    scheduler_output = SchedulerOutput.make_empty()
+    scheduler_output.finished_req_ids = {proposal_inputs.request_ids[0]}
 
     with pytest.raises(RuntimeError, match="only part of a proposal batch"):
         runner.finish_requests(scheduler_output)

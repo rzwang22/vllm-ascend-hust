@@ -117,10 +117,11 @@ class AscendDSparkMarkovResult:
 class AscendDSparkProposalLifecycle:
     """Ownership state for one proposal crossing the core draft-token ABI.
 
-    ``installed`` is confirmed only when a later target input consumes the
-    exact candidate tensor. A proposal generated optimistically for a request
-    that the scheduler subsequently finishes is instead marked terminal and
-    discarded when that finished request reaches the runner cleanup step.
+    ``installed`` is confirmed from the next ``SchedulerOutput`` before target
+    execution. Exact candidate-prefix identity is then checked from the core
+    runner's device ``InputBatch`` before ``consumed`` becomes true. A proposal
+    omitted, preempted, missing, or terminal in scheduler truth is retired
+    without entering verification.
     """
 
     proposal_epoch: int
@@ -132,6 +133,12 @@ class AscendDSparkProposalLifecycle:
     installed: bool
     consumed: bool
     discarded_terminal: bool
+    scheduled_lengths: tuple[int, ...] = ()
+    disposition: str = "GENERATED"
+    token_prefix_match: bool | None = None
+    truncated: bool = False
+    dropped: bool = False
+    drop_reason: str | None = None
 
 
 __all__ = [

@@ -167,7 +167,7 @@ class NPUModelRunner(GPUModelRunner):
             super().load_model(load_dummy_weights, *args, **kwargs)
 
     def finish_requests(self, scheduler_output: SchedulerOutput) -> None:
-        """Discard terminal DSpark proposals before releasing request state."""
+        """Reconcile DSpark proposal ownership before request-state updates."""
         from vllm_ascend.worker.v2.spec_decode.dspark import (
             AscendDSparkSpeculator,
         )
@@ -175,8 +175,14 @@ class NPUModelRunner(GPUModelRunner):
         speculator = self.speculator
         try:
             if isinstance(speculator, AscendDSparkSpeculator):
-                speculator.discard_terminal_proposal(
-                    scheduler_output.finished_req_ids,
+                known_request_ids = set(self.req_states.req_id_to_index)
+                known_request_ids.update(request.req_id for request in scheduler_output.scheduled_new_reqs)
+                speculator.reconcile_scheduler_proposal(
+                    scheduled_spec_decode_tokens=(scheduler_output.scheduled_spec_decode_tokens),
+                    scheduled_request_ids=set(scheduler_output.num_scheduled_tokens),
+                    finished_request_ids=scheduler_output.finished_req_ids,
+                    preempted_request_ids=(scheduler_output.preempted_req_ids or set()),
+                    known_request_ids=known_request_ids,
                 )
         finally:
             super().finish_requests(scheduler_output)

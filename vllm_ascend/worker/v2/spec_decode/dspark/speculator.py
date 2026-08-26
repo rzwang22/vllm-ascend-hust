@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # Copyright (c) 2026 Huawei Technologies Co., Ltd. All Rights Reserved.
 
+import json
 from collections.abc import Mapping
 from dataclasses import replace
 from itertools import product
@@ -17,6 +18,7 @@ from vllm.forward_context import (
     get_forward_context,
     set_forward_context,
 )
+from vllm.logger import init_logger
 from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
 from vllm.v1.attention.backend import AttentionBackend
 from vllm.v1.kv_cache_interface import KVCacheConfig, KVCacheSpec
@@ -47,6 +49,8 @@ from vllm_ascend.worker.v2.spec_decode.dspark.proposal_inputs import (
 
 _DSPARK_MARKOV_FIXED_K = 5
 _DSPARK_CONTINUE_AFTER_VERIFICATION = "dspark_continue_after_verification"
+
+logger = init_logger(__name__)
 
 
 def _assert_markov_tensor_contract(predicate: torch.Tensor, message: str) -> None:
@@ -247,9 +251,11 @@ class AscendDSparkSpeculator(BaseSpeculator):
         self._current_proposal_lifecycle: AscendDSparkProposalLifecycle | None = None
         self._last_consumed_proposal_lifecycle: AscendDSparkProposalLifecycle | None = None
         self._terminal_proposal_lifecycle: AscendDSparkProposalLifecycle | None = None
+        self._dropped_proposal_lifecycle: AscendDSparkProposalLifecycle | None = None
         self._proposal_generated_count = 0
         self._proposal_returned_count = 0
         self._proposal_installed_count = 0
+        self._proposal_dropped_count = 0
         self._terminal_proposal_discard_count = 0
         self.eplb_state: Any | None = None
 
@@ -1710,6 +1716,193 @@ class AscendDSparkSpeculator(BaseSpeculator):
         )
         return candidate_tokens
 
+    def _log_proposal_disposition(
+        self,
+        lifecycle: AscendDSparkProposalLifecycle,
+    ) -> None:
+        """Emit one content-free record for a disposition transition."""
+        published_length = (
+            int(self._published_candidate_tokens.shape[1])
+            if self._published_candidate_tokens is not None
+            else self.num_speculative_steps
+        )
+        for request_index, request_id in enumerate(lifecycle.request_ids):
+            scheduled_length = (
+                lifecycle.scheduled_lengths[request_index] if request_index < len(lifecycle.scheduled_lengths) else 0
+            )
+            logger.info(
+                "DSPARK_PROPOSAL_DISPOSITION=%s",
+                json.dumps(
+                    {
+                        "rank": self.rank,
+                        "request_id": request_id,
+                        "producer_epoch": lifecycle.proposal_epoch,
+                        "consumer_epoch": lifecycle.consumer_epoch,
+                        "published_length": published_length,
+                        "scheduled_length": scheduled_length,
+                        "disposition": lifecycle.disposition,
+                        "token_prefix_match": lifecycle.token_prefix_match,
+                        "installed": lifecycle.installed,
+                        "truncated": lifecycle.truncated,
+                        "dropped": lifecycle.dropped,
+                        "drop_reason": lifecycle.drop_reason,
+                        "terminal": lifecycle.discarded_terminal,
+                        "consumed": lifecycle.consumed,
+                    },
+                    sort_keys=True,
+                ),
+            )
+
+    def _clear_published_proposal_state(self) -> None:
+        self._published_proposal_step_epoch = None
+        self._published_proposal_request_ids = None
+        self._published_proposal_request_state_indices = None
+        self._published_candidate_tokens = None
+        self._published_proposal_consumed = False
+        self._current_proposal_lifecycle = None
+        self._prepared_step_epoch = None
+        self._context_kv_step_epoch = None
+        self._draft_forward_step_epoch = None
+        self._markov_attempt_step_epoch = None
+        self._markov_step_epoch = None
+        self._markov_result = None
+
+    def _drop_published_proposal(
+        self,
+        *,
+        reason: str,
+        terminal: bool,
+    ) -> bool:
+        lifecycle = self._current_proposal_lifecycle
+        if lifecycle is None:
+            return False
+        if lifecycle.consumed:
+            self._release_consumed_proposal()
+            return False
+        dropped = replace(
+            lifecycle,
+            disposition="DROPPED",
+            token_prefix_match=None,
+            installed=False,
+            truncated=False,
+            dropped=True,
+            drop_reason=reason,
+            discarded_terminal=terminal,
+        )
+        self._dropped_proposal_lifecycle = dropped
+        self._proposal_dropped_count += 1
+        if terminal:
+            self._terminal_proposal_lifecycle = dropped
+            self._terminal_proposal_discard_count += 1
+        self._log_proposal_disposition(dropped)
+        self._clear_published_proposal_state()
+        return True
+
+    def reconcile_scheduler_proposal(
+        self,
+        *,
+        scheduled_spec_decode_tokens: Mapping[str, list[int]],
+        scheduled_request_ids: set[str],
+        finished_request_ids: set[str],
+        preempted_request_ids: set[str],
+        known_request_ids: set[str],
+    ) -> str | None:
+        """Reconcile scheduler truth before executing its target batch.
+
+        A known owner omitted from the current batch remains delayed. Once an
+        owner is scheduled, however, the presence and length of its entry in
+        ``scheduled_spec_decode_tokens`` unambiguously determine whether the
+        proposal was installed, truncated, or dropped.
+        """
+        request_ids = self._published_proposal_request_ids
+        candidate_tokens = self._published_candidate_tokens
+        lifecycle = self._current_proposal_lifecycle
+        if request_ids is None or candidate_tokens is None or lifecycle is None:
+            unexpected = set(scheduled_spec_decode_tokens).intersection(
+                scheduled_request_ids,
+            )
+            if unexpected:
+                raise RuntimeError(
+                    "Ascend DSpark scheduler installed proposal tokens without "
+                    f"published ownership for requests {sorted(unexpected)!r}."
+                )
+            return None
+
+        owners = set(request_ids)
+        terminal_owners = owners.intersection(finished_request_ids)
+        if terminal_owners:
+            if terminal_owners != owners:
+                raise RuntimeError("Ascend DSpark cannot terminal-discard only part of a proposal batch.")
+            self._drop_published_proposal(
+                reason="terminal",
+                terminal=True,
+            )
+            return "DROPPED"
+
+        preempted_owners = owners.intersection(preempted_request_ids)
+        if preempted_owners:
+            if preempted_owners != owners:
+                raise RuntimeError("Ascend DSpark cannot preemption-discard only part of a proposal batch.")
+            self._drop_published_proposal(
+                reason="preempted",
+                terminal=False,
+            )
+            return "DROPPED"
+
+        missing_owners = owners.difference(known_request_ids)
+        if missing_owners:
+            if missing_owners != owners:
+                raise RuntimeError(
+                    "Ascend DSpark proposal ownership is only partially present in runner request state."
+                )
+            self._drop_published_proposal(
+                reason="request_missing",
+                terminal=False,
+            )
+            return "DROPPED"
+
+        active_owners = owners.intersection(scheduled_request_ids)
+        if not active_owners:
+            return "DELAYED"
+        if active_owners != owners:
+            raise RuntimeError("Ascend DSpark scheduler cannot partially execute a published proposal batch.")
+
+        scheduled_owners = owners.intersection(scheduled_spec_decode_tokens)
+        if not scheduled_owners:
+            self._drop_published_proposal(
+                reason="scheduled_without_proposal",
+                terminal=False,
+            )
+            return "DROPPED"
+        if scheduled_owners != owners:
+            raise RuntimeError("Ascend DSpark scheduler installed proposal tokens for only part of the owner batch.")
+
+        published_length = candidate_tokens.shape[1]
+        # In the synchronous core path these lists are intentionally filled
+        # with -1 placeholders; SchedulerOutput is authoritative for presence
+        # and length. The exact device-token prefix is validated below from
+        # the InputBatch built by the core runner without adding a host sync.
+        scheduled_lengths = tuple(len(scheduled_spec_decode_tokens[request_id]) for request_id in request_ids)
+        if any(length <= 0 or length > published_length for length in scheduled_lengths):
+            raise RuntimeError("Ascend DSpark scheduler returned an invalid installed proposal length.")
+        disposition = "INSTALLED" if all(length == published_length for length in scheduled_lengths) else "TRUNCATED"
+        if lifecycle.disposition in {"INSTALLED", "TRUNCATED"}:
+            if lifecycle.disposition != disposition or lifecycle.scheduled_lengths != scheduled_lengths:
+                raise RuntimeError("Ascend DSpark scheduler changed an already reconciled proposal disposition.")
+            return disposition
+        if lifecycle.disposition != "GENERATED":
+            raise RuntimeError("Ascend DSpark proposal received an invalid repeated scheduler disposition.")
+        self._current_proposal_lifecycle = replace(
+            lifecycle,
+            scheduled_lengths=scheduled_lengths,
+            disposition=disposition,
+            installed=True,
+            truncated=disposition == "TRUNCATED",
+        )
+        self._proposal_installed_count += 1
+        self._log_proposal_disposition(self._current_proposal_lifecycle)
+        return disposition
+
     def _consume_published_proposal_after_verification(
         self,
         input_batch: InputBatch,
@@ -1732,16 +1925,33 @@ class AscendDSparkSpeculator(BaseSpeculator):
             raise RuntimeError("Ascend DSpark verification request ownership does not match the published proposal.")
         if input_batch.num_draft_tokens_per_req is None:
             raise RuntimeError("Ascend DSpark verification is missing scheduled proposal lengths.")
-        expected_draft_lengths = np.full(
-            input_batch.num_reqs,
-            self.num_speculative_steps,
-            dtype=np.int32,
-        )
-        if not np.array_equal(input_batch.num_draft_tokens_per_req, expected_draft_lengths):
-            raise RuntimeError(
-                "Ascend DSpark verification must consume exactly the configured number of candidates for every request."
+        scheduled_lengths = tuple(int(length) for length in input_batch.num_draft_tokens_per_req)
+        published_length = candidate_tokens.shape[1]
+        if len(scheduled_lengths) != input_batch.num_reqs or any(
+            length <= 0 or length > published_length for length in scheduled_lengths
+        ):
+            raise RuntimeError("Ascend DSpark verification received an invalid scheduled proposal length.")
+        lifecycle = self._current_proposal_lifecycle
+        if lifecycle is None or lifecycle.proposal_epoch != producer_epoch:
+            raise RuntimeError("Ascend DSpark proposal lifecycle ownership is missing or stale.")
+        disposition = "INSTALLED" if all(length == published_length for length in scheduled_lengths) else "TRUNCATED"
+        if lifecycle.disposition == "GENERATED":
+            # InputBatch is constructed directly from SchedulerOutput by the
+            # core runner. This preserves the direct speculator test boundary
+            # while production normally reconciles earlier in finish_requests.
+            lifecycle = replace(
+                lifecycle,
+                scheduled_lengths=scheduled_lengths,
+                disposition=disposition,
+                installed=True,
+                truncated=disposition == "TRUNCATED",
             )
-        if input_batch.num_draft_tokens != input_batch.num_reqs * self.num_speculative_steps:
+            self._current_proposal_lifecycle = lifecycle
+            self._proposal_installed_count += 1
+            self._log_proposal_disposition(lifecycle)
+        elif lifecycle.disposition != disposition or lifecycle.scheduled_lengths != scheduled_lengths:
+            raise RuntimeError("Ascend DSpark verification lengths differ from the reconciled scheduler disposition.")
+        if input_batch.num_draft_tokens != sum(scheduled_lengths):
             raise RuntimeError("Ascend DSpark verification draft-token count is inconsistent.")
 
         active_request_indices = self._validate_step_tensor(
@@ -1762,35 +1972,37 @@ class AscendDSparkSpeculator(BaseSpeculator):
             dtypes=(torch.int32,),
             min_size=input_batch.num_reqs + 1,
         )[: input_batch.num_reqs + 1]
-        expected_query_length = self.num_speculative_steps + 1
+        scheduled_lengths_tensor = torch.tensor(
+            scheduled_lengths,
+            dtype=query_start_loc.dtype,
+            device=query_start_loc.device,
+        )
+        expected_query_lengths = scheduled_lengths_tensor + 1
         _assert_markov_tensor_contract(
-            (
-                query_start_loc[1:] - query_start_loc[:-1]
-                == torch.full_like(query_start_loc[:-1], expected_query_length)
-            ).all(),
-            "Ascend DSpark verification input must contain one anchor and K candidates per request.",
+            (query_start_loc[1:] - query_start_loc[:-1] == expected_query_lengths).all(),
+            "Ascend DSpark verification input must contain one anchor and every scheduled candidate per request.",
         )
         target_input_ids = self._validate_step_tensor(
             "verification target input IDs",
             input_batch.input_ids,
             ndim=1,
             dtypes=(torch.int32,),
-            min_size=input_batch.num_reqs * expected_query_length,
+            min_size=input_batch.num_reqs + sum(scheduled_lengths),
         )
+        max_scheduled_length = max(scheduled_lengths)
         candidate_offsets = torch.arange(
             1,
-            expected_query_length,
+            max_scheduled_length + 1,
             dtype=query_start_loc.dtype,
             device=query_start_loc.device,
         )
-        candidate_indices = (query_start_loc[:-1, None] + candidate_offsets).reshape(-1)
-        consumed_candidates = target_input_ids[candidate_indices.to(torch.int64)].view(
-            input_batch.num_reqs,
-            self.num_speculative_steps,
-        )
+        scheduled_mask = candidate_offsets[None, :] <= scheduled_lengths_tensor[:, None]
+        candidate_indices = (query_start_loc[:-1, None] + candidate_offsets[None, :])[scheduled_mask]
+        consumed_candidates = target_input_ids[candidate_indices.to(torch.int64)]
+        expected_candidates = candidate_tokens[:, :max_scheduled_length][scheduled_mask]
         _assert_markov_tensor_contract(
-            (consumed_candidates.to(torch.int64) == candidate_tokens).all(),
-            "Ascend DSpark verification inputs do not contain the published candidate set.",
+            (consumed_candidates.to(torch.int64) == expected_candidates).all(),
+            "Ascend DSpark verification inputs do not contain the published candidate set prefix scheduled by core.",
         )
 
         num_sampled = self._validate_step_tensor(
@@ -1808,15 +2020,15 @@ class AscendDSparkSpeculator(BaseSpeculator):
             min_size=input_batch.num_reqs,
         )[: input_batch.num_reqs]
         _assert_markov_tensor_contract(
-            ((num_sampled >= 1) & (num_sampled <= expected_query_length)).all(),
+            ((num_sampled >= 1) & (num_sampled <= expected_query_lengths)).all(),
             "Ascend DSpark verification returned an invalid sampled-token count.",
         )
         _assert_markov_tensor_contract(
-            ((num_rejected >= 0) & (num_rejected <= self.num_speculative_steps)).all(),
+            ((num_rejected >= 0) & (num_rejected <= scheduled_lengths_tensor)).all(),
             "Ascend DSpark verification returned an invalid rejected-token count.",
         )
         _assert_markov_tensor_contract(
-            (num_sampled + num_rejected == expected_query_length).all(),
+            (num_sampled + num_rejected == expected_query_lengths).all(),
             "Ascend DSpark verification sampled/rejected counts do not cover the full proposal window.",
         )
         temperatures = self._validate_step_tensor(
@@ -1830,10 +2042,6 @@ class AscendDSparkSpeculator(BaseSpeculator):
             "Ascend DSpark single-round verification supports deterministic greedy sampling only.",
         )
 
-        lifecycle = self._current_proposal_lifecycle
-        if lifecycle is None or lifecycle.proposal_epoch != producer_epoch:
-            raise RuntimeError("Ascend DSpark proposal lifecycle ownership is missing or stale.")
-
         consumer_epoch = producer_epoch + 1
         self._proposal_consumer_step_epoch = consumer_epoch
         self._published_proposal_consumed = True
@@ -1841,12 +2049,15 @@ class AscendDSparkSpeculator(BaseSpeculator):
         lifecycle = replace(
             lifecycle,
             consumer_epoch=consumer_epoch,
+            disposition=disposition,
+            scheduled_lengths=scheduled_lengths,
+            token_prefix_match=True,
             installed=True,
             consumed=True,
         )
         self._current_proposal_lifecycle = lifecycle
         self._last_consumed_proposal_lifecycle = lifecycle
-        self._proposal_installed_count += 1
+        self._log_proposal_disposition(lifecycle)
         self._prepared_step_epoch = None
         self._context_kv_step_epoch = None
         self._draft_forward_step_epoch = None
@@ -1904,22 +2115,10 @@ class AscendDSparkSpeculator(BaseSpeculator):
             return False
         if overlap != set(request_ids):
             raise RuntimeError("Ascend DSpark cannot terminal-discard only part of a proposal batch.")
-        terminal = replace(lifecycle, discarded_terminal=True)
-        self._terminal_proposal_lifecycle = terminal
-        self._terminal_proposal_discard_count += 1
-        self._published_proposal_step_epoch = None
-        self._published_proposal_request_ids = None
-        self._published_proposal_request_state_indices = None
-        self._published_candidate_tokens = None
-        self._published_proposal_consumed = False
-        self._current_proposal_lifecycle = None
-        self._prepared_step_epoch = None
-        self._context_kv_step_epoch = None
-        self._draft_forward_step_epoch = None
-        self._markov_attempt_step_epoch = None
-        self._markov_step_epoch = None
-        self._markov_result = None
-        return True
+        return self._drop_published_proposal(
+            reason="terminal",
+            terminal=True,
+        )
 
     def _execute_draft(
         self,

@@ -113,5 +113,7 @@ def test_no_forbidden_runtime_or_scheduler_publication_imports() -> None:
 
     assert "vllm.v1.worker.gpu.spec_decode.dspark" not in production
     assert "vllm_ascend.ops.triton.spec_decode" not in production
-    assert "scheduler" not in production.lower()
+    assert "from vllm.v1.core.sched" not in production
+    assert ".schedule(" not in production
+    assert ".update_draft_token_ids(" not in production
     assert "rejection" not in production.lower()
