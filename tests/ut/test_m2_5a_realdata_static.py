@@ -181,6 +181,54 @@ def test_result_validator_enforces_exact_tokens_usage_and_rank_consistency() -> 
     assert "M2_5A_EXACT_TOKEN_GATE_PASS=" in source
 
 
+def test_r6b_forensic_trace_is_targeted_and_disabled_by_default() -> None:
+    source = HARNESS.read_text(encoding="utf-8")
+
+    assert 'FIRST_ROUND_TRACE = "DSPARK_M2_5A_FIRST_ROUND_TRACE"' in source
+    assert '"DSPARK_M25A_CASE_ID"' in source
+    assert '"DSPARK_M25A_TRACE_FIRST_ROUND"' in source
+    assert 'environ.get(_FIRST_ROUND_TRACE_ENV, "0")' in source
+    assert "if first_round and case_id is None:" in source
+    assert 'case["case_id"] == case_id' in source
+    assert "traced_step_count < 2" in source
+    assert "raw_tokens or is_verification" in source
+
+
+def test_r6b_trace_observes_target_proposal_raw_and_commit_without_changing_them() -> None:
+    source = HARNESS.read_text(encoding="utf-8")
+    trace_source = source[source.index("def _target_top2_trace(") : source.index("def _m2_5a_kv_cache_budget(")]
+    run_case_source = source[source.index("def _run_case(") : source.index("def _run_plan(")]
+
+    for field in (
+        '"target_top1_token_ids"',
+        '"target_top2_token_ids"',
+        '"target_top1_logits"',
+        '"target_top2_logits"',
+        '"target_top1_top2_margins"',
+        '"published_candidate_tokens"',
+        '"consumed_candidate_tokens"',
+        '"num_sampled"',
+        '"num_rejected"',
+        '"raw_sampled_tokens"',
+        '"scheduler_committed_tokens"',
+        '"expected_greedy_tokens"',
+        '"accepted_prefix_length"',
+        '"replacement_used"',
+        '"bonus_used"',
+        '"published_candidates_match_consumed"',
+        '"raw_matches_target_top1"',
+    ):
+        assert field in source
+    assert "runner.model.compute_logits(sample_hidden_states)" in trace_source
+    assert "runner.sampler.apply_sampling_params(" in trace_source
+    assert "runtime.torch.topk(" in trace_source
+    assert "scheduler.update_from_output(scheduler_output, model_output)" in run_case_source
+    assert run_case_source.index("scheduler.update_from_output") < run_case_source.index('"scheduler_committed_tokens"')
+    assert "output_token_ids =" not in trace_source
+    assert ".reshape(" not in trace_source
+    assert "exact_token" not in run_case_source.lower()
+
+
 def test_existing_m2_4a_and_m2_4b_acceptance_markers_are_unchanged() -> None:
     m2_4a = M2_4A.read_text(encoding="utf-8")
     m2_4b = M2_4B.read_text(encoding="utf-8")

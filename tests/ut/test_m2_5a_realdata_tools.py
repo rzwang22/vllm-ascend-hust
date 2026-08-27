@@ -820,6 +820,70 @@ def test_execution_plan_is_three_complete_passes_with_a_b_a_separation(frozen_as
     assert [record["request_sequence_index"] for record in plan] == list(range(30))
 
 
+def test_forensic_case_filter_is_exact_and_preserves_original_case_identity(
+    frozen_assets: Path,
+) -> None:
+    cases = read_jsonl(frozen_assets.parent / "smoke_cases.jsonl")
+    plan = build_execution_plan(cases, 1)
+
+    selected, config = realdata_harness._select_forensic_cases(
+        plan,
+        {
+            "DSPARK_M25A_CASE_ID": "synthetic:1024:0",
+            "DSPARK_M25A_TRACE_FIRST_ROUND": "1",
+        },
+    )
+
+    assert [case["case_id"] for case in selected] == ["synthetic:1024:0"]
+    assert selected[0]["request_sequence_index"] == 7
+    assert config.case_id == "synthetic:1024:0"
+    assert config.first_round is True
+    assert plan[7] is selected[0]
+
+
+def test_forensic_trace_is_disabled_without_an_explicit_case_filter(
+    frozen_assets: Path,
+) -> None:
+    cases = read_jsonl(frozen_assets.parent / "smoke_cases.jsonl")
+    plan = build_execution_plan(cases, 1)
+
+    selected, config = realdata_harness._select_forensic_cases(plan, {})
+
+    assert selected is plan
+    assert config.case_id is None
+    assert config.first_round is False
+    with pytest.raises(ValueError, match="requires an exact DSPARK_M25A_CASE_ID"):
+        realdata_harness._select_forensic_cases(
+            plan,
+            {"DSPARK_M25A_TRACE_FIRST_ROUND": "1"},
+        )
+
+
+@pytest.mark.parametrize(
+    ("environ", "message"),
+    [
+        (
+            {"DSPARK_M25A_TRACE_FIRST_ROUND": "true"},
+            "must be 0 or 1",
+        ),
+        (
+            {"DSPARK_M25A_CASE_ID": "missing:case"},
+            "is not in the selected profile",
+        ),
+    ],
+)
+def test_forensic_case_filter_rejects_ambiguous_or_unknown_configuration(
+    frozen_assets: Path,
+    environ: dict[str, str],
+    message: str,
+) -> None:
+    cases = read_jsonl(frozen_assets.parent / "smoke_cases.jsonl")
+    plan = build_execution_plan(cases, 1)
+
+    with pytest.raises(ValueError, match=message):
+        realdata_harness._select_forensic_cases(plan, environ)
+
+
 def test_long_output_token_artifact_is_not_truncated(frozen_assets: Path, tmp_path: Path) -> None:
     target, _ = _result_dirs(tmp_path, frozen_assets)
     path = target / "rank-0.jsonl"

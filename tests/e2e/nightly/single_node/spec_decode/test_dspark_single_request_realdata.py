@@ -28,6 +28,9 @@ from tests.e2e.nightly.single_node.spec_decode.test_dspark_multi_round_generatio
     _materialize_model_output,
     _target_only_runtime,
 )
+from tests.e2e.nightly.single_node.spec_decode.test_dspark_single_round_verification import (
+    _expected_greedy_verification,
+)
 from tools.dspark.m2_5a_common import (
     atomic_write_json,
     atomic_write_jsonl,
@@ -48,6 +51,10 @@ EXPECTED_K = 5
 EXPECTED_BLOCK_SIZE = 128
 MINIMUM_KV_CACHE_BYTES = 2 * 1024 * 1024 * 1024
 RUNTIME_CONTRACT = "DSPARK_M2_5A_RUNTIME_CONTRACT"
+FIRST_ROUND_TRACE = "DSPARK_M2_5A_FIRST_ROUND_TRACE"
+TRACE_CONFIG = "DSPARK_M2_5A_TRACE_CONFIG"
+_CASE_FILTER_ENV = "DSPARK_M25A_CASE_ID"
+_FIRST_ROUND_TRACE_ENV = "DSPARK_M25A_TRACE_FIRST_ROUND"
 
 
 def _marker(name: str, record: dict[str, Any]) -> None:
@@ -71,6 +78,91 @@ def _request(case: dict[str, Any], request_id: str) -> Any:
         ),
         pooling_params=None,
     )
+
+
+@dataclass(frozen=True)
+class _ForensicTraceConfig:
+    case_id: str | None
+    first_round: bool
+
+
+def _select_forensic_cases(
+    plan: list[dict[str, Any]],
+    environ: Mapping[str, str],
+) -> tuple[list[dict[str, Any]], _ForensicTraceConfig]:
+    case_id = environ.get(_CASE_FILTER_ENV, "").strip() or None
+    trace_value = environ.get(_FIRST_ROUND_TRACE_ENV, "0").strip()
+    if trace_value not in {"0", "1"}:
+        raise ValueError(f"{_FIRST_ROUND_TRACE_ENV} must be 0 or 1, got {trace_value!r}.")
+    first_round = trace_value == "1"
+    if first_round and case_id is None:
+        raise ValueError(f"{_FIRST_ROUND_TRACE_ENV}=1 requires an exact {_CASE_FILTER_ENV}.")
+    if case_id is None:
+        return plan, _ForensicTraceConfig(case_id=None, first_round=False)
+    selected = [case for case in plan if case["case_id"] == case_id]
+    if not selected:
+        available = sorted({str(case["case_id"]) for case in plan})
+        raise ValueError(f"{_CASE_FILTER_ENV}={case_id!r} is not in the selected profile: {available!r}.")
+    return selected, _ForensicTraceConfig(
+        case_id=case_id,
+        first_round=first_round,
+    )
+
+
+def _target_top2_trace(runtime: Any) -> dict[str, Any]:
+    """Observe the exact processed target logits consumed by sampling."""
+    runner = runtime.runner
+    state = runner.execute_model_state
+    if state is None or state.hidden_states is None:
+        raise RuntimeError("The traced target forward produced no hidden states.")
+    input_batch = state.input_batch
+    if runner.sampler is None:
+        raise RuntimeError("The traced target forward has no sampler.")
+
+    sample_hidden_states = state.hidden_states[input_batch.logits_indices]
+    logits = runner.model.compute_logits(sample_hidden_states)
+    processed_logits = runner.sampler.apply_sampling_params(
+        logits,
+        input_batch.expanded_idx_mapping,
+        input_batch.idx_mapping_np,
+        input_batch.positions[input_batch.logits_indices],
+        input_batch.input_ids[input_batch.logits_indices],
+        input_batch.expanded_local_pos,
+    )
+    top2_values, top2_ids = runtime.torch.topk(
+        processed_logits.to(runtime.torch.float32),
+        k=2,
+        dim=-1,
+    )
+    query_start_loc = input_batch.query_start_loc[: input_batch.num_reqs + 1]
+    sampled_positions = input_batch.positions[input_batch.logits_indices]
+    sampled_input_ids = input_batch.input_ids[input_batch.logits_indices]
+    runtime.torch.npu.synchronize()
+
+    top2_values_host = top2_values.detach().cpu().tolist()
+    trace = {
+        "target_logits_shape": list(processed_logits.shape),
+        "query_start_loc": query_start_loc.detach().cpu().tolist(),
+        "query_lengths": (query_start_loc[1:] - query_start_loc[:-1]).detach().cpu().tolist(),
+        "num_scheduled_tokens": input_batch.num_scheduled_tokens[: input_batch.num_reqs].detach().cpu().tolist(),
+        "num_draft_tokens": int(input_batch.num_draft_tokens),
+        "logits_positions": sampled_positions.detach().cpu().tolist(),
+        "logits_input_ids": sampled_input_ids.detach().cpu().tolist(),
+        "target_top1_token_ids": top2_ids[:, 0].detach().cpu().tolist(),
+        "target_top2_token_ids": top2_ids[:, 1].detach().cpu().tolist(),
+        "target_top1_logits": [row[0] for row in top2_values_host],
+        "target_top2_logits": [row[1] for row in top2_values_host],
+        "target_top1_top2_margins": [row[0] - row[1] for row in top2_values_host],
+    }
+    del logits, processed_logits, sample_hidden_states, top2_ids, top2_values
+    return trace
+
+
+def _tensor_host_list(runtime: Any, tensor: Any | None) -> Any | None:
+    if tensor is None:
+        return None
+    runtime.torch.npu.synchronize()
+    return tensor.detach().cpu().tolist()
 
 
 def _m2_5a_kv_cache_budget(environ: Mapping[str, str]) -> int:
@@ -356,12 +448,14 @@ def _run_case(
     mode: str,
     profile: str,
     manifest_sha256: str,
+    trace_first_round: bool = False,
 ) -> dict[str, Any]:
     request_id = f"m25a-{mode}-{case['request_sequence_index']}-{case['lifecycle_repeat']}-{case['case_id']}"
     request = _request(case, request_id)
     speculator = runtime.speculator if mode == "dspark" else None
     before = _counter_snapshot(speculator)
     target_forward_count = 0
+    traced_step_count = 0
     verification_count = 0
     completed_rounds = 0
     terminal_partial_commit = False
@@ -389,6 +483,8 @@ def _run_case(
         is_verification = bool(scheduler_output.scheduled_spec_decode_tokens)
         proposal_pending_before_execute = bool(mode == "dspark" and speculator._published_candidate_tokens is not None)
         output_length_before = len(request.output_token_ids)
+        trace_step = trace_first_round and traced_step_count < 2
+        trace_record: dict[str, Any] | None = None
         if request.is_finished():
             raise RuntimeError("A finished request reached another target forward.")
         if _execute_scheduler_output(runtime, scheduler_output, finished_lifecycle) is not None:
@@ -410,11 +506,63 @@ def _run_case(
                 raise RuntimeError(
                     "An uninstalled DSpark proposal was not atomically retired before the next target step."
                 )
+        if trace_step:
+            lifecycle = speculator._current_proposal_lifecycle if speculator is not None else None
+            scheduled_length = len(scheduler_output.scheduled_spec_decode_tokens[request_id]) if is_verification else 0
+            published_candidates = (
+                _tensor_host_list(runtime, speculator._published_candidate_tokens)[0] if is_verification else None
+            )
+            consumed_candidates = None
+            if is_verification:
+                input_batch = runtime.runner.execute_model_state.input_batch
+                query_start_loc = _tensor_host_list(
+                    runtime,
+                    input_batch.query_start_loc[: input_batch.num_reqs + 1],
+                )
+                input_ids = _tensor_host_list(
+                    runtime,
+                    input_batch.input_ids[: input_batch.num_tokens],
+                )
+                consumed_candidates = input_ids[query_start_loc[0] + 1 : query_start_loc[0] + 1 + scheduled_length]
+            trace_record = {
+                "rank": runtime.launch.rank,
+                "mode": mode,
+                "case_id": case["case_id"],
+                "request_id": request_id,
+                "lifecycle_repeat": case["lifecycle_repeat"],
+                "request_sequence_index": case["request_sequence_index"],
+                "target_step_index": target_forward_count,
+                "step_kind": (
+                    "verification" if is_verification else "producer" if output_length_before == 0 else "target_decode"
+                ),
+                "prefix_token_sha256": token_ids_sha256([*request.prompt_token_ids, *request.output_token_ids]),
+                "output_length_before": output_length_before,
+                "scheduled_proposal_length": scheduled_length,
+                "proposal_epoch": (lifecycle.proposal_epoch if lifecycle is not None else None),
+                "proposal_disposition": (lifecycle.disposition if lifecycle is not None else None),
+                "published_candidate_tokens": published_candidates,
+                "consumed_candidate_tokens": consumed_candidates,
+                "published_candidates_match_consumed": (
+                    published_candidates[:scheduled_length] == consumed_candidates if is_verification else None
+                ),
+                **_target_top2_trace(runtime),
+            }
         target_forward_count += 1
         async_output = runtime.worker.sample_tokens(None)
         if async_output is None:
             raise RuntimeError("Single-request generation returned no sampled output.")
         runtime.torch.npu.synchronize()
+        sampler_output = getattr(async_output, "sampler_output", None)
+        traced_num_sampled = (
+            _tensor_host_list(runtime, getattr(sampler_output, "num_sampled", None))
+            if trace_record is not None
+            else None
+        )
+        traced_num_rejected = (
+            _tensor_host_list(runtime, getattr(sampler_output, "num_rejected", None))
+            if trace_record is not None
+            else None
+        )
         model_output = _materialize_model_output(async_output)
         raw_tokens = list(model_output.sampled_token_ids[0])
         if is_verification:
@@ -431,6 +579,49 @@ def _run_case(
                 raise RuntimeError("DSpark did not return its canonical draft-token result.")
             scheduler.update_draft_token_ids(next_draft_ids)
         committed_tokens = list(request.output_token_ids)[output_length_before:]
+        if trace_record is not None and (raw_tokens or is_verification):
+            expected_greedy_tokens = None
+            accepted_prefix_length = None
+            replacement_used = None
+            bonus_used = None
+            if is_verification:
+                scheduled_candidates = trace_record["published_candidate_tokens"][
+                    : trace_record["scheduled_proposal_length"]
+                ]
+                (
+                    expected_greedy_tokens,
+                    accepted_prefix_length,
+                    replacement_used,
+                    bonus_used,
+                ) = _expected_greedy_verification(
+                    scheduled_candidates,
+                    trace_record["target_top1_token_ids"],
+                )
+            trace_record.update(
+                {
+                    "consumer_epoch": (speculator._proposal_consumer_step_epoch if is_verification else None),
+                    "num_sampled": traced_num_sampled,
+                    "num_rejected": traced_num_rejected,
+                    "raw_sampled_tokens": raw_tokens,
+                    "scheduler_committed_tokens": committed_tokens,
+                    "output_length_after": len(request.output_token_ids),
+                    "expected_greedy_tokens": expected_greedy_tokens,
+                    "accepted_prefix_length": accepted_prefix_length,
+                    "replacement_used": replacement_used,
+                    "bonus_used": bonus_used,
+                    "raw_matches_expected_greedy": (
+                        raw_tokens == expected_greedy_tokens if expected_greedy_tokens is not None else None
+                    ),
+                    "raw_matches_target_top1": (
+                        raw_tokens == trace_record["target_top1_token_ids"][: len(raw_tokens)]
+                        if not is_verification
+                        else None
+                    ),
+                    "raw_matches_scheduler_commit": raw_tokens == committed_tokens,
+                }
+            )
+            _marker(FIRST_ROUND_TRACE, trace_record)
+            traced_step_count += 1
         if request.is_finished():
             if committed_tokens != raw_tokens[: len(committed_tokens)]:
                 raise RuntimeError("Terminal scheduler commit is outside the raw verified prefix.")
@@ -512,7 +703,13 @@ def _run_case(
 
 
 def _run_plan(
-    runtime: Any, plan: list[dict[str, Any]], *, mode: str, profile: str, manifest_hash: str
+    runtime: Any,
+    plan: list[dict[str, Any]],
+    *,
+    mode: str,
+    profile: str,
+    manifest_hash: str,
+    trace_first_round: bool = False,
 ) -> list[dict[str, Any]]:
     scheduler = _build_scheduler(runtime)
     records = []
@@ -528,7 +725,17 @@ def _run_plan(
                 {"rank": runtime.launch.rank, "mode": mode, "lifecycle_repeat": current_repeat},
             )
         current_repeat = case["lifecycle_repeat"]
-        records.append(_run_case(runtime, scheduler, case, mode=mode, profile=profile, manifest_sha256=manifest_hash))
+        records.append(
+            _run_case(
+                runtime,
+                scheduler,
+                case,
+                mode=mode,
+                profile=profile,
+                manifest_sha256=manifest_hash,
+                trace_first_round=trace_first_round,
+            )
+        )
     if current_repeat is not None:
         _marker(
             "DSPARK_M2_5A_LIFECYCLE",
@@ -549,7 +756,17 @@ def _write_results(result_dir: Path, rank: int, records: list[dict[str, Any]]) -
     return path
 
 
-def _settings_and_matrix() -> tuple[Any, Any, str, str, Path, str, list[dict[str, Any]], int]:
+def _settings_and_matrix() -> tuple[
+    Any,
+    Any,
+    str,
+    str,
+    Path,
+    str,
+    list[dict[str, Any]],
+    int,
+    _ForensicTraceConfig,
+]:
     manifest_value = os.environ.get("DSPARK_M25A_MANIFEST")
     if not manifest_value:
         pytest.skip("Set DSPARK_M25A_MANIFEST to the offline frozen manifest.")
@@ -574,6 +791,7 @@ def _settings_and_matrix() -> tuple[Any, Any, str, str, Path, str, list[dict[str
     _, cases = load_profile_cases(manifest_path, profile)
     lifecycle_repeat = int(os.environ.get("DSPARK_M25A_LIFECYCLE_REPEAT", "1"))
     plan = build_execution_plan(cases, lifecycle_repeat)
+    plan, trace_config = _select_forensic_cases(plan, os.environ)
     return (
         settings,
         launch,
@@ -583,11 +801,32 @@ def _settings_and_matrix() -> tuple[Any, Any, str, str, Path, str, list[dict[str
         sha256_file(manifest_path),
         plan,
         kv_cache_bytes,
+        trace_config,
     )
 
 
 def test_dspark_single_request_realdata_npu() -> None:
-    settings, launch, mode, profile, result_dir, manifest_hash, plan, kv_cache_bytes = _settings_and_matrix()
+    (
+        settings,
+        launch,
+        mode,
+        profile,
+        result_dir,
+        manifest_hash,
+        plan,
+        kv_cache_bytes,
+        trace_config,
+    ) = _settings_and_matrix()
+    _marker(
+        TRACE_CONFIG,
+        {
+            "rank": launch.rank,
+            "mode": mode,
+            "case_id": trace_config.case_id,
+            "first_round": trace_config.first_round,
+            "selected_case_executions": len(plan),
+        },
+    )
     records: list[dict[str, Any]] = []
     try:
         if mode == "target_only":
@@ -610,6 +849,7 @@ def test_dspark_single_request_realdata_npu() -> None:
                     mode=mode,
                     profile=profile,
                     manifest_hash=manifest_hash,
+                    trace_first_round=trace_config.first_round,
                 )
             except BaseException as exc:
                 target_primary_error = exc
@@ -630,6 +870,7 @@ def test_dspark_single_request_realdata_npu() -> None:
                     mode=mode,
                     profile=profile,
                     manifest_hash=manifest_hash,
+                    trace_first_round=trace_config.first_round,
                 )
                 return True
 
