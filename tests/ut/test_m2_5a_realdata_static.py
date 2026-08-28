@@ -196,6 +196,7 @@ def test_r6b_forensic_trace_is_targeted_and_disabled_by_default() -> None:
 
 def test_r6b_trace_observes_target_proposal_raw_and_commit_without_changing_them() -> None:
     source = HARNESS.read_text(encoding="utf-8")
+    host_source = source[source.index("def _host_json_value(") : source.index("def _target_top2_trace(")]
     trace_source = source[source.index("def _target_top2_trace(") : source.index("def _m2_5a_kv_cache_budget(")]
     run_case_source = source[source.index("def _run_case(") : source.index("def _run_plan(")]
 
@@ -222,6 +223,10 @@ def test_r6b_trace_observes_target_proposal_raw_and_commit_without_changing_them
     assert "runner.model.compute_logits(sample_hidden_states)" in trace_source
     assert "runner.sampler.apply_sampling_params(" in trace_source
     assert "runtime.torch.topk(" in trace_source
+    assert "type(value).__module__.partition" in host_source
+    assert host_source.index('== "numpy"') < host_source.index('detach = getattr(value, "detach", None)')
+    assert "input_batch.num_scheduled_tokens" in trace_source
+    assert ".detach().cpu().tolist()" not in trace_source
     assert "scheduler.update_from_output(scheduler_output, model_output)" in run_case_source
     assert run_case_source.index("scheduler.update_from_output") < run_case_source.index('"scheduler_committed_tokens"')
     assert "output_token_ids =" not in trace_source

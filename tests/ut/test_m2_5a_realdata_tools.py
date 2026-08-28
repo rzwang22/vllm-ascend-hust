@@ -65,6 +65,40 @@ class _CleanupWorker:
         return self.runner_outputs.pop(0) if self.runner_outputs else None
 
 
+class _TensorLikeTraceValue:
+    def __init__(self, value: list[int]) -> None:
+        self.value = value
+        self.detach_calls = 0
+        self.cpu_calls = 0
+        self.tolist_calls = 0
+
+    def detach(self) -> _TensorLikeTraceValue:
+        self.detach_calls += 1
+        return self
+
+    def cpu(self) -> _TensorLikeTraceValue:
+        self.cpu_calls += 1
+        return self
+
+    def tolist(self) -> list[int]:
+        self.tolist_calls += 1
+        return self.value
+
+
+class _NumpyNdarrayTraceValue:
+    """Dependency-free stand-in for NumPy's host-resident tolist protocol."""
+
+    __module__ = "numpy"
+
+    def __init__(self, value: Any) -> None:
+        self.value = value
+        self.tolist_calls = 0
+
+    def tolist(self) -> Any:
+        self.tolist_calls += 1
+        return self.value
+
+
 def _cleanup_runtime(mode: str) -> SimpleNamespace:
     runner = SimpleNamespace(
         req_states=SimpleNamespace(req_id_to_index={}),
@@ -839,6 +873,86 @@ def test_forensic_case_filter_is_exact_and_preserves_original_case_identity(
     assert config.case_id == "synthetic:1024:0"
     assert config.first_round is True
     assert plan[7] is selected[0]
+
+
+def test_trace_host_serialization_keeps_numpy_on_host() -> None:
+    value = _NumpyNdarrayTraceValue([3, 5])
+    synchronize_calls = 0
+
+    def synchronize() -> None:
+        nonlocal synchronize_calls
+        synchronize_calls += 1
+
+    serialized = realdata_harness._host_json_value(
+        value,
+        synchronize_tensor=synchronize,
+    )
+
+    assert serialized == [3, 5]
+    assert synchronize_calls == 0
+    assert not hasattr(value, "detach")
+    assert not hasattr(value, "cpu")
+    assert value.tolist_calls == 1
+
+
+def test_trace_host_serialization_uses_tensor_detach_cpu_boundary() -> None:
+    value = _TensorLikeTraceValue([7, 11])
+    synchronize_calls = 0
+
+    def synchronize() -> None:
+        nonlocal synchronize_calls
+        synchronize_calls += 1
+
+    serialized = realdata_harness._host_json_value(
+        value,
+        synchronize_tensor=synchronize,
+    )
+
+    assert serialized == [7, 11]
+    assert synchronize_calls == 1
+    assert value.detach_calls == 1
+    assert value.cpu_calls == 1
+    assert value.tolist_calls == 1
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (17, 17),
+        (True, True),
+        ([1, _NumpyNdarrayTraceValue(2)], [1, 2]),
+        (("producer", 1), ["producer", 1]),
+        ({"tokens": _NumpyNdarrayTraceValue([13])}, {"tokens": [13]}),
+    ],
+)
+def test_trace_host_serialization_accepts_python_values(
+    value: Any,
+    expected: Any,
+) -> None:
+    serialized = realdata_harness._host_json_value(value)
+
+    assert serialized == expected
+    assert json.loads(json.dumps(serialized)) == expected
+
+
+def test_trace_marker_payload_is_json_serializable(capsys: pytest.CaptureFixture[str]) -> None:
+    payload = realdata_harness._host_json_value(
+        {
+            "scheduled": _NumpyNdarrayTraceValue([1]),
+            "tokens": _TensorLikeTraceValue([23]),
+            "step": "producer",
+        }
+    )
+
+    realdata_harness._marker(realdata_harness.FIRST_ROUND_TRACE, payload)
+
+    marker = capsys.readouterr().out.strip()
+    assert marker.startswith(realdata_harness.FIRST_ROUND_TRACE + "=")
+    assert json.loads(marker.partition("=")[2]) == {
+        "scheduled": [1],
+        "step": "producer",
+        "tokens": [23],
+    }
 
 
 def test_forensic_trace_is_disabled_without_an_explicit_case_filter(

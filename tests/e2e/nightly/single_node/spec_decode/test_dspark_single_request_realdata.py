@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
@@ -109,6 +109,56 @@ def _select_forensic_cases(
     )
 
 
+def _host_json_value(
+    value: Any,
+    *,
+    synchronize_tensor: Callable[[], None] | None = None,
+) -> Any:
+    """Convert known trace metadata to JSON-compatible host values."""
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, Mapping):
+        return {
+            str(key): _host_json_value(
+                item,
+                synchronize_tensor=synchronize_tensor,
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [
+            _host_json_value(
+                item,
+                synchronize_tensor=synchronize_tensor,
+            )
+            for item in value
+        ]
+
+    # NumPy arrays/scalars are already host-resident. Check them before the
+    # Tensor-like protocol so this boundary never calls detach/cpu on NumPy.
+    if type(value).__module__.partition(".")[0] == "numpy":
+        return value.tolist()
+
+    detach = getattr(value, "detach", None)
+    if callable(detach):
+        if synchronize_tensor is not None:
+            synchronize_tensor()
+        detached = detach()
+        cpu = getattr(detached, "cpu", None)
+        if not callable(cpu):
+            raise TypeError(f"Trace Tensor-like value has no cpu() method: {type(value)!r}.")
+        host_value = cpu()
+        tolist = getattr(host_value, "tolist", None)
+        if not callable(tolist):
+            raise TypeError(f"Trace Tensor-like host value has no tolist() method: {type(host_value)!r}.")
+        return tolist()
+
+    tolist = getattr(value, "tolist", None)
+    if callable(tolist):
+        return tolist()
+    raise TypeError(f"Unsupported M2.5A trace metadata type: {type(value)!r}.")
+
+
 def _target_top2_trace(runtime: Any) -> dict[str, Any]:
     """Observe the exact processed target logits consumed by sampling."""
     runner = runtime.runner
@@ -139,17 +189,17 @@ def _target_top2_trace(runtime: Any) -> dict[str, Any]:
     sampled_input_ids = input_batch.input_ids[input_batch.logits_indices]
     runtime.torch.npu.synchronize()
 
-    top2_values_host = top2_values.detach().cpu().tolist()
+    top2_values_host = _host_json_value(top2_values)
     trace = {
         "target_logits_shape": list(processed_logits.shape),
-        "query_start_loc": query_start_loc.detach().cpu().tolist(),
-        "query_lengths": (query_start_loc[1:] - query_start_loc[:-1]).detach().cpu().tolist(),
-        "num_scheduled_tokens": input_batch.num_scheduled_tokens[: input_batch.num_reqs].detach().cpu().tolist(),
+        "query_start_loc": _host_json_value(query_start_loc),
+        "query_lengths": _host_json_value(query_start_loc[1:] - query_start_loc[:-1]),
+        "num_scheduled_tokens": _host_json_value(input_batch.num_scheduled_tokens[: input_batch.num_reqs]),
         "num_draft_tokens": int(input_batch.num_draft_tokens),
-        "logits_positions": sampled_positions.detach().cpu().tolist(),
-        "logits_input_ids": sampled_input_ids.detach().cpu().tolist(),
-        "target_top1_token_ids": top2_ids[:, 0].detach().cpu().tolist(),
-        "target_top2_token_ids": top2_ids[:, 1].detach().cpu().tolist(),
+        "logits_positions": _host_json_value(sampled_positions),
+        "logits_input_ids": _host_json_value(sampled_input_ids),
+        "target_top1_token_ids": _host_json_value(top2_ids[:, 0]),
+        "target_top2_token_ids": _host_json_value(top2_ids[:, 1]),
         "target_top1_logits": [row[0] for row in top2_values_host],
         "target_top2_logits": [row[1] for row in top2_values_host],
         "target_top1_top2_margins": [row[0] - row[1] for row in top2_values_host],
@@ -158,11 +208,11 @@ def _target_top2_trace(runtime: Any) -> dict[str, Any]:
     return trace
 
 
-def _tensor_host_list(runtime: Any, tensor: Any | None) -> Any | None:
-    if tensor is None:
-        return None
-    runtime.torch.npu.synchronize()
-    return tensor.detach().cpu().tolist()
+def _trace_host_value(runtime: Any, value: Any) -> Any:
+    return _host_json_value(
+        value,
+        synchronize_tensor=runtime.torch.npu.synchronize,
+    )
 
 
 def _m2_5a_kv_cache_budget(environ: Mapping[str, str]) -> int:
@@ -510,16 +560,16 @@ def _run_case(
             lifecycle = speculator._current_proposal_lifecycle if speculator is not None else None
             scheduled_length = len(scheduler_output.scheduled_spec_decode_tokens[request_id]) if is_verification else 0
             published_candidates = (
-                _tensor_host_list(runtime, speculator._published_candidate_tokens)[0] if is_verification else None
+                _trace_host_value(runtime, speculator._published_candidate_tokens)[0] if is_verification else None
             )
             consumed_candidates = None
             if is_verification:
                 input_batch = runtime.runner.execute_model_state.input_batch
-                query_start_loc = _tensor_host_list(
+                query_start_loc = _trace_host_value(
                     runtime,
                     input_batch.query_start_loc[: input_batch.num_reqs + 1],
                 )
-                input_ids = _tensor_host_list(
+                input_ids = _trace_host_value(
                     runtime,
                     input_batch.input_ids[: input_batch.num_tokens],
                 )
@@ -554,12 +604,12 @@ def _run_case(
         runtime.torch.npu.synchronize()
         sampler_output = getattr(async_output, "sampler_output", None)
         traced_num_sampled = (
-            _tensor_host_list(runtime, getattr(sampler_output, "num_sampled", None))
+            _trace_host_value(runtime, getattr(sampler_output, "num_sampled", None))
             if trace_record is not None
             else None
         )
         traced_num_rejected = (
-            _tensor_host_list(runtime, getattr(sampler_output, "num_rejected", None))
+            _trace_host_value(runtime, getattr(sampler_output, "num_rejected", None))
             if trace_record is not None
             else None
         )
