@@ -99,6 +99,15 @@ class _NumpyNdarrayTraceValue:
         return self.value
 
 
+class _TraceTokenMatrix:
+    def __init__(self, rows: list[list[int]]) -> None:
+        self.rows = rows
+
+    def __getitem__(self, key: tuple[int, slice]) -> list[int]:
+        row, token_slice = key
+        return self.rows[row][token_slice]
+
+
 def _cleanup_runtime(mode: str) -> SimpleNamespace:
     runner = SimpleNamespace(
         req_states=SimpleNamespace(req_id_to_index={}),
@@ -872,7 +881,134 @@ def test_forensic_case_filter_is_exact_and_preserves_original_case_identity(
     assert selected[0]["request_sequence_index"] == 7
     assert config.case_id == "synthetic:1024:0"
     assert config.first_round is True
+    assert config.output_index is None
     assert plan[7] is selected[0]
+
+
+def test_output_index_trace_requires_exact_case_and_parses_non_negative_index(
+    frozen_assets: Path,
+) -> None:
+    cases = read_jsonl(frozen_assets.parent / "smoke_cases.jsonl")
+    plan = build_execution_plan(cases, 1)
+
+    selected, config = realdata_harness._select_forensic_cases(
+        plan,
+        {
+            "DSPARK_M25A_CASE_ID": "synthetic:1024:0",
+            "DSPARK_M25A_TRACE_OUTPUT_INDEX": "6",
+        },
+    )
+
+    assert [case["case_id"] for case in selected] == ["synthetic:1024:0"]
+    assert config.case_id == "synthetic:1024:0"
+    assert config.first_round is False
+    assert config.output_index == 6
+
+    with pytest.raises(ValueError, match="requires an exact DSPARK_M25A_CASE_ID"):
+        realdata_harness._select_forensic_cases(
+            plan,
+            {"DSPARK_M25A_TRACE_OUTPUT_INDEX": "6"},
+        )
+
+
+@pytest.mark.parametrize(
+    ("output_length_before", "committed_tokens", "output_index", "offset"),
+    [
+        (6, [9045], 6, 0),
+        (4, [10, 11, 12, 13], 6, 2),
+        (4, [10, 11, 12, 13], 4, 0),
+        (4, [10, 11, 12, 13], 7, 3),
+    ],
+)
+def test_output_index_trace_locates_single_and_multi_token_commit_boundaries(
+    output_length_before: int,
+    committed_tokens: list[int],
+    output_index: int,
+    offset: int,
+) -> None:
+    trace = realdata_harness._commit_output_index_trace(
+        output_length_before,
+        committed_tokens,
+        output_index,
+    )
+
+    assert trace == {
+        "commit_start_output_index": output_length_before,
+        "commit_end_output_index_exclusive": output_length_before + len(committed_tokens),
+        "commit_covers_traced_output_index": True,
+        "traced_commit_offset": offset,
+        "traced_committed_token": committed_tokens[offset],
+    }
+
+
+def test_output_index_trace_retries_when_rejection_shortens_commit() -> None:
+    trace = realdata_harness._commit_output_index_trace(4, [10, 11], 6)
+
+    assert trace["commit_covers_traced_output_index"] is False
+    assert trace["traced_commit_offset"] is None
+    assert trace["traced_committed_token"] is None
+
+
+def test_output_index_trace_preserves_replacement_and_bonus_contracts() -> None:
+    replacement = realdata_harness._expected_greedy_verification(
+        [16, 223, 5769, 22, 28],
+        [16, 88338, 7, 8, 9, 10],
+    )
+    bonus = realdata_harness._expected_greedy_verification(
+        [16, 223],
+        [16, 223, 9045],
+    )
+
+    assert replacement == ([16, 88338], 1, True, False)
+    assert bonus == ([16, 223, 9045], 2, False, True)
+    assert realdata_harness._commit_output_index_trace(5, replacement[0], 6)["traced_committed_token"] == 88338
+    assert realdata_harness._commit_output_index_trace(4, bonus[0], 6)["traced_committed_token"] == 9045
+
+
+def test_output_index_trace_observes_next_input_and_runner_prefix_identity() -> None:
+    prompt_tokens = [101, 102]
+    output_tokens = [10, 11, 9045, 13, 14]
+    input_batch = SimpleNamespace(
+        query_start_loc=[0, 2],
+        num_reqs=1,
+        input_ids=[9045, 223],
+        positions=[4, 5],
+        num_tokens=2,
+        num_draft_tokens=1,
+        num_computed_tokens_np=[4],
+    )
+    req_states = SimpleNamespace(
+        req_id_to_index={"request": 0},
+        all_token_ids=SimpleNamespace(gpu=_TraceTokenMatrix([[*prompt_tokens, *output_tokens]])),
+        num_computed_tokens_np=[4],
+    )
+    runtime = SimpleNamespace(
+        runner=SimpleNamespace(
+            execute_model_state=SimpleNamespace(input_batch=input_batch),
+            req_states=req_states,
+        ),
+        torch=SimpleNamespace(npu=SimpleNamespace(synchronize=lambda: None)),
+    )
+    request = SimpleNamespace(
+        prompt_token_ids=prompt_tokens,
+        output_token_ids=output_tokens,
+    )
+
+    trace = realdata_harness._next_model_input_trace(
+        runtime,
+        request,
+        "request",
+        output_index=2,
+        traced_token=9045,
+    )
+
+    assert trace["next_model_input_ids"] == [9045, 223]
+    assert trace["next_model_positions"] == [4, 5]
+    assert trace["next_model_input_contains_traced_token"] is True
+    assert trace["next_runner_traced_token"] == 9045
+    assert trace["next_runner_contains_traced_token_at_output_index"] is True
+    assert trace["next_runner_output_window"] == output_tokens
+    assert trace["next_runner_window_matches_request"] is True
 
 
 def test_trace_host_serialization_keeps_numpy_on_host() -> None:
@@ -966,6 +1102,7 @@ def test_forensic_trace_is_disabled_without_an_explicit_case_filter(
     assert selected is plan
     assert config.case_id is None
     assert config.first_round is False
+    assert config.output_index is None
     with pytest.raises(ValueError, match="requires an exact DSPARK_M25A_CASE_ID"):
         realdata_harness._select_forensic_cases(
             plan,
@@ -983,6 +1120,20 @@ def test_forensic_trace_is_disabled_without_an_explicit_case_filter(
         (
             {"DSPARK_M25A_CASE_ID": "missing:case"},
             "is not in the selected profile",
+        ),
+        (
+            {
+                "DSPARK_M25A_CASE_ID": "synthetic:1024:0",
+                "DSPARK_M25A_TRACE_OUTPUT_INDEX": "not-an-index",
+            },
+            "must be a non-negative integer",
+        ),
+        (
+            {
+                "DSPARK_M25A_CASE_ID": "synthetic:1024:0",
+                "DSPARK_M25A_TRACE_OUTPUT_INDEX": "-1",
+            },
+            "must be non-negative",
         ),
     ],
 )

@@ -188,7 +188,7 @@ def test_r6b_forensic_trace_is_targeted_and_disabled_by_default() -> None:
     assert '"DSPARK_M25A_CASE_ID"' in source
     assert '"DSPARK_M25A_TRACE_FIRST_ROUND"' in source
     assert 'environ.get(_FIRST_ROUND_TRACE_ENV, "0")' in source
-    assert "if first_round and case_id is None:" in source
+    assert "if (first_round or output_index is not None) and case_id is None:" in source
     assert 'case["case_id"] == case_id' in source
     assert "traced_step_count < 2" in source
     assert "raw_tokens or is_verification" in source
@@ -232,6 +232,49 @@ def test_r6b_trace_observes_target_proposal_raw_and_commit_without_changing_them
     assert "output_token_ids =" not in trace_source
     assert ".reshape(" not in trace_source
     assert "exact_token" not in run_case_source.lower()
+
+
+def test_r6c_output_index_trace_is_exact_targeted_and_observational() -> None:
+    source = HARNESS.read_text(encoding="utf-8")
+    selector_source = source[source.index("def _select_forensic_cases(") : source.index("def _host_json_value(")]
+    run_case_source = source[source.index("def _run_case(") : source.index("def _run_plan(")]
+    next_input_source = source[
+        source.index("def _next_model_input_trace(") : source.index("def _m2_5a_kv_cache_budget(")
+    ]
+
+    assert 'OUTPUT_INDEX_TRACE = "DSPARK_M2_5A_OUTPUT_INDEX_TRACE"' in source
+    assert '_OUTPUT_INDEX_TRACE_ENV = "DSPARK_M25A_TRACE_OUTPUT_INDEX"' in source
+    assert "output_index: int | None" in source
+    assert 'output_index_value = environ.get(_OUTPUT_INDEX_TRACE_ENV, "").strip()' in selector_source
+    assert "requires an exact" in selector_source
+    assert "trace_output_index: int | None = None" in run_case_source
+    assert "_commit_output_index_trace(" in run_case_source
+    assert "_next_model_input_trace(" in run_case_source
+    assert "_marker(OUTPUT_INDEX_TRACE" in run_case_source
+    for field in (
+        '"commit_start_output_index"',
+        '"commit_end_output_index_exclusive"',
+        '"traced_committed_token"',
+        '"scheduled_candidate_tokens"',
+        '"replacement_token"',
+        '"bonus_token"',
+        '"artifact_appended_tokens"',
+        '"artifact_append_matches_scheduler_commit"',
+        '"request_output_token_count"',
+        '"next_model_input_ids"',
+        '"next_model_positions"',
+        '"next_prefix_token_sha256"',
+        '"next_runner_num_computed_tokens"',
+        '"next_model_input_contains_traced_token"',
+        '"next_runner_contains_traced_token_at_output_index"',
+    ):
+        assert field in source
+    assert "runner.req_states.all_token_ids.gpu" in next_input_source
+    assert "scheduler.update_from_output(scheduler_output, model_output)" in run_case_source
+    assert run_case_source.index("scheduler.update_from_output") < run_case_source.index('"artifact_appended_tokens"')
+    assert '"artifact_append_matches_scheduler_commit"' in run_case_source
+    assert "request.output_token_ids =" not in run_case_source
+    assert "scheduler.update_draft_token_ids" in run_case_source
 
 
 def test_existing_m2_4a_and_m2_4b_acceptance_markers_are_unchanged() -> None:

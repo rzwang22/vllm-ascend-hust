@@ -52,9 +52,11 @@ EXPECTED_BLOCK_SIZE = 128
 MINIMUM_KV_CACHE_BYTES = 2 * 1024 * 1024 * 1024
 RUNTIME_CONTRACT = "DSPARK_M2_5A_RUNTIME_CONTRACT"
 FIRST_ROUND_TRACE = "DSPARK_M2_5A_FIRST_ROUND_TRACE"
+OUTPUT_INDEX_TRACE = "DSPARK_M2_5A_OUTPUT_INDEX_TRACE"
 TRACE_CONFIG = "DSPARK_M2_5A_TRACE_CONFIG"
 _CASE_FILTER_ENV = "DSPARK_M25A_CASE_ID"
 _FIRST_ROUND_TRACE_ENV = "DSPARK_M25A_TRACE_FIRST_ROUND"
+_OUTPUT_INDEX_TRACE_ENV = "DSPARK_M25A_TRACE_OUTPUT_INDEX"
 
 
 def _marker(name: str, record: dict[str, Any]) -> None:
@@ -84,6 +86,7 @@ def _request(case: dict[str, Any], request_id: str) -> Any:
 class _ForensicTraceConfig:
     case_id: str | None
     first_round: bool
+    output_index: int | None
 
 
 def _select_forensic_cases(
@@ -95,10 +98,26 @@ def _select_forensic_cases(
     if trace_value not in {"0", "1"}:
         raise ValueError(f"{_FIRST_ROUND_TRACE_ENV} must be 0 or 1, got {trace_value!r}.")
     first_round = trace_value == "1"
-    if first_round and case_id is None:
-        raise ValueError(f"{_FIRST_ROUND_TRACE_ENV}=1 requires an exact {_CASE_FILTER_ENV}.")
+    output_index_value = environ.get(_OUTPUT_INDEX_TRACE_ENV, "").strip()
+    output_index = None
+    if output_index_value:
+        try:
+            output_index = int(output_index_value)
+        except ValueError as exc:
+            raise ValueError(
+                f"{_OUTPUT_INDEX_TRACE_ENV} must be a non-negative integer, got {output_index_value!r}."
+            ) from exc
+        if output_index < 0:
+            raise ValueError(f"{_OUTPUT_INDEX_TRACE_ENV} must be non-negative, got {output_index}.")
+    if (first_round or output_index is not None) and case_id is None:
+        enabled = f"{_FIRST_ROUND_TRACE_ENV}=1" if first_round else _OUTPUT_INDEX_TRACE_ENV
+        raise ValueError(f"{enabled} requires an exact {_CASE_FILTER_ENV}.")
     if case_id is None:
-        return plan, _ForensicTraceConfig(case_id=None, first_round=False)
+        return plan, _ForensicTraceConfig(
+            case_id=None,
+            first_round=False,
+            output_index=None,
+        )
     selected = [case for case in plan if case["case_id"] == case_id]
     if not selected:
         available = sorted({str(case["case_id"]) for case in plan})
@@ -106,7 +125,27 @@ def _select_forensic_cases(
     return selected, _ForensicTraceConfig(
         case_id=case_id,
         first_round=first_round,
+        output_index=output_index,
     )
+
+
+def _commit_output_index_trace(
+    output_length_before: int,
+    committed_tokens: list[int],
+    output_index: int,
+) -> dict[str, Any]:
+    if output_length_before < 0 or output_index < 0:
+        raise ValueError("Output lengths and trace indices must be non-negative.")
+    output_length_after = output_length_before + len(committed_tokens)
+    covers = output_length_before <= output_index < output_length_after
+    offset = output_index - output_length_before if covers else None
+    return {
+        "commit_start_output_index": output_length_before,
+        "commit_end_output_index_exclusive": output_length_after,
+        "commit_covers_traced_output_index": covers,
+        "traced_commit_offset": offset,
+        "traced_committed_token": committed_tokens[offset] if offset is not None else None,
+    }
 
 
 def _host_json_value(
@@ -195,6 +234,7 @@ def _target_top2_trace(runtime: Any) -> dict[str, Any]:
         "query_start_loc": _host_json_value(query_start_loc),
         "query_lengths": _host_json_value(query_start_loc[1:] - query_start_loc[:-1]),
         "num_scheduled_tokens": _host_json_value(input_batch.num_scheduled_tokens[: input_batch.num_reqs]),
+        "num_computed_tokens_before": _host_json_value(input_batch.num_computed_tokens_np[: input_batch.num_reqs]),
         "num_draft_tokens": int(input_batch.num_draft_tokens),
         "logits_positions": _host_json_value(sampled_positions),
         "logits_input_ids": _host_json_value(sampled_input_ids),
@@ -213,6 +253,77 @@ def _trace_host_value(runtime: Any, value: Any) -> Any:
         value,
         synchronize_tensor=runtime.torch.npu.synchronize,
     )
+
+
+def _next_model_input_trace(
+    runtime: Any,
+    request: Any,
+    request_id: str,
+    output_index: int,
+    traced_token: int,
+) -> dict[str, Any]:
+    """Observe the next real model input and the runner's logical prefix."""
+    runner = runtime.runner
+    state = runner.execute_model_state
+    if state is None:
+        raise RuntimeError("The step after the traced commit produced no model state.")
+    input_batch = state.input_batch
+    if request_id not in runner.req_states.req_id_to_index:
+        raise RuntimeError("The traced request disappeared before its next model input.")
+    req_state_index = runner.req_states.req_id_to_index[request_id]
+    prompt_length = len(request.prompt_token_ids)
+    absolute_token_index = prompt_length + output_index
+    window_start = max(prompt_length, absolute_token_index - 4)
+    window_end = min(
+        prompt_length + len(request.output_token_ids),
+        absolute_token_index + 5,
+    )
+    request_tokens = [*request.prompt_token_ids, *request.output_token_ids]
+    runner_tokens = _trace_host_value(
+        runtime,
+        runner.req_states.all_token_ids.gpu[
+            req_state_index,
+            window_start:window_end,
+        ],
+    )
+    request_window = request_tokens[window_start:window_end]
+    query_start_loc = _trace_host_value(
+        runtime,
+        input_batch.query_start_loc[: input_batch.num_reqs + 1],
+    )
+    next_input_ids = _trace_host_value(
+        runtime,
+        input_batch.input_ids[: input_batch.num_tokens],
+    )
+    next_positions = _trace_host_value(
+        runtime,
+        input_batch.positions[: input_batch.num_tokens],
+    )
+    runner_num_computed = int(runner.req_states.num_computed_tokens_np[req_state_index])
+    return {
+        "next_model_input_available": True,
+        "next_prefix_token_sha256": token_ids_sha256(request_tokens),
+        "next_model_query_start_loc": query_start_loc,
+        "next_model_query_lengths": [end - start for start, end in zip(query_start_loc[:-1], query_start_loc[1:])],
+        "next_model_input_ids": next_input_ids,
+        "next_model_positions": next_positions,
+        "next_model_num_draft_tokens": int(input_batch.num_draft_tokens),
+        "next_input_num_computed_tokens": _host_json_value(input_batch.num_computed_tokens_np[: input_batch.num_reqs]),
+        "next_runner_num_computed_tokens": runner_num_computed,
+        "next_model_input_contains_traced_token": traced_token in next_input_ids,
+        "next_request_output_window": request_window,
+        "next_runner_output_window": runner_tokens,
+        "next_runner_window_matches_request": runner_tokens == request_window,
+        "next_runner_traced_token": (
+            runner_tokens[absolute_token_index - window_start]
+            if window_start <= absolute_token_index < window_end
+            else None
+        ),
+        "next_runner_contains_traced_token_at_output_index": (
+            window_start <= absolute_token_index < window_end
+            and runner_tokens[absolute_token_index - window_start] == traced_token
+        ),
+    }
 
 
 def _m2_5a_kv_cache_budget(environ: Mapping[str, str]) -> int:
@@ -499,6 +610,7 @@ def _run_case(
     profile: str,
     manifest_sha256: str,
     trace_first_round: bool = False,
+    trace_output_index: int | None = None,
 ) -> dict[str, Any]:
     request_id = f"m25a-{mode}-{case['request_sequence_index']}-{case['lifecycle_repeat']}-{case['case_id']}"
     request = _request(case, request_id)
@@ -506,6 +618,8 @@ def _run_case(
     before = _counter_snapshot(speculator)
     target_forward_count = 0
     traced_step_count = 0
+    output_index_trace_emitted = False
+    pending_output_index_trace: dict[str, Any] | None = None
     verification_count = 0
     completed_rounds = 0
     terminal_partial_commit = False
@@ -531,9 +645,18 @@ def _run_case(
             _assert_canonical_zero_token_runner_output(runner_output)
             continue
         is_verification = bool(scheduler_output.scheduled_spec_decode_tokens)
+        scheduled_length = len(scheduler_output.scheduled_spec_decode_tokens[request_id]) if is_verification else 0
         proposal_pending_before_execute = bool(mode == "dspark" and speculator._published_candidate_tokens is not None)
         output_length_before = len(request.output_token_ids)
-        trace_step = trace_first_round and traced_step_count < 2
+        trace_first_round_step = trace_first_round and traced_step_count < 2
+        maximum_commit_length = scheduled_length + 1 if is_verification else 1
+        trace_output_index_step = bool(
+            trace_output_index is not None
+            and not output_index_trace_emitted
+            and pending_output_index_trace is None
+            and output_length_before <= trace_output_index < output_length_before + maximum_commit_length
+        )
+        trace_step = trace_first_round_step or trace_output_index_step
         trace_record: dict[str, Any] | None = None
         if request.is_finished():
             raise RuntimeError("A finished request reached another target forward.")
@@ -556,11 +679,29 @@ def _run_case(
                 raise RuntimeError(
                     "An uninstalled DSpark proposal was not atomically retired before the next target step."
                 )
+        if pending_output_index_trace is not None:
+            traced_token = pending_output_index_trace["traced_committed_token"]
+            if not isinstance(traced_token, int) or trace_output_index is None:
+                raise RuntimeError("The pending output-index trace has no committed token identity.")
+            pending_output_index_trace.update(
+                _next_model_input_trace(
+                    runtime,
+                    request,
+                    request_id,
+                    trace_output_index,
+                    traced_token,
+                )
+            )
+            _marker(OUTPUT_INDEX_TRACE, pending_output_index_trace)
+            pending_output_index_trace = None
+            output_index_trace_emitted = True
         if trace_step:
             lifecycle = speculator._current_proposal_lifecycle if speculator is not None else None
-            scheduled_length = len(scheduler_output.scheduled_spec_decode_tokens[request_id]) if is_verification else 0
             published_candidates = (
                 _trace_host_value(runtime, speculator._published_candidate_tokens)[0] if is_verification else None
+            )
+            scheduled_candidates = (
+                list(scheduler_output.scheduled_spec_decode_tokens[request_id]) if is_verification else None
             )
             consumed_candidates = None
             if is_verification:
@@ -587,7 +728,9 @@ def _run_case(
                 ),
                 "prefix_token_sha256": token_ids_sha256([*request.prompt_token_ids, *request.output_token_ids]),
                 "output_length_before": output_length_before,
+                "request_num_computed_tokens_before": request.num_computed_tokens,
                 "scheduled_proposal_length": scheduled_length,
+                "scheduled_candidate_tokens": scheduled_candidates,
                 "proposal_epoch": (lifecycle.proposal_epoch if lifecycle is not None else None),
                 "proposal_disposition": (lifecycle.disposition if lifecycle is not None else None),
                 "published_candidate_tokens": published_candidates,
@@ -647,6 +790,17 @@ def _run_case(
                     scheduled_candidates,
                     trace_record["target_top1_token_ids"],
                 )
+            replacement_token = expected_greedy_tokens[-1] if replacement_used and expected_greedy_tokens else None
+            bonus_token = expected_greedy_tokens[-1] if bonus_used and expected_greedy_tokens else None
+            commit_trace = (
+                _commit_output_index_trace(
+                    output_length_before,
+                    committed_tokens,
+                    trace_output_index,
+                )
+                if trace_output_index is not None
+                else {}
+            )
             trace_record.update(
                 {
                     "consumer_epoch": (speculator._proposal_consumer_step_epoch if is_verification else None),
@@ -654,11 +808,24 @@ def _run_case(
                     "num_rejected": traced_num_rejected,
                     "raw_sampled_tokens": raw_tokens,
                     "scheduler_committed_tokens": committed_tokens,
+                    "artifact_appended_tokens": list(request.output_token_ids)[output_length_before:],
                     "output_length_after": len(request.output_token_ids),
+                    "request_output_token_count": len(request.output_token_ids),
+                    "request_num_computed_tokens_after": request.num_computed_tokens,
                     "expected_greedy_tokens": expected_greedy_tokens,
                     "accepted_prefix_length": accepted_prefix_length,
                     "replacement_used": replacement_used,
+                    "replacement_token": replacement_token,
                     "bonus_used": bonus_used,
+                    "bonus_token": bonus_token,
+                    "all_candidates_accepted": (
+                        accepted_prefix_length == trace_record["scheduled_proposal_length"] if is_verification else None
+                    ),
+                    "bonus_contract_valid": (
+                        not bonus_used or accepted_prefix_length == trace_record["scheduled_proposal_length"]
+                        if is_verification
+                        else None
+                    ),
                     "raw_matches_expected_greedy": (
                         raw_tokens == expected_greedy_tokens if expected_greedy_tokens is not None else None
                     ),
@@ -668,10 +835,27 @@ def _run_case(
                         else None
                     ),
                     "raw_matches_scheduler_commit": raw_tokens == committed_tokens,
+                    "artifact_append_matches_scheduler_commit": (
+                        list(request.output_token_ids)[output_length_before:] == committed_tokens
+                    ),
+                    **commit_trace,
                 }
             )
-            _marker(FIRST_ROUND_TRACE, trace_record)
-            traced_step_count += 1
+            if trace_first_round_step:
+                _marker(FIRST_ROUND_TRACE, trace_record)
+                traced_step_count += 1
+            if trace_output_index_step and trace_record["commit_covers_traced_output_index"]:
+                if request.is_finished():
+                    trace_record.update(
+                        {
+                            "next_model_input_available": False,
+                            "next_model_input_terminal_reason": "request_finished",
+                        }
+                    )
+                    _marker(OUTPUT_INDEX_TRACE, trace_record)
+                    output_index_trace_emitted = True
+                else:
+                    pending_output_index_trace = dict(trace_record)
         if request.is_finished():
             if committed_tokens != raw_tokens[: len(committed_tokens)]:
                 raise RuntimeError("Terminal scheduler commit is outside the raw verified prefix.")
@@ -679,6 +863,8 @@ def _run_case(
         elif committed_tokens != raw_tokens:
             raise RuntimeError("Active scheduler commit differs from raw sampled/verified tokens.")
 
+    if trace_output_index is not None and not output_index_trace_emitted:
+        raise RuntimeError(f"Output-index trace {trace_output_index} was not reached by the selected request.")
     _flush_finished_request(runtime, scheduler, finished_lifecycle)
     after = _counter_snapshot(speculator)
     if case["ignore_eos"] and len(request.output_token_ids) != case["output_cap"]:
@@ -760,6 +946,7 @@ def _run_plan(
     profile: str,
     manifest_hash: str,
     trace_first_round: bool = False,
+    trace_output_index: int | None = None,
 ) -> list[dict[str, Any]]:
     scheduler = _build_scheduler(runtime)
     records = []
@@ -784,6 +971,7 @@ def _run_plan(
                 profile=profile,
                 manifest_sha256=manifest_hash,
                 trace_first_round=trace_first_round,
+                trace_output_index=trace_output_index,
             )
         )
     if current_repeat is not None:
@@ -874,6 +1062,7 @@ def test_dspark_single_request_realdata_npu() -> None:
             "mode": mode,
             "case_id": trace_config.case_id,
             "first_round": trace_config.first_round,
+            "output_index": trace_config.output_index,
             "selected_case_executions": len(plan),
         },
     )
@@ -900,6 +1089,7 @@ def test_dspark_single_request_realdata_npu() -> None:
                     profile=profile,
                     manifest_hash=manifest_hash,
                     trace_first_round=trace_config.first_round,
+                    trace_output_index=trace_config.output_index,
                 )
             except BaseException as exc:
                 target_primary_error = exc
@@ -921,6 +1111,7 @@ def test_dspark_single_request_realdata_npu() -> None:
                     profile=profile,
                     manifest_hash=manifest_hash,
                     trace_first_round=trace_config.first_round,
+                    trace_output_index=trace_config.output_index,
                 )
                 return True
 
