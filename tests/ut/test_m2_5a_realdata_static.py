@@ -308,3 +308,15 @@ def test_r6d_early_trace_is_bounded_and_explicit_about_observer_effect() -> None
     assert "torch.manual_seed" not in source
     assert "request.output_token_ids =" not in source
     assert "setattr(" not in source
+
+
+def test_r6e_early_trace_uses_rank_local_writer_without_sampler_interposition() -> None:
+    source = HARNESS.read_text(encoding="utf-8")
+    run_case = source[source.index("def _run_case(") : source.index("def _run_plan(")]
+    assert "_marker(EARLY_RANGE_TRACE," not in source
+    assert "early_trace_writer.write_step(pending_early_trace)" in run_case
+    assert run_case.index("_flush_finished_request(") < run_case.index("early_trace_writer.finish(")
+    assert "with rank_trace_writer(trace_result_dir, owner, trace_early_tokens) as writer:" in source
+    assert "runner.sampler =" not in source
+    assert "runner.sample =" not in source
+    assert "register_forward_hook" not in source

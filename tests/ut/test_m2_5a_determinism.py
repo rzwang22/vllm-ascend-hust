@@ -12,6 +12,7 @@ import pytest
 
 from tests.e2e.nightly.single_node.spec_decode import m2_5a_determinism_report as report
 from tests.e2e.nightly.single_node.spec_decode import test_dspark_single_request_realdata as harness
+from tests.e2e.nightly.single_node.spec_decode.m2_5a_trace_io import rank_trace_writer
 from tools.dspark.m2_5a_common import token_ids_sha256, write_jsonl
 
 
@@ -81,7 +82,7 @@ def test_each_committed_index_has_explicit_logit_and_actual_prefix(
 
 @pytest.mark.parametrize("mode", ["target_only", "dspark"])
 def test_early_trace_on_off_preserves_real_harness_commit_and_cleanup_order(
-    mode: str, monkeypatch: pytest.MonkeyPatch
+    mode: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """CPU lifecycle doubles exercise the real _run_case, not any NPU kernel."""
     outputs = (
@@ -110,6 +111,8 @@ def test_early_trace_on_off_preserves_real_harness_commit_and_cleanup_order(
                 _terminal_proposal_discard_count=0,
                 _published_candidate_tokens=None,
                 _current_proposal_lifecycle=None,
+                _last_consumed_proposal_lifecycle=None,
+                _terminal_proposal_lifecycle=None,
             )
             if mode == "dspark"
             else None
@@ -117,6 +120,25 @@ def test_early_trace_on_off_preserves_real_harness_commit_and_cleanup_order(
         index = -1
         finished_scheduled = False
         request_id = f"m25a-{mode}-7-0-synthetic:1024:0"
+
+        def lifecycle(epoch, consumed=False):
+            return SimpleNamespace(
+                proposal_epoch=epoch,
+                owner_epoch=epoch,
+                consumer_epoch=epoch + 1 if consumed else None,
+                request_ids=(request_id,),
+                generated=True,
+                returned_to_core=True,
+                installed=True,
+                consumed=consumed,
+                discarded_terminal=False,
+                scheduled_lengths=(5,),
+                disposition="INSTALLED",
+                token_prefix_match=consumed,
+                truncated=False,
+                dropped=False,
+                drop_reason=None,
+            )
 
         def schedule():
             nonlocal index, finished_scheduled
@@ -140,11 +162,13 @@ def test_early_trace_on_off_preserves_real_harness_commit_and_cleanup_order(
             if speculator and index < len(outputs):
                 candidates = output.scheduled_spec_decode_tokens.get(request_id)
                 speculator._published_candidate_tokens = [candidates] if candidates else None
-                speculator._current_proposal_lifecycle = (
-                    SimpleNamespace(proposal_epoch=index, disposition="INSTALLED") if candidates else None
-                )
+                speculator._current_proposal_lifecycle = lifecycle(index) if candidates else None
+                speculator._published_proposal_request_ids = (request_id,)
+                speculator._published_proposal_request_state_indices = [0]
                 runtime.runner.execute_model_state.input_batch = SimpleNamespace(
                     num_reqs=1,
+                    req_ids=[request_id],
+                    idx_mapping=[0],
                     num_tokens=6,
                     query_start_loc=[0, 6],
                     input_ids=[outputs[index][0] - 1, *candidates] if candidates else [80],
@@ -157,7 +181,8 @@ def test_early_trace_on_off_preserves_real_harness_commit_and_cleanup_order(
                 speculator._proposal_step_epoch += 1
                 speculator._proposal_generated_count += 1
                 if index:
-                    speculator._proposal_consumer_step_epoch = index
+                    speculator._proposal_consumer_step_epoch = index + 1
+                    speculator._last_consumed_proposal_lifecycle = lifecycle(index, consumed=True)
                     speculator._proposal_consumption_count += 1
                     speculator._proposal_installed_count += 1
             return SimpleNamespace(sampled_token_ids=[outputs[index]])
@@ -212,12 +237,28 @@ def test_early_trace_on_off_preserves_real_harness_commit_and_cleanup_order(
             "ignore_eos": True,
             "ordered_prompt_token_sha256": token_ids_sha256([80]),
         }
-        result = harness._run_case(
-            runtime, scheduler, case, mode=mode, profile="smoke", manifest_sha256="manifest", trace_early_tokens=limit
+        owner = {**case, "rank": 0, "mode": mode, "request_id": request_id}
+        root = tmp_path / f"{mode}-{limit}"
+        with rank_trace_writer(root, owner, limit) as writer:
+            result = harness._run_case(
+                runtime,
+                scheduler,
+                case,
+                mode=mode,
+                profile="smoke",
+                manifest_sha256="manifest",
+                trace_early_tokens=limit,
+                early_trace_writer=writer,
+            )
+        early = (
+            [row["payload"] for row in map(json.loads, writer.path.read_text().splitlines()) if row["kind"] == "step"]
+            if writer is not None
+            else []
         )
-        early = [row for name, row in markers if name == harness.EARLY_RANGE_TRACE]
+        assert not any(name == harness.EARLY_RANGE_TRACE for name, _ in markers)
         if not limit:
             assert observations == [] and early == []
+            assert not root.exists()
         else:
             traced_indices = [
                 i

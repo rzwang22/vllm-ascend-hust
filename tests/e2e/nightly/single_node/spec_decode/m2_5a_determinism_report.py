@@ -5,7 +5,8 @@
 
 Run with ``python -m tests.e2e.nightly.single_node.spec_decode.m2_5a_determinism_report``.
 Each --stream NAME=DIR contains one selected case and rank-*.jsonl artifacts;
-optional --trace NAME=LOG associates stdout from that independent model launch.
+optional --trace NAME=DIR associates rank-local traces from that model launch.
+Legacy NAME=LOG is exploratory only and cannot satisfy semantic gates.
 Missing trace coverage is reported as unknown, never inferred from another run.
 """
 
@@ -19,6 +20,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from tests.e2e.nightly.single_node.spec_decode.m2_5a_matched_prefix import matched_prefix_report, semantic_checks
+from tests.e2e.nightly.single_node.spec_decode.m2_5a_trace_io import load_rank_traces
 from tools.dspark.m2_5a_common import read_jsonl, sha256_file, token_ids_sha256
 
 TRACE_MARKERS = (
@@ -152,9 +155,19 @@ def build_report(
 ) -> dict[str, Any]:
     if len(streams) < 2 or set(trace_paths).difference(streams):
         raise ValueError("Need at least two named streams; each trace must belong to a stream.")
+    if len({path.resolve() for path in streams.values()}) != len(streams):
+        raise ValueError("Aliased stream directories are not independent launches.")
     loaded = {name: load_stream(path, expected_ranks) for name, path in streams.items()}
     for name, stream in loaded.items():
-        traces = load_traces(trace_paths[name], stream["records"]["0"]) if name in trace_paths else []
+        traces = []
+        if name in trace_paths:
+            if trace_paths[name].is_dir():
+                traces, summaries = load_rank_traces(
+                    trace_paths[name], stream["records"], expected_ranks or len(stream["records"])
+                )
+                stream["rank_trace_summaries"] = summaries
+            else:
+                traces = load_traces(trace_paths[name], stream["records"]["0"])
         stream["traces"] = traces
         by_rank = {
             rank: [{k: v for k, v in row.items() if k != "rank"} for row in traces if row["rank"] == int(rank)]
@@ -163,6 +176,7 @@ def build_report(
         stream["trace_rank_identity"] = (
             all(rows == by_rank["0"] and bool(rows) for rows in by_rank.values()) if traces else None
         )
+        stream["hard_semantic_gates"] = semantic_checks(stream)
     comparisons = []
     for left_name, right_name in itertools.combinations(loaded, 2):
         left, right = loaded[left_name], loaded[right_name]
@@ -183,6 +197,8 @@ def build_report(
                 "right": right_name,
                 "pairing_mismatches": {field: [a[field], b[field]] for field in PAIR_FIELDS if a[field] != b[field]},
                 **alignment,
+                "cross_launch_exact_match": alignment["identical"],
+                "output_sha256": [a["output_token_sha256"], b["output_token_sha256"]],
                 "first_difference_traces": [ltrace, rtrace],
                 "same_logit_prefix": same_logit_prefix,
             }
@@ -194,6 +210,12 @@ def build_report(
         "logits_caveat": "Trace recomputes LM-head logits; observer effect and sampler-logit identity are not proven.",
         "streams": loaded,
         "comparisons": comparisons,
+        "matched_prefix": matched_prefix_report(loaded),
+        "hard_semantic_gates_pass": (
+            all(stream["hard_semantic_gates"]["status"] == "OBSERVED_GATES_PASS" for stream in loaded.values())
+            and all(not pair["pairing_mismatches"] for pair in comparisons)
+        ),
+        "whole_generation_correctness_proven": False,
     }
 
 
@@ -212,6 +234,8 @@ def main() -> None:
     parser.add_argument("--stream", action="append", required=True)
     parser.add_argument("--trace", action="append", default=[])
     parser.add_argument("--expected-ranks", type=int)
+    parser.add_argument("--require-semantic-gates", action="store_true")
+    parser.add_argument("--require-matched-prefix", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     report = build_report(_named_paths(args.stream), _named_paths(args.trace), args.expected_ranks)
@@ -237,6 +261,12 @@ def main() -> None:
             )
         )
     print("M2_5A_DETERMINISM_REPORT_WRITTEN=" + str(args.output))
+    if any(stream["hard_semantic_gates"]["status"] == "FAIL" for stream in report["streams"].values()):
+        raise ValueError("Observed semantic violation; inspect the written evidence report.")
+    if args.require_semantic_gates and not report["hard_semantic_gates_pass"]:
+        raise ValueError("Missing/failed observed semantic gates; inspect the written evidence report.")
+    if args.require_matched_prefix and report["matched_prefix"]["eligible_cross_path_pair_count"] == 0:
+        raise ValueError("No exact matched-prefix q_len=1/verification pair; no numerical conclusion is possible.")
 
 
 if __name__ == "__main__":
