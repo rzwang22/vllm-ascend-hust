@@ -53,10 +53,15 @@ MINIMUM_KV_CACHE_BYTES = 2 * 1024 * 1024 * 1024
 RUNTIME_CONTRACT = "DSPARK_M2_5A_RUNTIME_CONTRACT"
 FIRST_ROUND_TRACE = "DSPARK_M2_5A_FIRST_ROUND_TRACE"
 OUTPUT_INDEX_TRACE = "DSPARK_M2_5A_OUTPUT_INDEX_TRACE"
+EARLY_RANGE_TRACE = "DSPARK_M2_5A_EARLY_RANGE_TRACE"
 TRACE_CONFIG = "DSPARK_M2_5A_TRACE_CONFIG"
 _CASE_FILTER_ENV = "DSPARK_M25A_CASE_ID"
 _FIRST_ROUND_TRACE_ENV = "DSPARK_M25A_TRACE_FIRST_ROUND"
 _OUTPUT_INDEX_TRACE_ENV = "DSPARK_M25A_TRACE_OUTPUT_INDEX"
+# Test-only, non-sensitive: 0 disables; 1..16 observes every commit starting
+# before this output length. Requires one exact case; not a production env var.
+_EARLY_TOKENS_TRACE_ENV = "DSPARK_M25A_TRACE_EARLY_TOKENS"
+MAX_EARLY_TRACE_TOKENS = 16
 
 
 def _marker(name: str, record: dict[str, Any]) -> None:
@@ -87,6 +92,7 @@ class _ForensicTraceConfig:
     case_id: str | None
     first_round: bool
     output_index: int | None
+    early_tokens: int = 0
 
 
 def _select_forensic_cases(
@@ -109,8 +115,23 @@ def _select_forensic_cases(
             ) from exc
         if output_index < 0:
             raise ValueError(f"{_OUTPUT_INDEX_TRACE_ENV} must be non-negative, got {output_index}.")
-    if (first_round or output_index is not None) and case_id is None:
-        enabled = f"{_FIRST_ROUND_TRACE_ENV}=1" if first_round else _OUTPUT_INDEX_TRACE_ENV
+    early_value = environ.get(_EARLY_TOKENS_TRACE_ENV, "0").strip()
+    try:
+        early_tokens = int(early_value)
+    except ValueError as exc:
+        raise ValueError(f"{_EARLY_TOKENS_TRACE_ENV} must be an integer in 0..{MAX_EARLY_TRACE_TOKENS}.") from exc
+    if not 0 <= early_tokens <= MAX_EARLY_TRACE_TOKENS:
+        raise ValueError(f"{_EARLY_TOKENS_TRACE_ENV} must be in 0..{MAX_EARLY_TRACE_TOKENS}.")
+    if early_tokens and (first_round or output_index is not None):
+        raise ValueError("Early-range trace must not be combined with first-round/output-index trace.")
+    if (first_round or output_index is not None or early_tokens) and case_id is None:
+        enabled = (
+            f"{_FIRST_ROUND_TRACE_ENV}=1"
+            if first_round
+            else _EARLY_TOKENS_TRACE_ENV
+            if early_tokens
+            else _OUTPUT_INDEX_TRACE_ENV
+        )
         raise ValueError(f"{enabled} requires an exact {_CASE_FILTER_ENV}.")
     if case_id is None:
         return plan, _ForensicTraceConfig(
@@ -126,6 +147,7 @@ def _select_forensic_cases(
         case_id=case_id,
         first_round=first_round,
         output_index=output_index,
+        early_tokens=early_tokens,
     )
 
 
@@ -199,7 +221,11 @@ def _host_json_value(
 
 
 def _target_top2_trace(runtime: Any) -> dict[str, Any]:
-    """Observe the exact processed target logits consumed by sampling."""
+    """Recompute diagnostic logits; these are NOT the sampler's saved logits.
+
+    The extra LM head, allocations, top-k and D2H synchronization can change
+    timing. Compare independent trace-off runs before interpreting a mismatch.
+    """
     runner = runtime.runner
     state = runner.execute_model_state
     if state is None or state.hidden_states is None:
@@ -229,7 +255,15 @@ def _target_top2_trace(runtime: Any) -> dict[str, Any]:
     runtime.torch.npu.synchronize()
 
     top2_values_host = _host_json_value(top2_values)
+    sampling_states = runner.sampler.sampling_states
     trace = {
+        "logits_observation": "recomputed_from_target_hidden_states_before_sampling",
+        "sampling_state": {
+            name: _host_json_value(getattr(sampling_states, name).np[input_batch.idx_mapping_np])
+            for name in ("temperature", "seeds", "top_k", "top_p", "min_p")
+        },
+        "model_seed": runtime.vllm_config.model_config.seed,
+        "torch_deterministic_algorithms_enabled": runtime.torch.are_deterministic_algorithms_enabled(),
         "target_logits_shape": list(processed_logits.shape),
         "query_start_loc": _host_json_value(query_start_loc),
         "query_lengths": _host_json_value(query_start_loc[1:] - query_start_loc[:-1]),
@@ -261,6 +295,8 @@ def _next_model_input_trace(
     request_id: str,
     output_index: int,
     traced_token: int,
+    *,
+    commit_end: int | None = None,
 ) -> dict[str, Any]:
     """Observe the next real model input and the runner's logical prefix."""
     runner = runtime.runner
@@ -276,7 +312,7 @@ def _next_model_input_trace(
     window_start = max(prompt_length, absolute_token_index - 4)
     window_end = min(
         prompt_length + len(request.output_token_ids),
-        absolute_token_index + 5,
+        max(absolute_token_index + 5, prompt_length + (commit_end or 0)),
     )
     request_tokens = [*request.prompt_token_ids, *request.output_token_ids]
     runner_tokens = _trace_host_value(
@@ -314,6 +350,8 @@ def _next_model_input_trace(
         "next_request_output_window": request_window,
         "next_runner_output_window": runner_tokens,
         "next_runner_window_matches_request": runner_tokens == request_window,
+        "next_output_window_start": window_start - prompt_length,
+        "next_output_window_end": window_end - prompt_length,
         "next_runner_traced_token": (
             runner_tokens[absolute_token_index - window_start]
             if window_start <= absolute_token_index < window_end
@@ -323,6 +361,27 @@ def _next_model_input_trace(
             window_start <= absolute_token_index < window_end
             and runner_tokens[absolute_token_index - window_start] == traced_token
         ),
+    }
+
+
+def _committed_prefix_trace(request: Any, record: dict[str, Any]) -> dict[str, Any]:
+    """Match each diagnostic logit row to the *actual* committed history.
+
+    Hashes are observations, not a replay or a substitute for physical KV
+    contents. A rejected candidate prefix must never be labelled comparable.
+    """
+    start = record["output_length_before"]
+    committed = record["scheduler_committed_tokens"]
+    base = [*request.prompt_token_ids, *request.output_token_ids[:start]]
+    candidates = record["consumed_candidate_tokens"] or []
+    row_prefixes = [token_ids_sha256([*base, *candidates[:i]]) for i in range(len(committed))]
+    actual_prefixes = [token_ids_sha256([*base, *committed[:i]]) for i in range(len(committed))]
+    return {
+        "commit_start_output_index": start,
+        "commit_end_output_index_exclusive": start + len(committed),
+        "logit_row_prefix_sha256": row_prefixes,
+        "committed_prefix_sha256": actual_prefixes,
+        "logit_row_matches_committed_prefix": [left == right for left, right in zip(row_prefixes, actual_prefixes)],
     }
 
 
@@ -611,6 +670,7 @@ def _run_case(
     manifest_sha256: str,
     trace_first_round: bool = False,
     trace_output_index: int | None = None,
+    trace_early_tokens: int = 0,
 ) -> dict[str, Any]:
     request_id = f"m25a-{mode}-{case['request_sequence_index']}-{case['lifecycle_repeat']}-{case['case_id']}"
     request = _request(case, request_id)
@@ -620,6 +680,7 @@ def _run_case(
     traced_step_count = 0
     output_index_trace_emitted = False
     pending_output_index_trace: dict[str, Any] | None = None
+    pending_early_trace: dict[str, Any] | None = None
     verification_count = 0
     completed_rounds = 0
     terminal_partial_commit = False
@@ -656,7 +717,8 @@ def _run_case(
             and pending_output_index_trace is None
             and output_length_before <= trace_output_index < output_length_before + maximum_commit_length
         )
-        trace_step = trace_first_round_step or trace_output_index_step
+        trace_early_step = output_length_before < trace_early_tokens
+        trace_step = trace_first_round_step or trace_output_index_step or trace_early_step
         trace_record: dict[str, Any] | None = None
         if request.is_finished():
             raise RuntimeError("A finished request reached another target forward.")
@@ -695,6 +757,22 @@ def _run_case(
             _marker(OUTPUT_INDEX_TRACE, pending_output_index_trace)
             pending_output_index_trace = None
             output_index_trace_emitted = True
+        if pending_early_trace is not None:
+            pending_early_trace.update(
+                _next_model_input_trace(
+                    runtime,
+                    request,
+                    request_id,
+                    pending_early_trace["commit_start_output_index"],
+                    pending_early_trace["scheduler_committed_tokens"][0],
+                    commit_end=pending_early_trace["commit_end_output_index_exclusive"],
+                )
+            )
+            pending_early_trace["next_scheduler_kv_block_ids"] = _host_json_value(
+                scheduler.kv_cache_manager.get_block_ids(request_id)
+            )
+            _marker(EARLY_RANGE_TRACE, pending_early_trace)
+            pending_early_trace = None
         if trace_step:
             lifecycle = speculator._current_proposal_lifecycle if speculator is not None else None
             published_candidates = (
@@ -844,6 +922,17 @@ def _run_case(
             if trace_first_round_step:
                 _marker(FIRST_ROUND_TRACE, trace_record)
                 traced_step_count += 1
+            if trace_early_step and committed_tokens:
+                trace_record.update(_committed_prefix_trace(request, trace_record))
+                trace_record["early_output_token_limit"] = trace_early_tokens
+                if request.is_finished():
+                    trace_record.update(
+                        next_model_input_available=False,
+                        next_model_input_terminal_reason="request_finished",
+                    )
+                    _marker(EARLY_RANGE_TRACE, trace_record)
+                else:
+                    pending_early_trace = dict(trace_record)
             if trace_output_index_step and trace_record["commit_covers_traced_output_index"]:
                 if request.is_finished():
                     trace_record.update(
@@ -947,6 +1036,7 @@ def _run_plan(
     manifest_hash: str,
     trace_first_round: bool = False,
     trace_output_index: int | None = None,
+    trace_early_tokens: int = 0,
 ) -> list[dict[str, Any]]:
     scheduler = _build_scheduler(runtime)
     records = []
@@ -972,6 +1062,7 @@ def _run_plan(
                 manifest_sha256=manifest_hash,
                 trace_first_round=trace_first_round,
                 trace_output_index=trace_output_index,
+                trace_early_tokens=trace_early_tokens,
             )
         )
     if current_repeat is not None:
@@ -1063,6 +1154,7 @@ def test_dspark_single_request_realdata_npu() -> None:
             "case_id": trace_config.case_id,
             "first_round": trace_config.first_round,
             "output_index": trace_config.output_index,
+            "early_tokens": trace_config.early_tokens,
             "selected_case_executions": len(plan),
         },
     )
@@ -1090,6 +1182,7 @@ def test_dspark_single_request_realdata_npu() -> None:
                     manifest_hash=manifest_hash,
                     trace_first_round=trace_config.first_round,
                     trace_output_index=trace_config.output_index,
+                    trace_early_tokens=trace_config.early_tokens,
                 )
             except BaseException as exc:
                 target_primary_error = exc
@@ -1112,6 +1205,7 @@ def test_dspark_single_request_realdata_npu() -> None:
                     manifest_hash=manifest_hash,
                     trace_first_round=trace_config.first_round,
                     trace_output_index=trace_config.output_index,
+                    trace_early_tokens=trace_config.early_tokens,
                 )
                 return True
 

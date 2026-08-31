@@ -188,7 +188,7 @@ def test_r6b_forensic_trace_is_targeted_and_disabled_by_default() -> None:
     assert '"DSPARK_M25A_CASE_ID"' in source
     assert '"DSPARK_M25A_TRACE_FIRST_ROUND"' in source
     assert 'environ.get(_FIRST_ROUND_TRACE_ENV, "0")' in source
-    assert "if (first_round or output_index is not None) and case_id is None:" in source
+    assert "if (first_round or output_index is not None or early_tokens) and case_id is None:" in source
     assert 'case["case_id"] == case_id' in source
     assert "traced_step_count < 2" in source
     assert "raw_tokens or is_verification" in source
@@ -228,7 +228,9 @@ def test_r6b_trace_observes_target_proposal_raw_and_commit_without_changing_them
     assert "input_batch.num_scheduled_tokens" in trace_source
     assert ".detach().cpu().tolist()" not in trace_source
     assert "scheduler.update_from_output(scheduler_output, model_output)" in run_case_source
-    assert run_case_source.index("scheduler.update_from_output") < run_case_source.index('"scheduler_committed_tokens"')
+    assert run_case_source.index("scheduler.update_from_output") < run_case_source.index(
+        '"scheduler_committed_tokens":'
+    )
     assert "output_token_ids =" not in trace_source
     assert ".reshape(" not in trace_source
     assert "exact_token" not in run_case_source.lower()
@@ -287,3 +289,22 @@ def test_existing_m2_4a_and_m2_4b_acceptance_markers_are_unchanged() -> None:
     assert "DSPARK_M2_4B_GENERATION=" in m2_4b
     assert "DSPARK_M2_4B_TARGET_ONLY=" in m2_4b
     assert "DSPARK_M2_4B_TARGET_KV_TOPOLOGY=" in m2_4b
+
+
+def test_r6d_early_trace_is_bounded_and_explicit_about_observer_effect() -> None:
+    source = HARNESS.read_text(encoding="utf-8")
+    run_case = source[source.index("def _run_case(") : source.index("def _run_plan(")]
+
+    assert 'environ.get(_EARLY_TOKENS_TRACE_ENV, "0")' in source
+    assert "MAX_EARLY_TRACE_TOKENS = 16" in source
+    assert "Early-range trace must not be combined" in source
+    assert "trace_early_tokens: int = 0" in run_case
+    assert "trace_early_step = output_length_before < trace_early_tokens" in run_case
+    assert "if trace_step:" in run_case
+    assert "if pending_early_trace is not None:" in run_case
+    assert "NOT the sampler's saved logits" in source
+    assert '"logit_row_matches_committed_prefix"' in source
+    assert '"next_scheduler_kv_block_ids"' in run_case
+    assert "torch.manual_seed" not in source
+    assert "request.output_token_ids =" not in source
+    assert "setattr(" not in source
