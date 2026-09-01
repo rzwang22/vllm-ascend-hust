@@ -357,6 +357,28 @@ def test_performance_phase_timing_is_outside_generation_interval() -> None:
     assert '"phase_timings": phase_timings' in harness
 
 
+def test_per_case_steady_state_protocol_is_test_only_and_preserves_cleanup_boundary() -> None:
+    source = HARNESS.read_text(encoding="utf-8")
+    run_case = source[source.index("def _run_case(") : source.index("def _run_plan(")]
+    run_plan = source[source.index("def _run_plan(") : source.index("def _write_results(")]
+
+    assert '"DSPARK_M25A_PERFORMANCE_WARMUP_REPEATS"' in source
+    assert '"DSPARK_M25A_PERFORMANCE_MEASURED_REPEATS"' in source
+    assert '"DSPARK_M25A_PERFORMANCE_CASE_IDS"' in source
+    assert 'performance_protocol="per_case_steady_state_v1"' in source
+    assert '("warmup", config.warmup_repeats)' in source
+    assert '("measured", config.measured_repeats)' in source
+    assert "performance_repeat_kind=repeat_kind" in source
+    assert "performance_repeat_index=repeat_index" in source
+    assert "request_sequence_index=sequence_index" in source
+    assert "scheduler = _build_scheduler(runtime)" in run_plan
+    assert "_flush_finished_request(runtime, scheduler, finished_lifecycle)" in run_case
+    assert '"cleanup_complete": True' in run_case
+    assert '"state_isolation_verified": True' in run_case
+    assert "runtime.torch.npu.synchronize()" not in run_plan
+    assert "model_load" not in run_plan
+
+
 def test_performance_summarizer_preserves_exact_validator_and_reports_provisional_speedups() -> None:
     summarizer = PERFORMANCE_SUMMARIZER.read_text(encoding="utf-8")
     validator = VALIDATOR.read_text(encoding="utf-8")
@@ -366,6 +388,10 @@ def test_performance_summarizer_preserves_exact_validator_and_reports_provisiona
     assert '"single-run aggregate"' in summarizer
     assert '"accepted_candidate_metrics_available"' in summarizer
     assert '"matched_case_performance"' in summarizer
+    assert '"steady_state_case_performance"' in summarizer
+    assert '"performance_stability_gate"' in summarizer
+    assert '"per-case steady-state measured repeats"' in summarizer
+    assert "CV <= 0.05" in summarizer
     assert "TIMER_RELATIONSHIPS" in summarizer
     assert '"exact_token_cross_mode_blocking": False' in summarizer
     assert '"cross_mode_exact_token_diagnostics"' in summarizer

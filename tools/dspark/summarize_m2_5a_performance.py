@@ -113,6 +113,10 @@ FUNCTIONAL_FIELDS = (
     "cleanup_complete",
     "state_isolation_verified",
     "historical_error_count",
+    "performance_protocol",
+    "performance_repeat_kind",
+    "performance_repeat_index",
+    "performance_artifact_identity",
 )
 
 
@@ -141,6 +145,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--output-csv", type=Path, required=True)
     parser.add_argument("--output-case-csv", type=Path)
     parser.add_argument("--output-case-markdown", type=Path)
+    parser.add_argument("--output-steady-state-csv", type=Path)
+    parser.add_argument("--output-steady-state-markdown", type=Path)
     return parser.parse_args()
 
 
@@ -174,6 +180,21 @@ def _validate_performance_record(record: Mapping[str, Any], mode: str) -> None:
         raise ValueError("Result was not produced by provisional M2.5A performance mode.")
     if record.get("bit_exact_validated") is not False:
         raise ValueError("Performance artifacts must not claim bit-exact validation.")
+    protocol = record.get("performance_protocol")
+    if protocol is not None:
+        if protocol != "per_case_steady_state_v1":
+            raise ValueError(f"Unknown M2.5A performance protocol: {protocol!r}.")
+        repeat_kind = record.get("performance_repeat_kind")
+        repeat_index = record.get("performance_repeat_index")
+        if repeat_kind not in {"warmup", "measured"}:
+            raise ValueError(f"Invalid performance repeat kind: {repeat_kind!r}.")
+        if isinstance(repeat_index, bool) or not isinstance(repeat_index, int) or repeat_index < 0:
+            raise ValueError(f"Invalid performance repeat index: {repeat_index!r}.")
+        identity = record.get("performance_artifact_identity")
+        if not isinstance(identity, Mapping):
+            raise ValueError("Steady-state performance records require source/model/manifest identity.")
+        if identity.get("manifest_sha256") != record.get("manifest_sha256"):
+            raise ValueError("Performance identity manifest differs from the record manifest.")
     performance = record.get("performance")
     if not isinstance(performance, Mapping):
         raise ValueError("Performance result has no structured performance payload.")
@@ -468,6 +489,99 @@ def _aggregate_case_records(records: Sequence[Mapping[str, Any]]) -> dict[str, A
     }
 
 
+def _validate_steady_state_records(
+    records: Sequence[Mapping[str, Any]],
+    rank_summaries: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    if not records:
+        raise ValueError("Steady-state performance artifacts contain no records.")
+    if any(record.get("performance_protocol") != "per_case_steady_state_v1" for record in records):
+        raise ValueError("Steady-state performance artifacts mix protocol and legacy records.")
+    if [int(record["request_sequence_index"]) for record in records] != list(range(len(records))):
+        raise ValueError("Steady-state request sequence indices are missing, duplicated, or out of order.")
+    request_ids = [str(record["request_id"]) for record in records]
+    if len(set(request_ids)) != len(request_ids):
+        raise ValueError("Steady-state performance repeats must use unique request IDs.")
+    if any(int(record["lifecycle_repeat"]) != 0 for record in records):
+        raise ValueError("Steady-state repeats must not reuse lifecycle-repeat semantics.")
+
+    case_ids: list[str] = []
+    grouped: dict[str, list[Mapping[str, Any]]] = {}
+    previous_case_id: str | None = None
+    for record in records:
+        case_id = str(record["case_id"])
+        if case_id not in grouped:
+            case_ids.append(case_id)
+            grouped[case_id] = []
+        elif case_id != previous_case_id:
+            raise ValueError("Steady-state case records must be contiguous.")
+        grouped[case_id].append(record)
+        previous_case_id = case_id
+
+    expected_shape: tuple[int, int] | None = None
+    warmup_records: list[Mapping[str, Any]] = []
+    measured_records: list[Mapping[str, Any]] = []
+    for case_id in case_ids:
+        case_records = grouped[case_id]
+        case_contract = case_records[0]
+        for record in case_records[1:]:
+            for field in (
+                "case_id",
+                "profile_case_index",
+                "prompt_token_count",
+                "prompt_token_sha256",
+                "output_cap",
+                "ignore_eos",
+                "output_token_count",
+                "stop_reason",
+                "manifest_sha256",
+            ):
+                if record[field] != case_contract[field]:
+                    raise ValueError(f"Steady-state repeats for {case_id} differ for {field}.")
+        warmups = [record for record in case_records if record["performance_repeat_kind"] == "warmup"]
+        measured = [record for record in case_records if record["performance_repeat_kind"] == "measured"]
+        if not measured:
+            raise ValueError(f"Steady-state case {case_id} has no measured repeats.")
+        expected_order = [*("warmup" for _ in warmups), *("measured" for _ in measured)]
+        if [record["performance_repeat_kind"] for record in case_records] != expected_order:
+            raise ValueError(f"Steady-state repeats for {case_id} are out of order.")
+        for kind, values in (("warmup", warmups), ("measured", measured)):
+            if [record["performance_repeat_index"] for record in values] != list(range(len(values))):
+                raise ValueError(f"Steady-state {kind} repeats for {case_id} are missing or duplicated.")
+        shape = (len(warmups), len(measured))
+        if expected_shape is None:
+            expected_shape = shape
+        elif shape != expected_shape:
+            raise ValueError("Steady-state cases use inconsistent warmup/measured repeat counts.")
+        warmup_records.extend(warmups)
+        measured_records.extend(measured)
+
+    assert expected_shape is not None
+    identity = records[0]["performance_artifact_identity"]
+    if any(record["performance_artifact_identity"] != identity for record in records):
+        raise ValueError("Steady-state records changed source/model/manifest identity within one process.")
+    for summary in rank_summaries:
+        if summary.get("performance_protocol") != "per_case_steady_state_v1":
+            raise ValueError("Rank summary omitted the steady-state performance protocol.")
+        if int(summary.get("performance_warmup_repeats", -1)) != expected_shape[0]:
+            raise ValueError("Rank summary warmup repeat count differs from the records.")
+        if int(summary.get("performance_measured_repeats", -1)) != expected_shape[1]:
+            raise ValueError("Rank summary measured repeat count differs from the records.")
+        if summary.get("performance_case_ids") != case_ids:
+            raise ValueError("Rank summary case IDs differ from the steady-state records.")
+        if summary.get("performance_artifact_identity") != identity:
+            raise ValueError("Rank summary source/model/manifest identity differs from the records.")
+
+    return {
+        "case_ids": case_ids,
+        "warmup_repeats": expected_shape[0],
+        "measured_repeats": expected_shape[1],
+        "warmup_records": warmup_records,
+        "measured_records": measured_records,
+        "artifact_identity": identity,
+    }
+
+
 def _load_run(
     mode: str,
     root: Path,
@@ -488,11 +602,28 @@ def _load_run(
     if any(summary["mode"] != mode for summary in rank_summaries):
         raise ValueError(f"Rank summary mode differs from --run mode for {root}.")
 
-    aggregate = _aggregate_case_records(critical)
-    warmup_excluded = _aggregate_case_records(critical[1:])
-    first_case_seconds = float(critical[0]["performance"]["inference_latency_seconds"])
-    later_case_seconds = [float(record["performance"]["inference_latency_seconds"]) for record in critical[1:]]
-    later_median = statistics.median(later_case_seconds) if later_case_seconds else first_case_seconds
+    steady_state = None
+    if critical[0].get("performance_protocol") is not None:
+        steady_state = _validate_steady_state_records(critical, rank_summaries)
+        measured_records = steady_state["measured_records"]
+        aggregate = _aggregate_case_records(measured_records)
+        warmup_excluded = aggregate
+        first_case_id = str(measured_records[0]["case_id"])
+        first_case_measured = [record for record in measured_records if str(record["case_id"]) == first_case_id]
+        first_case_seconds = float(
+            steady_state["warmup_records"][0]["performance"]["inference_latency_seconds"]
+            if steady_state["warmup_records"]
+            else measured_records[0]["performance"]["inference_latency_seconds"]
+        )
+        later_median = statistics.median(
+            float(record["performance"]["inference_latency_seconds"]) for record in first_case_measured
+        )
+    else:
+        aggregate = _aggregate_case_records(critical)
+        warmup_excluded = _aggregate_case_records(critical[1:])
+        first_case_seconds = float(critical[0]["performance"]["inference_latency_seconds"])
+        later_case_seconds = [float(record["performance"]["inference_latency_seconds"]) for record in critical[1:]]
+        later_median = statistics.median(later_case_seconds) if later_case_seconds else first_case_seconds
 
     return {
         "mode": mode,
@@ -512,10 +643,25 @@ def _load_run(
         "first_case_inference_seconds": first_case_seconds,
         "later_case_median_inference_seconds": later_median,
         "first_case_warmup_ratio": first_case_seconds / later_median if later_median else 0.0,
-        "first_case_warmup_ratio_workload_matched": False,
-        "warmup_case_id": critical[0]["case_id"],
+        "first_case_warmup_ratio_workload_matched": (
+            bool(steady_state["warmup_records"]) if steady_state is not None else False
+        ),
+        "warmup_case_id": (
+            critical[0]["case_id"]
+            if steady_state is None
+            else steady_state["warmup_records"][0]["case_id"]
+            if steady_state["warmup_records"]
+            else None
+        ),
         "warmup_excluded": warmup_excluded,
-        "records": critical,
+        "performance_protocol": critical[0].get("performance_protocol"),
+        "steady_state_protocol": (
+            {key: value for key, value in steady_state.items() if key not in {"warmup_records", "measured_records"}}
+            if steady_state is not None
+            else None
+        ),
+        "warmup_records": steady_state["warmup_records"] if steady_state is not None else [],
+        "records": steady_state["measured_records"] if steady_state is not None else critical,
     }
 
 
@@ -550,6 +696,166 @@ def _nullable_statistics(values: Sequence[float | None]) -> dict[str, float] | N
     if any(value is None for value in values):
         return None
     return _statistics([float(value) for value in values if value is not None])
+
+
+STEADY_STATE_METRICS = (
+    "prefill_latency_seconds",
+    "decode_latency_seconds",
+    "inference_latency_seconds",
+    "decode_milliseconds_per_output_token",
+    "decode_output_tokens_per_second",
+    "spec_decode_proposer_latency_seconds",
+    "spec_decode_verification_latency_seconds",
+)
+
+
+def _stability_classification(coefficient_of_variation: float) -> str:
+    if coefficient_of_variation <= 0.05:
+        return "stable"
+    if coefficient_of_variation <= 0.10:
+        return "annotate"
+    return "not_formal"
+
+
+def _records_by_case(records: Sequence[Mapping[str, Any]]) -> dict[str, list[Mapping[str, Any]]]:
+    grouped: dict[str, list[Mapping[str, Any]]] = {}
+    for record in records:
+        grouped.setdefault(str(record["case_id"]), []).append(record)
+    return grouped
+
+
+def _steady_state_mode_case(
+    measured: Sequence[Mapping[str, Any]],
+    warmups: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    aggregate = _aggregate_case_records(measured)
+    statistics_by_metric = {
+        metric: _statistics([float(record["performance"][metric]) for record in measured])
+        for metric in STEADY_STATE_METRICS
+    }
+    stability_cv = max(
+        statistics_by_metric["decode_latency_seconds"]["coefficient_of_variation"],
+        statistics_by_metric["inference_latency_seconds"]["coefficient_of_variation"],
+    )
+    return {
+        "cold_first_use": (
+            {
+                "repeat_index": warmups[0]["performance_repeat_index"],
+                **{metric: warmups[0]["performance"][metric] for metric in STEADY_STATE_METRICS},
+            }
+            if warmups
+            else None
+        ),
+        "warmup_repeats": [
+            {
+                "repeat_index": record["performance_repeat_index"],
+                **{metric: record["performance"][metric] for metric in STEADY_STATE_METRICS},
+            }
+            for record in warmups
+        ],
+        "measured_repeats": [
+            {
+                "repeat_index": record["performance_repeat_index"],
+                "request_id": record["request_id"],
+                **{metric: record["performance"][metric] for metric in STEADY_STATE_METRICS},
+                "target_forward_count": record["target_forward_count"],
+                "verification_count": record["verification_count"],
+                "proposal_generated_count": record["proposal_generated_count"],
+                "proposal_installed_count": record["proposal_installed_count"],
+                "proposal_consumed_count": record["proposal_consumed_count"],
+            }
+            for record in measured
+        ],
+        "statistics": statistics_by_metric,
+        "accepted_candidate_tokens_total": aggregate["accepted_candidate_tokens_total"],
+        "average_accepted_candidate_tokens_per_verification": aggregate[
+            "average_accepted_candidate_tokens_per_verification"
+        ],
+        "effective_committed_tokens_per_verification": aggregate["effective_committed_tokens_per_verification"],
+        "replacement_tokens_total": aggregate["replacement_tokens_total"],
+        "bonus_tokens_total": aggregate["bonus_tokens_total"],
+        "peak_npu_allocated_bytes": max(
+            int(record["performance"]["npu_memory"]["peak_allocated"]) for record in measured
+        ),
+        "stability_cv": stability_cv,
+        "stability": _stability_classification(stability_cv),
+    }
+
+
+def _steady_state_case_performance(
+    target: Mapping[str, Any],
+    dspark: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    target_protocol = target.get("steady_state_protocol")
+    dspark_protocol = dspark.get("steady_state_protocol")
+    if target_protocol is None and dspark_protocol is None:
+        return []
+    if target_protocol is None or dspark_protocol is None:
+        raise ValueError("Target-only and DSpark must both use the steady-state protocol.")
+    for field in ("case_ids", "warmup_repeats", "measured_repeats"):
+        if target_protocol[field] != dspark_protocol[field]:
+            raise ValueError(f"Target-only and DSpark steady-state protocol differs for {field}.")
+    if target_protocol["artifact_identity"] != dspark_protocol["artifact_identity"]:
+        raise ValueError("Target-only and DSpark source/model/manifest identity differs.")
+
+    target_measured = _records_by_case(target["records"])
+    dspark_measured = _records_by_case(dspark["records"])
+    target_warmups = _records_by_case(target["warmup_records"])
+    dspark_warmups = _records_by_case(dspark["warmup_records"])
+    rows: list[dict[str, Any]] = []
+    for case_id in target_protocol["case_ids"]:
+        target_records = target_measured[case_id]
+        dspark_records = dspark_measured[case_id]
+        target_case_warmups = target_warmups.get(case_id, [])
+        dspark_case_warmups = dspark_warmups.get(case_id, [])
+        if len(target_case_warmups) != len(dspark_case_warmups):
+            raise ValueError(f"Steady-state matched warmup count differs for {case_id}.")
+        for target_record, dspark_record in zip(target_case_warmups, dspark_case_warmups):
+            for field in (
+                "case_id",
+                "prompt_token_count",
+                "prompt_token_sha256",
+                "output_token_count",
+                "stop_reason",
+                "performance_repeat_index",
+            ):
+                if target_record[field] != dspark_record[field]:
+                    raise ValueError(f"Steady-state matched warmup {case_id} differs for {field}.")
+        for target_record, dspark_record in zip(target_records, dspark_records):
+            for field in (
+                "case_id",
+                "prompt_token_count",
+                "prompt_token_sha256",
+                "output_token_count",
+                "stop_reason",
+                "performance_repeat_index",
+            ):
+                if target_record[field] != dspark_record[field]:
+                    raise ValueError(f"Steady-state matched case {case_id} differs for {field}.")
+        target_case = _steady_state_mode_case(target_records, target_case_warmups)
+        dspark_case = _steady_state_mode_case(dspark_records, dspark_case_warmups)
+        rows.append(
+            {
+                "case_id": case_id,
+                "profile_case_index": target_records[0]["profile_case_index"],
+                "prompt_token_count": target_records[0]["prompt_token_count"],
+                "output_token_count": target_records[0]["output_token_count"],
+                "measured_repeat_count": len(target_records),
+                "target_only": target_case,
+                "dspark": dspark_case,
+                "decode_speedup": (
+                    target_case["statistics"]["decode_latency_seconds"]["median"]
+                    / dspark_case["statistics"]["decode_latency_seconds"]["median"]
+                ),
+                "inference_speedup": (
+                    target_case["statistics"]["inference_latency_seconds"]["median"]
+                    / dspark_case["statistics"]["inference_latency_seconds"]["median"]
+                ),
+                "stop_reason": target_records[0]["stop_reason"],
+                "tp8_consistent": True,
+            }
+        )
+    return rows
 
 
 def _first_difference(left: Sequence[int], right: Sequence[int]) -> int | None:
@@ -682,9 +988,15 @@ def summarize_performance(
     loaded = [_load_run(mode, root, manifest_hash, expected_ranks) for mode, root in runs]
     for run in loaded:
         expected_case_ids = manifest["profiles"][run["profile"]]
-        actual_case_ids = [record["case_id"] for record in run["records"]]
-        if actual_case_ids != expected_case_ids:
-            raise ValueError(f"Performance run {run['root']} does not match the frozen profile order.")
+        if run["steady_state_protocol"] is not None:
+            actual_case_ids = run["steady_state_protocol"]["case_ids"]
+            expected_subset = [case_id for case_id in expected_case_ids if case_id in actual_case_ids]
+            if actual_case_ids != expected_subset:
+                raise ValueError(f"Steady-state run {run['root']} does not preserve the frozen profile case order.")
+        else:
+            actual_case_ids = [record["case_id"] for record in run["records"]]
+            if actual_case_ids != expected_case_ids:
+                raise ValueError(f"Performance run {run['root']} does not match the frozen profile order.")
     by_mode = {mode: [run for run in loaded if run["mode"] == mode] for mode in MODES}
     for mode, mode_runs in by_mode.items():
         if len(mode_runs) < min_runs_per_mode:
@@ -695,6 +1007,8 @@ def summarize_performance(
                 record["prompt_token_sha256"],
                 record["output_token_count"],
                 record["stop_reason"],
+                record.get("performance_repeat_kind"),
+                record.get("performance_repeat_index"),
             )
             for record in mode_runs[0]["records"]
         ]
@@ -705,6 +1019,8 @@ def summarize_performance(
                     record["prompt_token_sha256"],
                     record["output_token_count"],
                     record["stop_reason"],
+                    record.get("performance_repeat_kind"),
+                    record.get("performance_repeat_index"),
                 )
                 for record in run["records"]
             ]
@@ -770,6 +1086,16 @@ def summarize_performance(
         }
         for index, (target, dspark) in enumerate(zip(by_mode["target_only"], by_mode["dspark"]))
     ]
+    steady_state_case_performance = [
+        {
+            "pair_index": index,
+            "target_root": target["root"],
+            "dspark_root": dspark["root"],
+            "cases": _steady_state_case_performance(target, dspark),
+        }
+        for index, (target, dspark) in enumerate(zip(by_mode["target_only"], by_mode["dspark"]))
+        if target["steady_state_protocol"] is not None or dspark["steady_state_protocol"] is not None
+    ]
     target_decode = aggregate["target_only"]["decode_latency_seconds"]["median"]
     dspark_decode = aggregate["dspark"]["decode_latency_seconds"]["median"]
     target_inference = aggregate["target_only"]["inference_latency_seconds"]["median"]
@@ -799,9 +1125,15 @@ def summarize_performance(
         "performance_provisional": True,
         "exact_token_cross_mode_blocking": False,
         "run_aggregation": (
-            "single-run aggregate" if len(by_mode["target_only"]) == 1 else "median of independent run aggregates"
+            "per-case steady-state measured repeats"
+            if steady_state_case_performance
+            else "single-run aggregate"
+            if len(by_mode["target_only"]) == 1
+            else "median of independent run aggregates"
         ),
-        "runs": [{key: value for key, value in run.items() if key != "records"} for run in loaded],
+        "runs": [
+            {key: value for key, value in run.items() if key not in {"records", "warmup_records"}} for run in loaded
+        ],
         "statistics": aggregate,
         "speedup": {
             "all_case_decode": target_decode / dspark_decode,
@@ -811,6 +1143,22 @@ def summarize_performance(
         },
         "cross_mode_exact_token_diagnostics": paired_diagnostics,
         "matched_case_performance": matched_case_performance,
+        "steady_state_case_performance": steady_state_case_performance,
+        "performance_stability_gate": {
+            "applicable": bool(steady_state_case_performance),
+            "passed": all(
+                case[mode]["stability"] != "not_formal"
+                for pair in steady_state_case_performance
+                for case in pair["cases"]
+                for mode in MODES
+            ),
+            "thresholds": {
+                "stable": "CV <= 0.05",
+                "annotate": "0.05 < CV <= 0.10",
+                "not_formal": "CV > 0.10",
+            },
+            "metric": "max(decode_latency_cv, inference_latency_cv)",
+        },
         "timer_relationships": TIMER_RELATIONSHIPS,
         "historical_error_scan": {"roots": [str(path.resolve()) for path in error_log_roots], "matches": {}},
     }
@@ -954,6 +1302,149 @@ def _write_case_markdown(path: Path, pairs: Sequence[Mapping[str, Any]]) -> None
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+STEADY_STATE_CSV_FIELDS = (
+    "pair_index",
+    "case_id",
+    "profile_case_index",
+    "prompt_token_count",
+    "output_token_count",
+    "measured_repeat_count",
+    "target_cold_decode_seconds",
+    "dspark_cold_decode_seconds",
+    "target_decode_median_seconds",
+    "target_decode_mean_seconds",
+    "target_decode_min_seconds",
+    "target_decode_max_seconds",
+    "target_decode_standard_deviation",
+    "target_decode_cv",
+    "target_decode_p50_seconds",
+    "target_decode_p90_seconds",
+    "dspark_decode_median_seconds",
+    "dspark_decode_mean_seconds",
+    "dspark_decode_min_seconds",
+    "dspark_decode_max_seconds",
+    "dspark_decode_standard_deviation",
+    "dspark_decode_cv",
+    "dspark_decode_p50_seconds",
+    "dspark_decode_p90_seconds",
+    "decode_speedup",
+    "inference_speedup",
+    "accepted_candidate_tokens_per_verification",
+    "effective_committed_tokens_per_verification",
+    "proposer_median_seconds",
+    "verification_median_seconds",
+    "target_stability",
+    "dspark_stability",
+    "tp8_consistent",
+)
+
+
+def _steady_state_csv_row(pair_index: int, case: Mapping[str, Any]) -> dict[str, Any]:
+    target = case["target_only"]
+    dspark = case["dspark"]
+    target_decode = target["statistics"]["decode_latency_seconds"]
+    dspark_decode = dspark["statistics"]["decode_latency_seconds"]
+    return {
+        "pair_index": pair_index,
+        "case_id": case["case_id"],
+        "profile_case_index": case["profile_case_index"],
+        "prompt_token_count": case["prompt_token_count"],
+        "output_token_count": case["output_token_count"],
+        "measured_repeat_count": case["measured_repeat_count"],
+        "target_cold_decode_seconds": (
+            target["cold_first_use"]["decode_latency_seconds"] if target["cold_first_use"] else None
+        ),
+        "dspark_cold_decode_seconds": (
+            dspark["cold_first_use"]["decode_latency_seconds"] if dspark["cold_first_use"] else None
+        ),
+        "target_decode_median_seconds": target_decode["median"],
+        "target_decode_mean_seconds": target_decode["mean"],
+        "target_decode_min_seconds": target_decode["min"],
+        "target_decode_max_seconds": target_decode["max"],
+        "target_decode_standard_deviation": target_decode["standard_deviation"],
+        "target_decode_cv": target_decode["coefficient_of_variation"],
+        "target_decode_p50_seconds": target_decode["p50"],
+        "target_decode_p90_seconds": target_decode["p90"],
+        "dspark_decode_median_seconds": dspark_decode["median"],
+        "dspark_decode_mean_seconds": dspark_decode["mean"],
+        "dspark_decode_min_seconds": dspark_decode["min"],
+        "dspark_decode_max_seconds": dspark_decode["max"],
+        "dspark_decode_standard_deviation": dspark_decode["standard_deviation"],
+        "dspark_decode_cv": dspark_decode["coefficient_of_variation"],
+        "dspark_decode_p50_seconds": dspark_decode["p50"],
+        "dspark_decode_p90_seconds": dspark_decode["p90"],
+        "decode_speedup": case["decode_speedup"],
+        "inference_speedup": case["inference_speedup"],
+        "accepted_candidate_tokens_per_verification": dspark["average_accepted_candidate_tokens_per_verification"],
+        "effective_committed_tokens_per_verification": dspark["effective_committed_tokens_per_verification"],
+        "proposer_median_seconds": dspark["statistics"]["spec_decode_proposer_latency_seconds"]["median"],
+        "verification_median_seconds": dspark["statistics"]["spec_decode_verification_latency_seconds"]["median"],
+        "target_stability": target["stability"],
+        "dspark_stability": dspark["stability"],
+        "tp8_consistent": case["tp8_consistent"],
+    }
+
+
+def _write_steady_state_csv(path: Path, pairs: Sequence[Mapping[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=STEADY_STATE_CSV_FIELDS)
+        writer.writeheader()
+        for pair in pairs:
+            for case in pair["cases"]:
+                row = _steady_state_csv_row(pair["pair_index"], case)
+                writer.writerow({field: row[field] for field in STEADY_STATE_CSV_FIELDS})
+
+
+def _write_steady_state_markdown(path: Path, pairs: Sequence[Mapping[str, Any]]) -> None:
+    columns = (
+        "case",
+        "target cold s",
+        "DSpark cold s",
+        "target median s",
+        "DSpark median s",
+        "decode speedup",
+        "target CV",
+        "DSpark CV",
+        "accepted/ver",
+        "committed/ver",
+        "stability",
+    )
+    lines = [
+        "| " + " | ".join(columns) + " |",
+        "| " + " | ".join("---" for _ in columns) + " |",
+    ]
+    for pair in pairs:
+        for case in pair["cases"]:
+            target = case["target_only"]
+            dspark = case["dspark"]
+            target_decode = target["statistics"]["decode_latency_seconds"]
+            dspark_decode = dspark["statistics"]["decode_latency_seconds"]
+            values = (
+                case["case_id"],
+                target["cold_first_use"]["decode_latency_seconds"] if target["cold_first_use"] else None,
+                dspark["cold_first_use"]["decode_latency_seconds"] if dspark["cold_first_use"] else None,
+                target_decode["median"],
+                dspark_decode["median"],
+                case["decode_speedup"],
+                target_decode["coefficient_of_variation"],
+                dspark_decode["coefficient_of_variation"],
+                dspark["average_accepted_candidate_tokens_per_verification"],
+                dspark["effective_committed_tokens_per_verification"],
+                f"{target['stability']}/{dspark['stability']}",
+            )
+            lines.append(
+                "| "
+                + " | ".join(
+                    "UNAVAILABLE" if value is None else f"{value:.6f}" if isinstance(value, float) else str(value)
+                    for value in values
+                )
+                + " |"
+            )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def main() -> int:
     args = _parse_args()
     runs = [_parse_run(value) for value in args.run]
@@ -976,6 +1467,16 @@ def main() -> int:
             args.output_case_markdown.expanduser().resolve(),
             summary["matched_case_performance"],
         )
+    if args.output_steady_state_csv is not None:
+        _write_steady_state_csv(
+            args.output_steady_state_csv.expanduser().resolve(),
+            summary["steady_state_case_performance"],
+        )
+    if args.output_steady_state_markdown is not None:
+        _write_steady_state_markdown(
+            args.output_steady_state_markdown.expanduser().resolve(),
+            summary["steady_state_case_performance"],
+        )
     marker = {
         "runs": len(summary["runs"]),
         "speedup": summary["speedup"],
@@ -984,6 +1485,12 @@ def main() -> int:
         "output_case_csv": (str(args.output_case_csv.expanduser().resolve()) if args.output_case_csv else None),
         "output_case_markdown": (
             str(args.output_case_markdown.expanduser().resolve()) if args.output_case_markdown else None
+        ),
+        "output_steady_state_csv": (
+            str(args.output_steady_state_csv.expanduser().resolve()) if args.output_steady_state_csv else None
+        ),
+        "output_steady_state_markdown": (
+            str(args.output_steady_state_markdown.expanduser().resolve()) if args.output_steady_state_markdown else None
         ),
         "performance_provisional": True,
         "exact_token_cross_mode_blocking": False,

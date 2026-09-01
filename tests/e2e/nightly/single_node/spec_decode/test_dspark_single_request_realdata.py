@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import time
 from collections.abc import Callable, Mapping
 from contextlib import ExitStack
@@ -67,6 +68,9 @@ _EARLY_TOKENS_TRACE_ENV = "DSPARK_M25A_TRACE_EARLY_TOKENS"
 # Test-only, non-sensitive: enables timing and memory observations in this
 # repository-native benchmark harness. It is not a production runtime flag.
 _PERFORMANCE_ENV = "DSPARK_M25A_PERFORMANCE"
+_PERFORMANCE_WARMUP_REPEATS_ENV = "DSPARK_M25A_PERFORMANCE_WARMUP_REPEATS"
+_PERFORMANCE_MEASURED_REPEATS_ENV = "DSPARK_M25A_PERFORMANCE_MEASURED_REPEATS"
+_PERFORMANCE_CASE_IDS_ENV = "DSPARK_M25A_PERFORMANCE_CASE_IDS"
 MAX_EARLY_TRACE_TOKENS = 16
 
 
@@ -104,6 +108,40 @@ class _ForensicTraceConfig:
 @dataclass(frozen=True)
 class _PerformanceConfig:
     enabled: bool
+    warmup_repeats: int = 0
+    measured_repeats: int = 1
+    case_ids: tuple[str, ...] = ()
+
+
+def _performance_repeat_count(
+    environ: Mapping[str, str],
+    name: str,
+    default: int,
+    *,
+    allow_zero: bool,
+) -> int:
+    value = environ.get(name, str(default)).strip()
+    try:
+        count = int(value)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be an integer, got {value!r}.") from exc
+    minimum = 0 if allow_zero else 1
+    if count < minimum:
+        qualifier = "non-negative" if allow_zero else "positive"
+        raise ValueError(f"{name} must be {qualifier}, got {count}.")
+    return count
+
+
+def _performance_case_ids(environ: Mapping[str, str]) -> tuple[str, ...]:
+    value = environ.get(_PERFORMANCE_CASE_IDS_ENV, "").strip()
+    if not value:
+        return ()
+    case_ids = tuple(case_id.strip() for case_id in value.split(","))
+    if any(not case_id for case_id in case_ids):
+        raise ValueError(f"{_PERFORMANCE_CASE_IDS_ENV} must be a comma-separated list of non-empty case IDs.")
+    if len(set(case_ids)) != len(case_ids):
+        raise ValueError(f"{_PERFORMANCE_CASE_IDS_ENV} must not contain duplicate case IDs.")
+    return case_ids
 
 
 def _performance_config(
@@ -116,6 +154,19 @@ def _performance_config(
         raise ValueError(f"{_PERFORMANCE_ENV} must be 0 or 1, got {value!r}.")
     enabled = value == "1"
     if not enabled:
+        configured = {
+            name
+            for name in (
+                _PERFORMANCE_WARMUP_REPEATS_ENV,
+                _PERFORMANCE_MEASURED_REPEATS_ENV,
+                _PERFORMANCE_CASE_IDS_ENV,
+            )
+            if name in environ
+        }
+        if configured:
+            raise ValueError(
+                f"Per-case performance repeat settings require {_PERFORMANCE_ENV}=1, got {sorted(configured)!r}."
+            )
         return _PerformanceConfig(enabled=False)
 
     if (
@@ -130,7 +181,67 @@ def _performance_config(
         raise ValueError("M2.5A performance mode requires ASCEND_LAUNCH_BLOCKING=0.")
     if lifecycle_repeat != 1:
         raise ValueError("M2.5A performance repetitions must use independent launches, not lifecycle repeats.")
-    return _PerformanceConfig(enabled=True)
+    return _PerformanceConfig(
+        enabled=True,
+        warmup_repeats=_performance_repeat_count(
+            environ,
+            _PERFORMANCE_WARMUP_REPEATS_ENV,
+            0,
+            allow_zero=True,
+        ),
+        measured_repeats=_performance_repeat_count(
+            environ,
+            _PERFORMANCE_MEASURED_REPEATS_ENV,
+            1,
+            allow_zero=False,
+        ),
+        case_ids=_performance_case_ids(environ),
+    )
+
+
+def _build_performance_plan(
+    plan: list[dict[str, Any]],
+    config: _PerformanceConfig,
+) -> list[dict[str, Any]]:
+    if not config.enabled:
+        return plan
+    if any(case["lifecycle_repeat"] != 0 for case in plan):
+        raise ValueError("Per-case performance repeats require one base lifecycle pass.")
+    available = {str(case["case_id"]): case for case in plan}
+    selected_ids = config.case_ids or tuple(str(case["case_id"]) for case in plan)
+    missing = [case_id for case_id in selected_ids if case_id not in available]
+    if missing:
+        raise ValueError(f"{_PERFORMANCE_CASE_IDS_ENV} contains cases outside the selected profile: {missing!r}.")
+
+    repeated: list[dict[str, Any]] = []
+    sequence_index = 0
+    for case_id in selected_ids:
+        base = available[case_id]
+        for repeat_kind, repeat_count in (
+            ("warmup", config.warmup_repeats),
+            ("measured", config.measured_repeats),
+        ):
+            for repeat_index in range(repeat_count):
+                record = dict(base)
+                record.update(
+                    performance_protocol="per_case_steady_state_v1",
+                    performance_repeat_kind=repeat_kind,
+                    performance_repeat_index=repeat_index,
+                    request_sequence_index=sequence_index,
+                )
+                repeated.append(record)
+                sequence_index += 1
+    return repeated
+
+
+def _request_id(mode: str, case: Mapping[str, Any]) -> str:
+    repeat_kind = case.get("performance_repeat_kind")
+    if repeat_kind is None:
+        return f"m25a-{mode}-{case['request_sequence_index']}-{case['lifecycle_repeat']}-{case['case_id']}"
+    return (
+        f"m25a-{mode}-{case['request_sequence_index']}-{repeat_kind}-"
+        f"{case['performance_repeat_index']}-{case['case_id']}"
+    )
 
 
 def _select_forensic_cases(
@@ -803,7 +914,7 @@ def _run_case(
 ) -> dict[str, Any]:
     if trace_early_tokens and early_trace_writer is None:
         raise ValueError("Early-range trace must have an exclusive rank-local writer.")
-    request_id = f"m25a-{mode}-{case['request_sequence_index']}-{case['lifecycle_repeat']}-{case['case_id']}"
+    request_id = _request_id(mode, case)
     request = _request(case, request_id)
     speculator = runtime.speculator if mode == "dspark" else None
     before = _counter_snapshot(speculator)
@@ -1295,6 +1406,12 @@ def _run_case(
         "bit_exact_validated": False,
         "performance": performance_metrics,
     }
+    if performance:
+        record.update(
+            performance_protocol=case["performance_protocol"],
+            performance_repeat_kind=case["performance_repeat_kind"],
+            performance_repeat_index=case["performance_repeat_index"],
+        )
     if record["prompt_token_sha256"] != case["ordered_prompt_token_sha256"]:
         raise RuntimeError("Runtime prompt token IDs differ from the frozen manifest.")
     if early_trace_writer is not None:
@@ -1364,7 +1481,7 @@ def _run_plan(
             "case_id": case["case_id"],
             "lifecycle_repeat": case["lifecycle_repeat"],
             "request_sequence_index": case["request_sequence_index"],
-            "request_id": f"m25a-{mode}-{case['request_sequence_index']}-{case['lifecycle_repeat']}-{case['case_id']}",
+            "request_id": _request_id(mode, case),
         }
         with rank_trace_writer(trace_result_dir, owner, trace_early_tokens) as writer:
             record = _run_case(
@@ -1399,6 +1516,43 @@ def _write_results(result_dir: Path, rank: int, records: list[dict[str, Any]]) -
     atomic_write_jsonl(path, records)
     path.with_suffix(path.suffix + ".sha256").write_text(sha256_file(path) + "\n", encoding="utf-8")
     return path
+
+
+def _git_head(root: Path) -> str:
+    try:
+        return subprocess.check_output(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            text=True,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise RuntimeError(f"Unable to resolve source identity from {root}.") from exc
+
+
+def _performance_artifact_identity(settings: Any, manifest_hash: str) -> dict[str, Any]:
+    import vllm
+
+    plugin_root = Path(__file__).resolve().parents[5]
+    core_root = Path(vllm.__file__).resolve().parents[1]
+
+    def checkpoint_identity(path: Path) -> dict[str, Any]:
+        identity: dict[str, Any] = {"path": str(path)}
+        for name in (
+            "config.json",
+            "quant_model_description.json",
+            "quant_model_weights.safetensors.index.json",
+        ):
+            candidate = path / name
+            if candidate.is_file():
+                identity[f"{name}_sha256"] = sha256_file(candidate)
+        return identity
+
+    return {
+        "plugin_head": _git_head(plugin_root),
+        "core_head": _git_head(core_root),
+        "target_model": checkpoint_identity(settings.target_model),
+        "draft_model": checkpoint_identity(settings.draft_model),
+        "manifest_sha256": manifest_hash,
+    }
 
 
 def _settings_and_matrix() -> tuple[
@@ -1443,6 +1597,7 @@ def _settings_and_matrix() -> tuple[
         trace_config,
         lifecycle_repeat,
     )
+    plan = _build_performance_plan(plan, performance_config)
     return (
         settings,
         launch,
@@ -1470,6 +1625,8 @@ def test_dspark_single_request_realdata_npu() -> None:
         trace_config,
         performance_config,
     ) = _settings_and_matrix()
+    selected_case_ids = list(dict.fromkeys(str(case["case_id"]) for case in plan))
+    artifact_identity = _performance_artifact_identity(settings, manifest_hash) if performance_config.enabled else None
     _marker(
         TRACE_CONFIG,
         {
@@ -1492,6 +1649,10 @@ def test_dspark_single_request_realdata_npu() -> None:
             "per_step_synchronize": not performance_config.enabled,
             "exact_token_cross_mode_blocking": not performance_config.enabled,
             "provisional": performance_config.enabled,
+            "protocol": "per_case_steady_state_v1" if performance_config.enabled else None,
+            "warmup_repeats": performance_config.warmup_repeats,
+            "measured_repeats": performance_config.measured_repeats,
+            "case_ids": selected_case_ids,
         },
     )
     records: list[dict[str, Any]] = []
@@ -1569,6 +1730,9 @@ def test_dspark_single_request_realdata_npu() -> None:
             records = captured["records"]
             _marker(CLEANUP_COMPLETE, {"rank": launch.rank, "mode": mode, "errors": []})
 
+        if artifact_identity is not None:
+            for record in records:
+                record["performance_artifact_identity"] = artifact_identity
         artifact_path = _write_results(result_dir, launch.rank, records)
         summary = {
             "rank": launch.rank,
@@ -1583,6 +1747,11 @@ def test_dspark_single_request_realdata_npu() -> None:
             "performance_validated": performance_config.enabled,
             "performance_provisional": performance_config.enabled,
             "exact_token_cross_mode_blocking": not performance_config.enabled,
+            "performance_protocol": ("per_case_steady_state_v1" if performance_config.enabled else None),
+            "performance_warmup_repeats": performance_config.warmup_repeats,
+            "performance_measured_repeats": performance_config.measured_repeats,
+            "performance_case_ids": selected_case_ids,
+            "performance_artifact_identity": artifact_identity,
         }
         atomic_write_json(result_dir / f"rank-{launch.rank}.summary.json", summary)
         _marker("DSPARK_M2_5A_SUMMARY", summary)

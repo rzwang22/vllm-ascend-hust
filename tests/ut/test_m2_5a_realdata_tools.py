@@ -871,11 +871,76 @@ def _performance_result_dirs(
     return target_root, dspark_root
 
 
+def _steady_state_performance_result_dirs(
+    tmp_path: Path,
+    manifest: Path,
+    expected_ranks: int = 2,
+) -> tuple[Path, Path]:
+    target_root, dspark_root = _performance_result_dirs(tmp_path, manifest, expected_ranks)
+    selected_indices = (4, 5, 9)
+    identity = {
+        "plugin_head": "plugin-sha",
+        "core_head": "core-sha",
+        "target_model": {"path": "/checkpoint", "config.json_sha256": "config-sha"},
+        "draft_model": {"path": "/checkpoint", "config.json_sha256": "config-sha"},
+        "manifest_sha256": sha256_file(manifest),
+    }
+    for root, mode in ((target_root, "target_only"), (dspark_root, "dspark")):
+        for rank in range(expected_ranks):
+            original = read_jsonl(root / f"rank-{rank}.jsonl")
+            records: list[dict[str, Any]] = []
+            sequence = 0
+            for case_index in selected_indices:
+                for repeat_kind, repeat_count in (("warmup", 1), ("measured", 3)):
+                    for repeat_index in range(repeat_count):
+                        record = deepcopy(original[case_index])
+                        record.update(
+                            request_sequence_index=sequence,
+                            request_id=f"m25a-{mode}-{sequence}-{repeat_kind}-{repeat_index}-{record['case_id']}",
+                            performance_protocol="per_case_steady_state_v1",
+                            performance_repeat_kind=repeat_kind,
+                            performance_repeat_index=repeat_index,
+                            performance_artifact_identity=identity,
+                        )
+                        latency_multiplier = 4.0 if repeat_kind == "warmup" else (0.95, 1.0, 1.05)[repeat_index]
+                        base_decode = 2.0 if mode == "target_only" else 1.0
+                        decode = base_decode * latency_multiplier
+                        performance = record["performance"]
+                        performance["prefill_latency_seconds"] = 0.5 * latency_multiplier
+                        performance["decode_latency_seconds"] = decode
+                        performance["inference_latency_seconds"] = performance["prefill_latency_seconds"] + decode
+                        output_count = record["output_token_count"]
+                        decode_count = performance["decode_output_token_count"]
+                        performance["milliseconds_per_output_token"] = (
+                            1000.0 * performance["inference_latency_seconds"] / output_count
+                        )
+                        performance["output_tokens_per_second"] = (
+                            output_count / performance["inference_latency_seconds"]
+                        )
+                        performance["decode_milliseconds_per_output_token"] = 1000.0 * decode / decode_count
+                        performance["decode_output_tokens_per_second"] = decode_count / decode
+                        records.append(record)
+                        sequence += 1
+            _rewrite_results(root / f"rank-{rank}.jsonl", records)
+            summary_path = root / f"rank-{rank}.summary.json"
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            summary.update(
+                performance_protocol="per_case_steady_state_v1",
+                performance_warmup_repeats=1,
+                performance_measured_repeats=3,
+                performance_case_ids=[original[index]["case_id"] for index in selected_indices],
+                performance_artifact_identity=identity,
+            )
+            summary_path.write_text(json.dumps(summary), encoding="utf-8")
+    return target_root, dspark_root
+
+
 def test_performance_mode_is_explicit_and_rejects_trace_or_launch_blocking() -> None:
     trace = realdata_harness._ForensicTraceConfig(None, False, None)
 
     assert realdata_harness._performance_config({}, trace, 1).enabled is False
-    assert realdata_harness._performance_config({"DSPARK_M25A_PERFORMANCE": "1"}, trace, 1).enabled is True
+    default = realdata_harness._performance_config({"DSPARK_M25A_PERFORMANCE": "1"}, trace, 1)
+    assert default == realdata_harness._PerformanceConfig(enabled=True)
     with pytest.raises(ValueError, match="cannot be combined"):
         realdata_harness._performance_config(
             {"DSPARK_M25A_PERFORMANCE": "1"},
@@ -893,6 +958,85 @@ def test_performance_mode_is_explicit_and_rejects_trace_or_launch_blocking() -> 
         )
     with pytest.raises(ValueError, match="independent launches"):
         realdata_harness._performance_config({"DSPARK_M25A_PERFORMANCE": "1"}, trace, 3)
+    with pytest.raises(ValueError, match="require DSPARK_M25A_PERFORMANCE=1"):
+        realdata_harness._performance_config(
+            {"DSPARK_M25A_PERFORMANCE_WARMUP_REPEATS": "1"},
+            trace,
+            1,
+        )
+    with pytest.raises(ValueError, match="non-negative"):
+        realdata_harness._performance_config(
+            {
+                "DSPARK_M25A_PERFORMANCE": "1",
+                "DSPARK_M25A_PERFORMANCE_WARMUP_REPEATS": "-1",
+            },
+            trace,
+            1,
+        )
+    with pytest.raises(ValueError, match="positive"):
+        realdata_harness._performance_config(
+            {
+                "DSPARK_M25A_PERFORMANCE": "1",
+                "DSPARK_M25A_PERFORMANCE_MEASURED_REPEATS": "0",
+            },
+            trace,
+            1,
+        )
+
+
+def test_performance_plan_runs_each_case_warmup_then_measured_with_unique_requests(
+    frozen_assets: Path,
+) -> None:
+    cases = read_jsonl(frozen_assets.parent / "smoke_cases.jsonl")
+    base_plan = build_execution_plan(cases, 1)
+    assert (
+        realdata_harness._build_performance_plan(
+            base_plan,
+            realdata_harness._PerformanceConfig(enabled=False),
+        )
+        is base_plan
+    )
+    selected = (cases[4]["case_id"], cases[5]["case_id"], cases[9]["case_id"])
+    config = realdata_harness._PerformanceConfig(
+        enabled=True,
+        warmup_repeats=1,
+        measured_repeats=3,
+        case_ids=selected,
+    )
+
+    plan = realdata_harness._build_performance_plan(base_plan, config)
+
+    assert len(plan) == 12
+    assert [case["case_id"] for case in plan] == [case_id for case_id in selected for _ in range(4)]
+    assert [case["performance_repeat_kind"] for case in plan] == [
+        kind for _ in selected for kind in ("warmup", "measured", "measured", "measured")
+    ]
+    assert [case["performance_repeat_index"] for case in plan] == [index for _ in selected for index in (0, 0, 1, 2)]
+    assert [case["request_sequence_index"] for case in plan] == list(range(12))
+    request_ids = [realdata_harness._request_id("dspark", case) for case in plan]
+    assert len(set(request_ids)) == 12
+    assert all(case["lifecycle_repeat"] == 0 for case in plan)
+
+
+def test_performance_plan_rejects_missing_or_duplicate_case_ids(
+    frozen_assets: Path,
+) -> None:
+    cases = read_jsonl(frozen_assets.parent / "smoke_cases.jsonl")
+    plan = build_execution_plan(cases, 1)
+    with pytest.raises(ValueError, match="outside the selected profile"):
+        realdata_harness._build_performance_plan(
+            plan,
+            realdata_harness._PerformanceConfig(True, 1, 3, ("missing",)),
+        )
+    with pytest.raises(ValueError, match="duplicate"):
+        realdata_harness._performance_config(
+            {
+                "DSPARK_M25A_PERFORMANCE": "1",
+                "DSPARK_M25A_PERFORMANCE_CASE_IDS": "synthetic:1024:0,synthetic:1024:0",
+            },
+            realdata_harness._ForensicTraceConfig(None, False, None),
+            1,
+        )
 
 
 def test_verification_telemetry_uses_rejection_output_length_not_scheduler_placeholders() -> None:
@@ -987,6 +1131,166 @@ def test_performance_summary_marks_legacy_placeholder_acceptance_unavailable(
     assert dspark_run["accepted_candidate_tokens_total"] is None
     assert dspark_run["average_accepted_candidate_tokens_per_verification"] is None
     assert dspark_run["accepted_candidate_metrics_source"] == ("unavailable_legacy_scheduler_placeholder_comparison")
+
+
+def test_steady_state_summary_excludes_warmup_and_reports_per_case_statistics(
+    frozen_assets: Path,
+    tmp_path: Path,
+) -> None:
+    target, dspark = _steady_state_performance_result_dirs(tmp_path, frozen_assets)
+
+    summary = summarize_performance(
+        frozen_assets,
+        [("target_only", target), ("dspark", dspark)],
+        expected_ranks=2,
+        min_runs_per_mode=1,
+    )
+
+    assert summary["run_aggregation"] == "per-case steady-state measured repeats"
+    assert summary["speedup"]["primary_warmup_excluded_decode"] == pytest.approx(2.0)
+    assert summary["performance_stability_gate"] == {
+        "applicable": True,
+        "passed": True,
+        "thresholds": {
+            "stable": "CV <= 0.05",
+            "annotate": "0.05 < CV <= 0.10",
+            "not_formal": "CV > 0.10",
+        },
+        "metric": "max(decode_latency_cv, inference_latency_cv)",
+    }
+    target_run = next(run for run in summary["runs"] if run["mode"] == "target_only")
+    assert target_run["case_count"] == 9
+    assert target_run["steady_state_protocol"]["warmup_repeats"] == 1
+    assert target_run["steady_state_protocol"]["measured_repeats"] == 3
+    cases = summary["steady_state_case_performance"][0]["cases"]
+    assert len(cases) == 3
+    first = cases[0]
+    assert first["target_only"]["cold_first_use"]["decode_latency_seconds"] == 8.0
+    assert [repeat["decode_latency_seconds"] for repeat in first["target_only"]["measured_repeats"]] == [
+        1.9,
+        2.0,
+        2.1,
+    ]
+    target_decode = first["target_only"]["statistics"]["decode_latency_seconds"]
+    assert target_decode["median"] == 2.0
+    assert target_decode["mean"] == 2.0
+    assert target_decode["min"] == 1.9
+    assert target_decode["max"] == 2.1
+    assert target_decode["coefficient_of_variation"] == pytest.approx(0.040824829)
+    assert first["decode_speedup"] == 2.0
+    assert first["dspark"]["average_accepted_candidate_tokens_per_verification"] == 4.0
+    assert len({repeat["request_id"] for repeat in first["dspark"]["measured_repeats"]}) == 3
+
+    csv_path = tmp_path / "steady.csv"
+    markdown_path = tmp_path / "steady.md"
+    performance_summary._write_steady_state_csv(csv_path, summary["steady_state_case_performance"])
+    performance_summary._write_steady_state_markdown(markdown_path, summary["steady_state_case_performance"])
+    assert len(csv_path.read_text(encoding="utf-8").splitlines()) == 4
+    assert len(markdown_path.read_text(encoding="utf-8").splitlines()) == 5
+    assert "target_decode_cv" in csv_path.read_text(encoding="utf-8").splitlines()[0]
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        (lambda records: records.pop(2), "missing|out of order"),
+        (
+            lambda records: records[2].update(performance_repeat_index=records[1]["performance_repeat_index"]),
+            "missing or duplicated",
+        ),
+        (lambda records: records.__setitem__(slice(0, 2), reversed(records[0:2])), "out of order"),
+    ],
+)
+def test_steady_state_summary_rejects_missing_duplicate_or_out_of_order_repeats(
+    frozen_assets: Path,
+    tmp_path: Path,
+    mutation: Any,
+    message: str,
+) -> None:
+    target, dspark = _steady_state_performance_result_dirs(tmp_path, frozen_assets)
+    for rank in range(2):
+        path = dspark / f"rank-{rank}.jsonl"
+        records = read_jsonl(path)
+        mutation(records)
+        for sequence, record in enumerate(records):
+            record["request_sequence_index"] = sequence
+        _rewrite_results(path, records)
+
+    with pytest.raises(ValueError, match=message):
+        summarize_performance(
+            frozen_assets,
+            [("target_only", target), ("dspark", dspark)],
+            expected_ranks=2,
+            min_runs_per_mode=1,
+        )
+
+
+@pytest.mark.parametrize("record_index", [0, 1], ids=["warmup", "measured"])
+def test_steady_state_summary_rejects_tp_rank_repeat_mismatch(
+    frozen_assets: Path,
+    tmp_path: Path,
+    record_index: int,
+) -> None:
+    target, dspark = _steady_state_performance_result_dirs(tmp_path, frozen_assets)
+    path = dspark / "rank-1.jsonl"
+    records = read_jsonl(path)
+    records[record_index]["performance_repeat_index"] = 9
+    _rewrite_results(path, records)
+
+    with pytest.raises(ValueError, match="Rank 1 disagrees"):
+        summarize_performance(
+            frozen_assets,
+            [("target_only", target), ("dspark", dspark)],
+            expected_ranks=2,
+            min_runs_per_mode=1,
+        )
+
+
+def test_steady_state_summary_rejects_repeat_workload_mismatch(
+    frozen_assets: Path,
+    tmp_path: Path,
+) -> None:
+    target, dspark = _steady_state_performance_result_dirs(tmp_path, frozen_assets)
+    for rank in range(2):
+        path = dspark / f"rank-{rank}.jsonl"
+        records = read_jsonl(path)
+        records[1]["stop_reason"] = {
+            "finish_reason": "length",
+            "stop_reason": "repeat-workload-mismatch",
+        }
+        _rewrite_results(path, records)
+
+    with pytest.raises(ValueError, match="repeats.*differ for stop_reason"):
+        summarize_performance(
+            frozen_assets,
+            [("target_only", target), ("dspark", dspark)],
+            expected_ranks=2,
+            min_runs_per_mode=1,
+        )
+
+
+def test_steady_state_stability_gate_rejects_high_cv(
+    frozen_assets: Path,
+    tmp_path: Path,
+) -> None:
+    target, dspark = _steady_state_performance_result_dirs(tmp_path, frozen_assets)
+    for rank in range(2):
+        path = dspark / f"rank-{rank}.jsonl"
+        records = read_jsonl(path)
+        performance = records[1]["performance"]
+        performance["decode_latency_seconds"] = 0.1
+        performance["inference_latency_seconds"] = performance["prefill_latency_seconds"] + 0.1
+        _rewrite_results(path, records)
+
+    summary = summarize_performance(
+        frozen_assets,
+        [("target_only", target), ("dspark", dspark)],
+        expected_ranks=2,
+        min_runs_per_mode=1,
+    )
+
+    assert summary["performance_stability_gate"]["passed"] is False
+    assert summary["steady_state_case_performance"][0]["cases"][0]["dspark"]["stability"] == "not_formal"
 
 
 def test_performance_summary_rejects_unconsumed_proposal(
