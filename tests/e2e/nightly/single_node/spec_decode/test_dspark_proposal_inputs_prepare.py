@@ -7,6 +7,7 @@ import gc
 import json
 import os
 import sys
+import time
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
@@ -208,8 +209,13 @@ def test_dspark_proposal_inputs_prepare_only_npu() -> None:
             is_driver_worker=launch.rank == 0,
         )
         state["worker"] = worker
+        phase_timings: dict[str, float] = {}
+        phase_started_at = time.perf_counter()
         worker.init_device()
+        phase_timings["init_device_seconds"] = time.perf_counter() - phase_started_at
+        phase_started_at = time.perf_counter()
         worker.load_model()
+        phase_timings["model_load_seconds"] = time.perf_counter() - phase_started_at
         runner = worker.model_runner
         assert runner is not None
         speculator = runner.speculator
@@ -251,7 +257,9 @@ def test_dspark_proposal_inputs_prepare_only_npu() -> None:
             [kv_cache_specs],
             [available_memory],
         )[0]
+        phase_started_at = time.perf_counter()
         worker.initialize_from_config(kv_cache_config)
+        phase_timings["kv_cache_init_seconds"] = time.perf_counter() - phase_started_at
         assert speculator.block_tables is runner.block_tables
         assert speculator.kv_cache_config is runner.kv_cache_config
 
@@ -351,6 +359,7 @@ def test_dspark_proposal_inputs_prepare_only_npu() -> None:
                 target_model=target_model,
                 draft_model=draft_model,
                 kv_cache_config=kv_cache_config,
+                phase_timings=phase_timings,
             )
         ):
             return

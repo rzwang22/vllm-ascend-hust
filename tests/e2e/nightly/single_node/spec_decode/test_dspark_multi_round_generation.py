@@ -6,6 +6,7 @@ from __future__ import annotations
 import gc
 import json
 import os
+import time
 from collections import Counter
 from contextlib import ExitStack
 from types import SimpleNamespace
@@ -548,8 +549,13 @@ def _target_only_runtime(
         is_driver_worker=launch.rank == 0,
     )
     state["worker"] = worker
+    phase_timings: dict[str, float] = {}
+    phase_started_at = time.perf_counter()
     worker.init_device()
+    phase_timings["init_device_seconds"] = time.perf_counter() - phase_started_at
+    phase_started_at = time.perf_counter()
     worker.load_model()
+    phase_timings["model_load_seconds"] = time.perf_counter() - phase_started_at
     kv_cache_specs = worker.get_kv_cache_spec()
     if not kv_cache_specs:
         raise RuntimeError("The target-only DeepSeek-V4 worker discovered no KV cache owners.")
@@ -573,7 +579,9 @@ def _target_only_runtime(
         flush=True,
     )
     _validate_target_only_kv_topology_pre_dispatch(pre_dispatch_topology)
+    phase_started_at = time.perf_counter()
     worker.initialize_from_config(kv_cache_config)
+    phase_timings["kv_cache_init_seconds"] = time.perf_counter() - phase_started_at
     runtime = SimpleNamespace(
         torch=torch,
         launch=launch,
@@ -584,6 +592,7 @@ def _target_only_runtime(
         kv_cache_config=kv_cache_config,
         target_kv_cache_layer_names=tuple(kv_cache_specs),
         target_only_kv_topology_pre_dispatch=pre_dispatch_topology,
+        phase_timings=phase_timings,
     )
     return runtime
 

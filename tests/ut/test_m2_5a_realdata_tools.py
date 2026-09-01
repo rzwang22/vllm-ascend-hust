@@ -18,6 +18,7 @@ import pytest
 import tests.e2e.nightly.single_node.spec_decode.test_dspark_proposal_inputs_prepare as prepare_harness
 import tests.e2e.nightly.single_node.spec_decode.test_dspark_single_request_realdata as realdata_harness
 from tools.dspark import build_m2_5a_dataset_assets as asset_builder
+from tools.dspark import summarize_m2_5a_performance as performance_summary
 from tools.dspark.build_m2_5a_dataset_assets import build_assets
 from tools.dspark.m2_5a_common import (
     ASSET_FILES,
@@ -28,6 +29,7 @@ from tools.dspark.m2_5a_common import (
     verify_asset_bundle,
     write_jsonl,
 )
+from tools.dspark.summarize_m2_5a_performance import summarize_performance
 from tools.dspark.validate_m2_5a_results import validate_result_pair
 
 
@@ -780,6 +782,157 @@ def _result_dirs(tmp_path: Path, manifest: Path, expected_ranks: int = 2) -> tup
 def _rewrite_results(path: Path, records: list[dict[str, Any]]) -> None:
     write_jsonl(path, records)
     path.with_suffix(".jsonl.sha256").write_text(sha256_file(path) + "\n", encoding="utf-8")
+
+
+def _performance_result_dirs(
+    tmp_path: Path,
+    manifest: Path,
+    expected_ranks: int = 2,
+) -> tuple[Path, Path]:
+    target_root, dspark_root = _result_dirs(tmp_path, manifest, expected_ranks)
+    for root, mode in ((target_root, "target_only"), (dspark_root, "dspark")):
+        for rank in range(expected_ranks):
+            path = root / f"rank-{rank}.jsonl"
+            records = read_jsonl(path)
+            for record in records:
+                if mode == "dspark":
+                    record["output_token_ids"][0] += 1
+                    record["output_token_sha256"] = token_ids_sha256(record["output_token_ids"])
+                output_count = record["output_token_count"]
+                record.update(
+                    target_forward_count=2 if mode == "target_only" else 1,
+                    verification_count=1 if mode == "dspark" else 0,
+                    diagnostic_only=False,
+                    performance_validated=True,
+                    performance_provisional=True,
+                    bit_exact_validated=False,
+                    performance={
+                        "timing_boundary": "test",
+                        "prefill_definition": "time_to_first_scheduler_commit",
+                        "prefill_latency_seconds": 0.5,
+                        "prefill_output_token_count": 1,
+                        "decode_latency_seconds": 2.0 if mode == "target_only" else 1.0,
+                        "decode_output_token_count": output_count - 1,
+                        "inference_latency_seconds": 2.5 if mode == "target_only" else 1.5,
+                        "milliseconds_per_output_token": 1.0,
+                        "output_tokens_per_second": 100.0,
+                        "decode_milliseconds_per_output_token": 1.0,
+                        "decode_output_tokens_per_second": 100.0,
+                        "scheduler_seconds": 0.01,
+                        "scheduler_update_seconds": 0.02,
+                        "model_execute_host_seconds": 0.03,
+                        "sample_materialize_seconds": 0.04,
+                        "draft_install_seconds": 0.01 if mode == "dspark" else 0.0,
+                        "spec_decode_proposer_latency_seconds": 0.1 if mode == "dspark" else 0.0,
+                        "spec_decode_verification_latency_seconds": 0.2 if mode == "dspark" else 0.0,
+                        "scheduled_draft_token_count": 5 if mode == "dspark" else 0,
+                        "accepted_draft_token_count": 4 if mode == "dspark" else 0,
+                        "average_accepted_tokens_per_verification": 4.0 if mode == "dspark" else 0.0,
+                        "draft_token_acceptance_rate": 0.8 if mode == "dspark" else 0.0,
+                        "npu_memory": {
+                            "allocated_before": 100,
+                            "reserved_before": 120,
+                            "allocated_after": 101,
+                            "reserved_after": 120,
+                            "peak_allocated": 110,
+                            "peak_reserved": 130,
+                            "peak_allocated_increment": 10,
+                            "peak_reserved_increment": 10,
+                        },
+                    },
+                )
+            _rewrite_results(path, records)
+            summary = {
+                "rank": rank,
+                "mode": mode,
+                "profile": "smoke",
+                "performance_validated": True,
+                "performance_provisional": True,
+                "phase_timings": {
+                    "init_device_seconds": 0.25,
+                    "model_load_seconds": 10.0,
+                    "kv_cache_init_seconds": 0.5,
+                },
+            }
+            (root / f"rank-{rank}.summary.json").write_text(json.dumps(summary), encoding="utf-8")
+    return target_root, dspark_root
+
+
+def test_performance_mode_is_explicit_and_rejects_trace_or_launch_blocking() -> None:
+    trace = realdata_harness._ForensicTraceConfig(None, False, None)
+
+    assert realdata_harness._performance_config({}, trace, 1).enabled is False
+    assert realdata_harness._performance_config({"DSPARK_M25A_PERFORMANCE": "1"}, trace, 1).enabled is True
+    with pytest.raises(ValueError, match="cannot be combined"):
+        realdata_harness._performance_config(
+            {"DSPARK_M25A_PERFORMANCE": "1"},
+            realdata_harness._ForensicTraceConfig("synthetic:1024:0", False, None),
+            1,
+        )
+    with pytest.raises(ValueError, match="ASCEND_LAUNCH_BLOCKING=0"):
+        realdata_harness._performance_config(
+            {
+                "DSPARK_M25A_PERFORMANCE": "1",
+                "ASCEND_LAUNCH_BLOCKING": "1",
+            },
+            trace,
+            1,
+        )
+    with pytest.raises(ValueError, match="independent launches"):
+        realdata_harness._performance_config({"DSPARK_M25A_PERFORMANCE": "1"}, trace, 3)
+
+
+def test_accepted_draft_prefix_uses_scheduled_candidate_identity() -> None:
+    assert realdata_harness._accepted_draft_prefix([10, 20, 30], [10, 20, 99]) == 2
+    assert realdata_harness._accepted_draft_prefix([10, 20], [99]) == 0
+    assert realdata_harness._accepted_draft_prefix([10, 20], [10, 20, 30]) == 2
+
+
+def test_performance_summary_keeps_exact_tokens_non_blocking(
+    frozen_assets: Path,
+    tmp_path: Path,
+) -> None:
+    target, dspark = _performance_result_dirs(tmp_path, frozen_assets)
+
+    summary = summarize_performance(
+        frozen_assets,
+        [("target_only", target), ("dspark", dspark)],
+        expected_ranks=2,
+        min_runs_per_mode=1,
+    )
+
+    assert summary["performance_provisional"] is True
+    assert summary["exact_token_cross_mode_blocking"] is False
+    assert summary["speedup"]["primary_decode_median"] == 2.0
+    assert summary["speedup"]["end_to_end_inference_median"] == pytest.approx(5 / 3)
+    diagnostics = summary["cross_mode_exact_token_diagnostics"][0]["cases"]
+    assert len(diagnostics) == 10
+    assert all(item["exact_token_match"] is False for item in diagnostics)
+    assert all(item["first_different_token_index"] == 0 for item in diagnostics)
+    csv_path = tmp_path / "summary.csv"
+    performance_summary._write_csv(csv_path, summary["runs"])
+    csv_rows = csv_path.read_text(encoding="utf-8").splitlines()
+    assert len(csv_rows) == 3
+    assert csv_rows[0].startswith("mode,root,profile,case_count")
+
+
+def test_performance_summary_rejects_unconsumed_proposal(
+    frozen_assets: Path,
+    tmp_path: Path,
+) -> None:
+    target, dspark = _performance_result_dirs(tmp_path, frozen_assets)
+    path = dspark / "rank-0.jsonl"
+    records = read_jsonl(path)
+    records[0]["proposal_consumed_count"] = 0
+    _rewrite_results(path, records)
+
+    with pytest.raises(ValueError, match="consumed exactly once|disagrees"):
+        summarize_performance(
+            frozen_assets,
+            [("target_only", target), ("dspark", dspark)],
+            expected_ranks=2,
+            min_runs_per_mode=1,
+        )
 
 
 def test_exact_token_result_gate_accepts_complete_rank_consistent_artifacts(

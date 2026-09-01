@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from collections.abc import Callable, Mapping
 from contextlib import ExitStack
 from dataclasses import dataclass
@@ -56,12 +57,16 @@ FIRST_ROUND_TRACE = "DSPARK_M2_5A_FIRST_ROUND_TRACE"
 OUTPUT_INDEX_TRACE = "DSPARK_M2_5A_OUTPUT_INDEX_TRACE"
 EARLY_RANGE_TRACE = "DSPARK_M2_5A_EARLY_RANGE_TRACE"
 TRACE_CONFIG = "DSPARK_M2_5A_TRACE_CONFIG"
+PERFORMANCE_CONFIG = "DSPARK_M2_5A_PERFORMANCE_CONFIG"
 _CASE_FILTER_ENV = "DSPARK_M25A_CASE_ID"
 _FIRST_ROUND_TRACE_ENV = "DSPARK_M25A_TRACE_FIRST_ROUND"
 _OUTPUT_INDEX_TRACE_ENV = "DSPARK_M25A_TRACE_OUTPUT_INDEX"
 # Test-only, non-sensitive: 0 disables; 1..16 observes every commit starting
 # before this output length. Requires one exact case; not a production env var.
 _EARLY_TOKENS_TRACE_ENV = "DSPARK_M25A_TRACE_EARLY_TOKENS"
+# Test-only, non-sensitive: enables timing and memory observations in this
+# repository-native benchmark harness. It is not a production runtime flag.
+_PERFORMANCE_ENV = "DSPARK_M25A_PERFORMANCE"
 MAX_EARLY_TRACE_TOKENS = 16
 
 
@@ -94,6 +99,38 @@ class _ForensicTraceConfig:
     first_round: bool
     output_index: int | None
     early_tokens: int = 0
+
+
+@dataclass(frozen=True)
+class _PerformanceConfig:
+    enabled: bool
+
+
+def _performance_config(
+    environ: Mapping[str, str],
+    trace_config: _ForensicTraceConfig,
+    lifecycle_repeat: int,
+) -> _PerformanceConfig:
+    value = environ.get(_PERFORMANCE_ENV, "0").strip()
+    if value not in {"0", "1"}:
+        raise ValueError(f"{_PERFORMANCE_ENV} must be 0 or 1, got {value!r}.")
+    enabled = value == "1"
+    if not enabled:
+        return _PerformanceConfig(enabled=False)
+
+    if (
+        trace_config.case_id is not None
+        or trace_config.first_round
+        or trace_config.output_index is not None
+        or trace_config.early_tokens
+    ):
+        raise ValueError("M2.5A performance mode cannot be combined with a case filter or forensic trace.")
+    launch_blocking = environ.get("ASCEND_LAUNCH_BLOCKING", "0").strip().lower()
+    if launch_blocking not in {"", "0", "false", "off"}:
+        raise ValueError("M2.5A performance mode requires ASCEND_LAUNCH_BLOCKING=0.")
+    if lifecycle_repeat != 1:
+        raise ValueError("M2.5A performance repetitions must use independent launches, not lifecycle repeats.")
+    return _PerformanceConfig(enabled=True)
 
 
 def _select_forensic_cases(
@@ -497,6 +534,29 @@ def _validate_runtime_contract(
     return contract
 
 
+def _performance_memory_snapshot(runtime: Any) -> dict[str, int]:
+    device = runtime.worker.device
+    npu = runtime.torch.npu
+    return {
+        "allocated": int(npu.memory_allocated(device)),
+        "reserved": int(npu.memory_reserved(device)),
+        "peak_allocated": int(npu.max_memory_allocated(device)),
+        "peak_reserved": int(npu.max_memory_reserved(device)),
+    }
+
+
+def _accepted_draft_prefix(
+    scheduled_candidates: list[int],
+    raw_tokens: list[int],
+) -> int:
+    accepted = 0
+    for candidate, sampled in zip(scheduled_candidates, raw_tokens):
+        if candidate != sampled:
+            break
+        accepted += 1
+    return accepted
+
+
 def _counter_snapshot(speculator: Any | None) -> dict[str, int | None]:
     if speculator is None:
         return {
@@ -724,6 +784,7 @@ def _run_case(
     trace_output_index: int | None = None,
     trace_early_tokens: int = 0,
     early_trace_writer: RankTraceWriter | None = None,
+    performance: bool = False,
 ) -> dict[str, Any]:
     if trace_early_tokens and early_trace_writer is None:
         raise ValueError("Early-range trace must have an exclusive rank-local writer.")
@@ -738,6 +799,20 @@ def _run_case(
     pending_early_trace: dict[str, Any] | None = None
     verification_count = 0
     completed_rounds = 0
+    accepted_draft_token_count = 0
+    scheduled_draft_token_count = 0
+    scheduler_seconds = 0.0
+    scheduler_update_seconds = 0.0
+    model_execute_host_seconds = 0.0
+    sample_materialize_seconds = 0.0
+    draft_install_seconds = 0.0
+    proposer_latency_seconds = 0.0
+    verification_latency_seconds = 0.0
+    first_commit_seconds: float | None = None
+    first_commit_token_count = 0
+    performance_started_at: float | None = None
+    memory_before: dict[str, int] | None = None
+    memory_after: dict[str, int] | None = None
     terminal_partial_commit = False
     consumer_epochs: list[int] = []
     finished_lifecycle = _FinishedRequestLifecycle(request_id)
@@ -753,11 +828,22 @@ def _run_case(
             "ignore_eos": case["ignore_eos"],
         },
     )
+    if performance:
+        runtime.torch.npu.synchronize()
+        runtime.torch.npu.reset_peak_memory_stats(runtime.worker.device)
+        memory_before = _performance_memory_snapshot(runtime)
+        performance_started_at = time.perf_counter()
     scheduler.add_request(request)
     while scheduler.has_requests():
+        schedule_started_at = time.perf_counter() if performance else None
         scheduler_output = scheduler.schedule()
+        if schedule_started_at is not None:
+            scheduler_seconds += time.perf_counter() - schedule_started_at
         if scheduler_output.total_num_scheduled_tokens == 0:
+            execute_started_at = time.perf_counter() if performance else None
             runner_output = _execute_scheduler_output(runtime, scheduler_output, finished_lifecycle)
+            if execute_started_at is not None:
+                model_execute_host_seconds += time.perf_counter() - execute_started_at
             _assert_canonical_zero_token_runner_output(runner_output)
             continue
         is_verification = bool(scheduler_output.scheduled_spec_decode_tokens)
@@ -777,7 +863,11 @@ def _run_case(
         trace_record: dict[str, Any] | None = None
         if request.is_finished():
             raise RuntimeError("A finished request reached another target forward.")
-        if _execute_scheduler_output(runtime, scheduler_output, finished_lifecycle) is not None:
+        execute_started_at = time.perf_counter() if performance else None
+        execute_output = _execute_scheduler_output(runtime, scheduler_output, finished_lifecycle)
+        if execute_started_at is not None:
+            model_execute_host_seconds += time.perf_counter() - execute_started_at
+        if execute_output is not None:
             raise RuntimeError("PP=1 execution must defer model output to sampling.")
         if mode == "dspark" and is_verification:
             _assert_scheduler_proposal_disposition(
@@ -887,10 +977,12 @@ def _run_case(
                         runtime, input_batch.idx_mapping[: input_batch.num_reqs]
                     )
         target_forward_count += 1
+        sample_started_at = time.perf_counter() if performance else None
         async_output = runtime.worker.sample_tokens(None)
         if async_output is None:
             raise RuntimeError("Single-request generation returned no sampled output.")
-        runtime.torch.npu.synchronize()
+        if not performance:
+            runtime.torch.npu.synchronize()
         sampler_output = getattr(async_output, "sampler_output", None)
         traced_num_sampled = (
             _trace_host_value(runtime, getattr(sampler_output, "num_sampled", None))
@@ -903,21 +995,41 @@ def _run_case(
             else None
         )
         model_output = _materialize_model_output(async_output)
+        if sample_started_at is not None:
+            sample_materialize_seconds += time.perf_counter() - sample_started_at
+        proposer_latency_seconds += float(getattr(model_output, "spec_decode_proposer_latency_seconds", 0.0))
+        verification_latency_seconds += float(getattr(model_output, "spec_decode_verification_latency_seconds", 0.0))
         raw_tokens = list(model_output.sampled_token_ids[0])
         if is_verification:
             verification_count += 1
             completed_rounds += 1
+            scheduled_candidates_for_metrics = list(scheduler_output.scheduled_spec_decode_tokens[request_id])
+            scheduled_draft_token_count += len(scheduled_candidates_for_metrics)
+            accepted_draft_token_count += _accepted_draft_prefix(
+                scheduled_candidates_for_metrics,
+                raw_tokens,
+            )
             consumer_epoch = speculator._proposal_consumer_step_epoch
             if consumer_epoch is None:
                 raise RuntimeError("DSpark verification did not publish a consumer epoch.")
             consumer_epochs.append(consumer_epoch)
+        update_started_at = time.perf_counter() if performance else None
         scheduler.update_from_output(scheduler_output, model_output)
+        if update_started_at is not None:
+            scheduler_update_seconds += time.perf_counter() - update_started_at
         if mode == "dspark":
+            draft_install_started_at = time.perf_counter() if performance else None
             next_draft_ids = runtime.worker.take_draft_token_ids()
             if next_draft_ids is None:
                 raise RuntimeError("DSpark did not return its canonical draft-token result.")
             scheduler.update_draft_token_ids(next_draft_ids)
+            if draft_install_started_at is not None:
+                draft_install_seconds += time.perf_counter() - draft_install_started_at
         committed_tokens = list(request.output_token_ids)[output_length_before:]
+        if performance and first_commit_seconds is None and committed_tokens:
+            assert performance_started_at is not None
+            first_commit_seconds = time.perf_counter() - performance_started_at
+            first_commit_token_count = len(committed_tokens)
         if trace_record is not None and (raw_tokens or is_verification):
             expected_greedy_tokens = None
             accepted_prefix_length = None
@@ -1025,6 +1137,13 @@ def _run_case(
         elif committed_tokens != raw_tokens:
             raise RuntimeError("Active scheduler commit differs from raw sampled/verified tokens.")
 
+    if performance:
+        assert performance_started_at is not None
+        runtime.torch.npu.synchronize()
+        inference_seconds = time.perf_counter() - performance_started_at
+        memory_after = _performance_memory_snapshot(runtime)
+    else:
+        inference_seconds = 0.0
     if trace_output_index is not None and not output_index_trace_emitted:
         raise RuntimeError(f"Output-index trace {trace_output_index} was not reached by the selected request.")
     _flush_finished_request(runtime, scheduler, finished_lifecycle)
@@ -1033,6 +1152,63 @@ def _run_case(
         raise RuntimeError("Synthetic ignore_eos request stopped before its fixed output cap.")
     output_ids = list(request.output_token_ids)
     finish_reason = request.get_finished_reason()
+    performance_metrics: dict[str, Any] | None = None
+    if performance:
+        if first_commit_seconds is None or memory_before is None or memory_after is None:
+            raise RuntimeError("Performance mode completed without a timed first commit or NPU memory snapshot.")
+        decode_seconds = max(0.0, inference_seconds - first_commit_seconds)
+        decode_token_count = max(0, len(output_ids) - first_commit_token_count)
+        performance_metrics = {
+            "timing_boundary": (
+                "after request construction/before scheduler admission through final "
+                "scheduler commit and NPU synchronization; excludes model loading and cleanup"
+            ),
+            "prefill_definition": "time_to_first_scheduler_commit",
+            "prefill_latency_seconds": first_commit_seconds,
+            "prefill_output_token_count": first_commit_token_count,
+            "decode_latency_seconds": decode_seconds,
+            "decode_output_token_count": decode_token_count,
+            "inference_latency_seconds": inference_seconds,
+            "milliseconds_per_output_token": 1000.0 * inference_seconds / len(output_ids),
+            "output_tokens_per_second": len(output_ids) / inference_seconds,
+            "decode_milliseconds_per_output_token": (
+                1000.0 * decode_seconds / decode_token_count if decode_token_count else 0.0
+            ),
+            "decode_output_tokens_per_second": (
+                decode_token_count / decode_seconds if decode_token_count and decode_seconds else 0.0
+            ),
+            "scheduler_seconds": scheduler_seconds,
+            "scheduler_update_seconds": scheduler_update_seconds,
+            "model_execute_host_seconds": model_execute_host_seconds,
+            "sample_materialize_seconds": sample_materialize_seconds,
+            "draft_install_seconds": draft_install_seconds,
+            "spec_decode_proposer_latency_seconds": proposer_latency_seconds,
+            "spec_decode_verification_latency_seconds": verification_latency_seconds,
+            "scheduled_draft_token_count": scheduled_draft_token_count,
+            "accepted_draft_token_count": accepted_draft_token_count,
+            "average_accepted_tokens_per_verification": (
+                accepted_draft_token_count / verification_count if verification_count else 0.0
+            ),
+            "draft_token_acceptance_rate": (
+                accepted_draft_token_count / scheduled_draft_token_count if scheduled_draft_token_count else 0.0
+            ),
+            "npu_memory": {
+                "allocated_before": memory_before["allocated"],
+                "reserved_before": memory_before["reserved"],
+                "allocated_after": memory_after["allocated"],
+                "reserved_after": memory_after["reserved"],
+                "peak_allocated": memory_after["peak_allocated"],
+                "peak_reserved": memory_after["peak_reserved"],
+                "peak_allocated_increment": max(
+                    0,
+                    memory_after["peak_allocated"] - memory_before["allocated"],
+                ),
+                "peak_reserved_increment": max(
+                    0,
+                    memory_after["peak_reserved"] - memory_before["reserved"],
+                ),
+            },
+        }
     record = {
         "rank": runtime.launch.rank,
         "mode": mode,
@@ -1076,8 +1252,11 @@ def _run_case(
         "state_isolation_verified": True,
         "historical_error_count": 0,
         "manifest_sha256": manifest_sha256,
-        "diagnostic_only": True,
-        "performance_validated": False,
+        "diagnostic_only": not performance,
+        "performance_validated": performance,
+        "performance_provisional": performance,
+        "bit_exact_validated": False,
+        "performance": performance_metrics,
     }
     if record["prompt_token_sha256"] != case["ordered_prompt_token_sha256"]:
         raise RuntimeError("Runtime prompt token IDs differ from the frozen manifest.")
@@ -1126,6 +1305,7 @@ def _run_plan(
     trace_output_index: int | None = None,
     trace_early_tokens: int = 0,
     trace_result_dir: Path | None = None,
+    performance: bool = False,
 ) -> list[dict[str, Any]]:
     scheduler = _build_scheduler(runtime)
     records = []
@@ -1161,6 +1341,7 @@ def _run_plan(
                 trace_output_index=trace_output_index,
                 trace_early_tokens=trace_early_tokens,
                 early_trace_writer=writer,
+                performance=performance,
             )
         records.append(record)
     if current_repeat is not None:
@@ -1193,6 +1374,7 @@ def _settings_and_matrix() -> tuple[
     list[dict[str, Any]],
     int,
     _ForensicTraceConfig,
+    _PerformanceConfig,
 ]:
     manifest_value = os.environ.get("DSPARK_M25A_MANIFEST")
     if not manifest_value:
@@ -1219,6 +1401,11 @@ def _settings_and_matrix() -> tuple[
     lifecycle_repeat = int(os.environ.get("DSPARK_M25A_LIFECYCLE_REPEAT", "1"))
     plan = build_execution_plan(cases, lifecycle_repeat)
     plan, trace_config = _select_forensic_cases(plan, os.environ)
+    performance_config = _performance_config(
+        os.environ,
+        trace_config,
+        lifecycle_repeat,
+    )
     return (
         settings,
         launch,
@@ -1229,6 +1416,7 @@ def _settings_and_matrix() -> tuple[
         plan,
         kv_cache_bytes,
         trace_config,
+        performance_config,
     )
 
 
@@ -1243,6 +1431,7 @@ def test_dspark_single_request_realdata_npu() -> None:
         plan,
         kv_cache_bytes,
         trace_config,
+        performance_config,
     ) = _settings_and_matrix()
     _marker(
         TRACE_CONFIG,
@@ -1256,7 +1445,20 @@ def test_dspark_single_request_realdata_npu() -> None:
             "selected_case_executions": len(plan),
         },
     )
+    _marker(
+        PERFORMANCE_CONFIG,
+        {
+            "rank": launch.rank,
+            "mode": mode,
+            "enabled": performance_config.enabled,
+            "ascend_launch_blocking": os.environ.get("ASCEND_LAUNCH_BLOCKING", "0"),
+            "per_step_synchronize": not performance_config.enabled,
+            "exact_token_cross_mode_blocking": not performance_config.enabled,
+            "provisional": performance_config.enabled,
+        },
+    )
     records: list[dict[str, Any]] = []
+    phase_timings: dict[str, float] = {}
     try:
         if mode == "target_only":
             contexts = ExitStack()
@@ -1271,6 +1473,7 @@ def test_dspark_single_request_realdata_npu() -> None:
                     enable_prefix_caching=False,
                     kv_cache_bytes=kv_cache_bytes,
                 )
+                phase_timings = dict(runtime.phase_timings)
                 _validate_runtime_contract(runtime, mode, profile, kv_cache_bytes)
                 records = _run_plan(
                     runtime,
@@ -1282,6 +1485,7 @@ def test_dspark_single_request_realdata_npu() -> None:
                     trace_output_index=trace_config.output_index,
                     trace_early_tokens=trace_config.early_tokens,
                     trace_result_dir=result_dir,
+                    performance=performance_config.enabled,
                 )
             except BaseException as exc:
                 target_primary_error = exc
@@ -1295,6 +1499,7 @@ def test_dspark_single_request_realdata_npu() -> None:
             captured: dict[str, list[dict[str, Any]]] = {}
 
             def callback(runtime: Any) -> bool:
+                phase_timings.update(runtime.phase_timings)
                 _validate_runtime_contract(runtime, mode, profile, kv_cache_bytes)
                 captured["records"] = _run_plan(
                     runtime,
@@ -1306,6 +1511,7 @@ def test_dspark_single_request_realdata_npu() -> None:
                     trace_output_index=trace_config.output_index,
                     trace_early_tokens=trace_config.early_tokens,
                     trace_result_dir=result_dir,
+                    performance=performance_config.enabled,
                 )
                 return True
 
@@ -1336,7 +1542,10 @@ def test_dspark_single_request_realdata_npu() -> None:
             "manifest_sha256": manifest_hash,
             "artifact": str(artifact_path),
             "artifact_sha256": sha256_file(artifact_path),
-            "performance_validated": False,
+            "phase_timings": phase_timings,
+            "performance_validated": performance_config.enabled,
+            "performance_provisional": performance_config.enabled,
+            "exact_token_cross_mode_blocking": not performance_config.enabled,
         }
         atomic_write_json(result_dir / f"rank-{launch.rank}.summary.json", summary)
         _marker("DSPARK_M2_5A_SUMMARY", summary)

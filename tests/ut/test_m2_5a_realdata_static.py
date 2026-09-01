@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 BUILDER = ROOT / "tools/dspark/build_m2_5a_dataset_assets.py"
 VALIDATOR = ROOT / "tools/dspark/validate_m2_5a_results.py"
+PERFORMANCE_SUMMARIZER = ROOT / "tools/dspark/summarize_m2_5a_performance.py"
 HARNESS = ROOT / "tests/e2e/nightly/single_node/spec_decode/test_dspark_single_request_realdata.py"
 M2_4A = ROOT / "tests/e2e/nightly/single_node/spec_decode/test_dspark_single_round_verification.py"
 M2_4B = ROOT / "tests/e2e/nightly/single_node/spec_decode/test_dspark_multi_round_generation.py"
@@ -320,3 +321,48 @@ def test_r6e_early_trace_uses_rank_local_writer_without_sampler_interposition() 
     assert "runner.sampler =" not in source
     assert "runner.sample =" not in source
     assert "register_forward_hook" not in source
+
+
+def test_performance_mode_removes_only_per_step_synchronize_and_keeps_boundary_sync() -> None:
+    source = HARNESS.read_text(encoding="utf-8")
+    run_case = source[source.index("def _run_case(") : source.index("def _run_plan(")]
+
+    assert '_PERFORMANCE_ENV = "DSPARK_M25A_PERFORMANCE"' in source
+    assert "M2.5A performance mode cannot be combined with a case filter or forensic trace" in source
+    assert "M2.5A performance mode requires ASCEND_LAUNCH_BLOCKING=0" in source
+    assert "if not performance:\n            runtime.torch.npu.synchronize()" in run_case
+    assert run_case.count("runtime.torch.npu.synchronize()") == 3
+    assert "runtime.torch.npu.reset_peak_memory_stats(runtime.worker.device)" in run_case
+    assert '"timing_boundary"' in run_case
+    assert '"prefill_latency_seconds"' in run_case
+    assert '"decode_latency_seconds"' in run_case
+    assert '"inference_latency_seconds"' in run_case
+    assert '"performance_provisional": performance' in run_case
+    assert '"bit_exact_validated": False' in run_case
+
+
+def test_performance_phase_timing_is_outside_generation_interval() -> None:
+    harness = HARNESS.read_text(encoding="utf-8")
+    target = M2_4B.read_text(encoding="utf-8")
+    dspark = PREPARE.read_text(encoding="utf-8")
+
+    for source in (target, dspark):
+        assert 'phase_timings["model_load_seconds"]' in source
+        assert 'phase_timings["kv_cache_init_seconds"]' in source
+    assert "phase_timings = dict(runtime.phase_timings)" in harness
+    assert "phase_timings.update(runtime.phase_timings)" in harness
+    assert '"phase_timings": phase_timings' in harness
+
+
+def test_performance_summarizer_preserves_exact_validator_and_reports_provisional_speedups() -> None:
+    summarizer = PERFORMANCE_SUMMARIZER.read_text(encoding="utf-8")
+    validator = VALIDATOR.read_text(encoding="utf-8")
+
+    assert '"primary_decode_median"' in summarizer
+    assert '"end_to_end_inference_median"' in summarizer
+    assert '"exact_token_cross_mode_blocking": False' in summarizer
+    assert '"cross_mode_exact_token_diagnostics"' in summarizer
+    assert '"proposal_installed_count"] != record["proposal_consumed_count"' in summarizer
+    assert "HISTORICAL_ERROR_MARKERS" in summarizer
+    assert "M2_5A_EXACT_TOKEN_GATE_PASS=" in validator
+    assert '"output_token_ids",' in validator
