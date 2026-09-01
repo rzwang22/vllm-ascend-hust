@@ -799,9 +799,12 @@ def _performance_result_dirs(
                     record["output_token_ids"][0] += 1
                     record["output_token_sha256"] = token_ids_sha256(record["output_token_ids"])
                 output_count = record["output_token_count"]
+                verification_count = 1 if mode == "dspark" else 0
+                accepted_count = 4 if mode == "dspark" else 0
+                verification_committed = min(output_count, accepted_count + 1) if mode == "dspark" else 0
                 record.update(
                     target_forward_count=2 if mode == "target_only" else 1,
-                    verification_count=1 if mode == "dspark" else 0,
+                    verification_count=verification_count,
                     diagnostic_only=False,
                     performance_validated=True,
                     performance_provisional=True,
@@ -826,7 +829,17 @@ def _performance_result_dirs(
                         "spec_decode_proposer_latency_seconds": 0.1 if mode == "dspark" else 0.0,
                         "spec_decode_verification_latency_seconds": 0.2 if mode == "dspark" else 0.0,
                         "scheduled_draft_token_count": 5 if mode == "dspark" else 0,
-                        "accepted_draft_token_count": 4 if mode == "dspark" else 0,
+                        "accepted_candidate_metrics_source": (performance_summary.ACCEPTED_METRICS_SOURCE),
+                        "accepted_candidate_tokens_total": accepted_count,
+                        "average_accepted_candidate_tokens_per_verification": (4.0 if mode == "dspark" else None),
+                        "replacement_tokens_total": verification_count,
+                        "bonus_tokens_total": 0,
+                        "committed_tokens_total": output_count,
+                        "verification_committed_tokens_total": verification_committed,
+                        "effective_committed_tokens_per_verification": (
+                            float(verification_committed) if mode == "dspark" else None
+                        ),
+                        "accepted_draft_token_count": accepted_count,
                         "average_accepted_tokens_per_verification": 4.0 if mode == "dspark" else 0.0,
                         "draft_token_acceptance_rate": 0.8 if mode == "dspark" else 0.0,
                         "npu_memory": {
@@ -882,10 +895,16 @@ def test_performance_mode_is_explicit_and_rejects_trace_or_launch_blocking() -> 
         realdata_harness._performance_config({"DSPARK_M25A_PERFORMANCE": "1"}, trace, 3)
 
 
-def test_accepted_draft_prefix_uses_scheduled_candidate_identity() -> None:
-    assert realdata_harness._accepted_draft_prefix([10, 20, 30], [10, 20, 99]) == 2
-    assert realdata_harness._accepted_draft_prefix([10, 20], [99]) == 0
-    assert realdata_harness._accepted_draft_prefix([10, 20], [10, 20, 30]) == 2
+def test_verification_telemetry_uses_rejection_output_length_not_scheduler_placeholders() -> None:
+    assert realdata_harness._verification_token_telemetry(5, [99]) == (0, 1, 0)
+    assert realdata_harness._verification_token_telemetry(5, [10, 20, 99]) == (2, 1, 0)
+    assert realdata_harness._verification_token_telemetry(5, [10, 20, 30, 40, 50, 60]) == (5, 0, 1)
+    with pytest.raises(ValueError, match="positive"):
+        realdata_harness._verification_token_telemetry(0, [99])
+    with pytest.raises(ValueError, match="replacement or bonus"):
+        realdata_harness._verification_token_telemetry(5, [])
+    with pytest.raises(ValueError, match="replacement or bonus"):
+        realdata_harness._verification_token_telemetry(5, list(range(7)))
 
 
 def test_performance_summary_keeps_exact_tokens_non_blocking(
@@ -903,8 +922,14 @@ def test_performance_summary_keeps_exact_tokens_non_blocking(
 
     assert summary["performance_provisional"] is True
     assert summary["exact_token_cross_mode_blocking"] is False
-    assert summary["speedup"]["primary_decode_median"] == 2.0
-    assert summary["speedup"]["end_to_end_inference_median"] == pytest.approx(5 / 3)
+    assert summary["run_aggregation"] == "single-run aggregate"
+    assert summary["speedup"]["all_case_decode"] == 2.0
+    assert summary["speedup"]["all_case_inference"] == pytest.approx(5 / 3)
+    assert summary["speedup"]["primary_warmup_excluded_decode"] == 2.0
+    dspark_run = next(run for run in summary["runs"] if run["mode"] == "dspark")
+    assert dspark_run["accepted_candidate_metrics_available"] is True
+    assert dspark_run["average_accepted_candidate_tokens_per_verification"] == 4.0
+    assert dspark_run["warmup_excluded"]["case_count"] == 9
     diagnostics = summary["cross_mode_exact_token_diagnostics"][0]["cases"]
     assert len(diagnostics) == 10
     assert all(item["exact_token_match"] is False for item in diagnostics)
@@ -914,6 +939,54 @@ def test_performance_summary_keeps_exact_tokens_non_blocking(
     csv_rows = csv_path.read_text(encoding="utf-8").splitlines()
     assert len(csv_rows) == 3
     assert csv_rows[0].startswith("mode,root,profile,case_count")
+    case_csv = tmp_path / "cases.csv"
+    case_markdown = tmp_path / "cases.md"
+    performance_summary._write_case_csv(case_csv, summary["matched_case_performance"])
+    performance_summary._write_case_markdown(case_markdown, summary["matched_case_performance"])
+    assert len(case_csv.read_text(encoding="utf-8").splitlines()) == 11
+    assert len(case_markdown.read_text(encoding="utf-8").splitlines()) == 12
+    assert "accepted/ver" in case_markdown.read_text(encoding="utf-8")
+
+
+def test_performance_summary_marks_legacy_placeholder_acceptance_unavailable(
+    frozen_assets: Path,
+    tmp_path: Path,
+) -> None:
+    target, dspark = _performance_result_dirs(tmp_path, frozen_assets)
+    for rank in range(2):
+        path = dspark / f"rank-{rank}.jsonl"
+        records = read_jsonl(path)
+        for record in records:
+            performance = record["performance"]
+            for field in (
+                "accepted_candidate_metrics_source",
+                "accepted_candidate_tokens_total",
+                "average_accepted_candidate_tokens_per_verification",
+                "replacement_tokens_total",
+                "bonus_tokens_total",
+                "committed_tokens_total",
+                "verification_committed_tokens_total",
+                "effective_committed_tokens_per_verification",
+            ):
+                performance.pop(field)
+            performance["accepted_draft_token_count"] = 0
+            performance["average_accepted_tokens_per_verification"] = 0.0
+            performance["draft_token_acceptance_rate"] = 0.0
+            record["target_forward_count"] = record["output_token_count"]
+        _rewrite_results(path, records)
+
+    summary = summarize_performance(
+        frozen_assets,
+        [("target_only", target), ("dspark", dspark)],
+        expected_ranks=2,
+        min_runs_per_mode=1,
+    )
+
+    dspark_run = next(run for run in summary["runs"] if run["mode"] == "dspark")
+    assert dspark_run["accepted_candidate_metrics_available"] is False
+    assert dspark_run["accepted_candidate_tokens_total"] is None
+    assert dspark_run["average_accepted_candidate_tokens_per_verification"] is None
+    assert dspark_run["accepted_candidate_metrics_source"] == ("unavailable_legacy_scheduler_placeholder_comparison")
 
 
 def test_performance_summary_rejects_unconsumed_proposal(

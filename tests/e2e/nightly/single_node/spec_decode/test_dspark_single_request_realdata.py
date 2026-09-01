@@ -545,16 +545,31 @@ def _performance_memory_snapshot(runtime: Any) -> dict[str, int]:
     }
 
 
-def _accepted_draft_prefix(
-    scheduled_candidates: list[int],
+def _verification_token_telemetry(
+    scheduled_candidate_count: int,
     raw_tokens: list[int],
-) -> int:
-    accepted = 0
-    for candidate, sampled in zip(scheduled_candidates, raw_tokens):
-        if candidate != sampled:
-            break
-        accepted += 1
-    return accepted
+) -> tuple[int, int, int]:
+    """Decode greedy rejection output without inspecting placeholder IDs.
+
+    The synchronous core scheduler carries ``-1`` proposal placeholders: it is
+    authoritative for the installed proposal length, not candidate identity.
+    Greedy rejection output always contains the accepted candidate prefix plus
+    exactly one replacement or bonus token, so its valid length is sufficient
+    for low-overhead performance telemetry.
+    """
+    if scheduled_candidate_count <= 0:
+        raise ValueError("Verification telemetry requires a positive scheduled proposal length.")
+    if not raw_tokens or len(raw_tokens) > scheduled_candidate_count + 1:
+        raise ValueError(
+            "Greedy verification output must contain an accepted prefix plus one replacement or bonus token."
+        )
+    accepted_candidate_count = len(raw_tokens) - 1
+    all_candidates_accepted = accepted_candidate_count == scheduled_candidate_count
+    return (
+        accepted_candidate_count,
+        int(not all_candidates_accepted),
+        int(all_candidates_accepted),
+    )
 
 
 def _counter_snapshot(speculator: Any | None) -> dict[str, int | None]:
@@ -799,7 +814,10 @@ def _run_case(
     pending_early_trace: dict[str, Any] | None = None
     verification_count = 0
     completed_rounds = 0
-    accepted_draft_token_count = 0
+    accepted_candidate_tokens_total = 0
+    replacement_tokens_total = 0
+    bonus_tokens_total = 0
+    verification_committed_tokens_total = 0
     scheduled_draft_token_count = 0
     scheduler_seconds = 0.0
     scheduler_update_seconds = 0.0
@@ -1003,12 +1021,14 @@ def _run_case(
         if is_verification:
             verification_count += 1
             completed_rounds += 1
-            scheduled_candidates_for_metrics = list(scheduler_output.scheduled_spec_decode_tokens[request_id])
-            scheduled_draft_token_count += len(scheduled_candidates_for_metrics)
-            accepted_draft_token_count += _accepted_draft_prefix(
-                scheduled_candidates_for_metrics,
+            scheduled_draft_token_count += scheduled_length
+            accepted_count, replacement_count, bonus_count = _verification_token_telemetry(
+                scheduled_length,
                 raw_tokens,
             )
+            accepted_candidate_tokens_total += accepted_count
+            replacement_tokens_total += replacement_count
+            bonus_tokens_total += bonus_count
             consumer_epoch = speculator._proposal_consumer_step_epoch
             if consumer_epoch is None:
                 raise RuntimeError("DSpark verification did not publish a consumer epoch.")
@@ -1026,6 +1046,8 @@ def _run_case(
             if draft_install_started_at is not None:
                 draft_install_seconds += time.perf_counter() - draft_install_started_at
         committed_tokens = list(request.output_token_ids)[output_length_before:]
+        if is_verification:
+            verification_committed_tokens_total += len(committed_tokens)
         if performance and first_commit_seconds is None and committed_tokens:
             assert performance_started_at is not None
             first_commit_seconds = time.perf_counter() - performance_started_at
@@ -1185,12 +1207,27 @@ def _run_case(
             "spec_decode_proposer_latency_seconds": proposer_latency_seconds,
             "spec_decode_verification_latency_seconds": verification_latency_seconds,
             "scheduled_draft_token_count": scheduled_draft_token_count,
-            "accepted_draft_token_count": accepted_draft_token_count,
+            "accepted_candidate_metrics_source": "greedy_rejection_output_length_minus_one",
+            "accepted_candidate_tokens_total": accepted_candidate_tokens_total,
+            "average_accepted_candidate_tokens_per_verification": (
+                accepted_candidate_tokens_total / verification_count if verification_count else None
+            ),
+            "replacement_tokens_total": replacement_tokens_total,
+            "bonus_tokens_total": bonus_tokens_total,
+            "committed_tokens_total": len(output_ids),
+            "verification_committed_tokens_total": verification_committed_tokens_total,
+            "effective_committed_tokens_per_verification": (
+                verification_committed_tokens_total / verification_count if verification_count else None
+            ),
+            # Backward-compatible aliases. Unlike the previous implementation,
+            # these values no longer compare scheduler -1 placeholders with
+            # real sampled token IDs.
+            "accepted_draft_token_count": accepted_candidate_tokens_total,
             "average_accepted_tokens_per_verification": (
-                accepted_draft_token_count / verification_count if verification_count else 0.0
+                accepted_candidate_tokens_total / verification_count if verification_count else 0.0
             ),
             "draft_token_acceptance_rate": (
-                accepted_draft_token_count / scheduled_draft_token_count if scheduled_draft_token_count else 0.0
+                accepted_candidate_tokens_total / scheduled_draft_token_count if scheduled_draft_token_count else 0.0
             ),
             "npu_memory": {
                 "allocated_before": memory_before["allocated"],

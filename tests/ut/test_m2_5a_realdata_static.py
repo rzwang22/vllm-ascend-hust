@@ -339,6 +339,9 @@ def test_performance_mode_removes_only_per_step_synchronize_and_keeps_boundary_s
     assert '"inference_latency_seconds"' in run_case
     assert '"performance_provisional": performance' in run_case
     assert '"bit_exact_validated": False' in run_case
+    assert "_verification_token_telemetry(" in run_case
+    assert '"accepted_candidate_metrics_source"' in run_case
+    assert "_accepted_draft_prefix(" not in run_case
 
 
 def test_performance_phase_timing_is_outside_generation_interval() -> None:
@@ -358,8 +361,12 @@ def test_performance_summarizer_preserves_exact_validator_and_reports_provisiona
     summarizer = PERFORMANCE_SUMMARIZER.read_text(encoding="utf-8")
     validator = VALIDATOR.read_text(encoding="utf-8")
 
-    assert '"primary_decode_median"' in summarizer
-    assert '"end_to_end_inference_median"' in summarizer
+    assert '"primary_warmup_excluded_decode"' in summarizer
+    assert '"warmup_excluded_inference"' in summarizer
+    assert '"single-run aggregate"' in summarizer
+    assert '"accepted_candidate_metrics_available"' in summarizer
+    assert '"matched_case_performance"' in summarizer
+    assert "TIMER_RELATIONSHIPS" in summarizer
     assert '"exact_token_cross_mode_blocking": False' in summarizer
     assert '"cross_mode_exact_token_diagnostics"' in summarizer
     assert '"proposal_installed_count"] != record["proposal_consumed_count"' in summarizer
