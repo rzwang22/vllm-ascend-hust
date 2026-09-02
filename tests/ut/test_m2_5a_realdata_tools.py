@@ -984,6 +984,38 @@ def test_performance_mode_is_explicit_and_rejects_trace_or_launch_blocking() -> 
         )
 
 
+def test_performance_boundary_diagnostics_are_default_off_and_single_case_only() -> None:
+    disabled = realdata_harness._PerformanceConfig(enabled=False)
+    enabled = realdata_harness._PerformanceConfig(
+        enabled=True,
+        warmup_repeats=1,
+        measured_repeats=5,
+        case_ids=("gsm8k:0024518bd53c2ee30ba12032",),
+    )
+
+    assert realdata_harness._performance_boundary_diagnostic_config({}, disabled).enabled is False
+    with pytest.raises(ValueError, match="requires DSPARK_M25A_PERFORMANCE=1"):
+        realdata_harness._performance_boundary_diagnostic_config(
+            {"DSPARK_M25A_PERFORMANCE_BOUNDARY_DIAGNOSTICS": "1"},
+            disabled,
+        )
+    with pytest.raises(ValueError, match="exactly one"):
+        realdata_harness._performance_boundary_diagnostic_config(
+            {"DSPARK_M25A_PERFORMANCE_BOUNDARY_DIAGNOSTICS": "1"},
+            realdata_harness._PerformanceConfig(
+                enabled=True,
+                case_ids=("case-a", "case-b"),
+            ),
+        )
+    assert (
+        realdata_harness._performance_boundary_diagnostic_config(
+            {"DSPARK_M25A_PERFORMANCE_BOUNDARY_DIAGNOSTICS": "1"},
+            enabled,
+        ).enabled
+        is True
+    )
+
+
 def test_performance_plan_runs_each_case_warmup_then_measured_with_unique_requests(
     frozen_assets: Path,
 ) -> None:
@@ -1158,6 +1190,7 @@ def test_steady_state_summary_excludes_warmup_and_reports_per_case_statistics(
         },
         "metric": "max(decode_latency_cv, inference_latency_cv)",
     }
+    assert performance_summary._formal_performance_gate_status(summary) == "PASS"
     target_run = next(run for run in summary["runs"] if run["mode"] == "target_only")
     assert target_run["case_count"] == 9
     assert target_run["steady_state_protocol"]["warmup_repeats"] == 1
@@ -1291,6 +1324,7 @@ def test_steady_state_stability_gate_rejects_high_cv(
 
     assert summary["performance_stability_gate"]["passed"] is False
     assert summary["steady_state_case_performance"][0]["cases"][0]["dspark"]["stability"] == "not_formal"
+    assert performance_summary._formal_performance_gate_status(summary) == "FAIL"
 
 
 def test_performance_summary_rejects_unconsumed_proposal(

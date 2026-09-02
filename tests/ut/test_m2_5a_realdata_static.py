@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BUILDER = ROOT / "tools/dspark/build_m2_5a_dataset_assets.py"
 VALIDATOR = ROOT / "tools/dspark/validate_m2_5a_results.py"
 PERFORMANCE_SUMMARIZER = ROOT / "tools/dspark/summarize_m2_5a_performance.py"
+PERFORMANCE_DIAGNOSTICS = ROOT / "tests/e2e/nightly/single_node/spec_decode/m2_5a_performance_diagnostics.py"
 HARNESS = ROOT / "tests/e2e/nightly/single_node/spec_decode/test_dspark_single_request_realdata.py"
 M2_4A = ROOT / "tests/e2e/nightly/single_node/spec_decode/test_dspark_single_round_verification.py"
 M2_4B = ROOT / "tests/e2e/nightly/single_node/spec_decode/test_dspark_multi_round_generation.py"
@@ -143,12 +144,11 @@ def test_zero_token_runner_output_is_validated_without_sampling_or_forward_count
 
 def test_generation_error_remains_primary_over_process_cleanup_errors() -> None:
     source = HARNESS.read_text(encoding="utf-8")
+    run_case = source[source.index("def _run_case(") : source.index("def _run_plan(")]
 
     assert "target_primary_error = exc" in source
     assert "if cleanup_errors and target_primary_error is None:" in source
-    assert source.index("scheduler.update_from_output") < source.index(
-        "_flush_finished_request(runtime, scheduler, finished_lifecycle)"
-    )
+    assert run_case.index("scheduler.update_from_output") < run_case.index("_flush_finished_request(")
 
 
 def test_stochastic_sampling_and_invalid_runtime_shape_fail_closed() -> None:
@@ -372,11 +372,32 @@ def test_per_case_steady_state_protocol_is_test_only_and_preserves_cleanup_bound
     assert "performance_repeat_index=repeat_index" in source
     assert "request_sequence_index=sequence_index" in source
     assert "scheduler = _build_scheduler(runtime)" in run_plan
-    assert "_flush_finished_request(runtime, scheduler, finished_lifecycle)" in run_case
+    assert "_flush_finished_request(" in run_case
     assert '"cleanup_complete": True' in run_case
     assert '"state_isolation_verified": True' in run_case
     assert "runtime.torch.npu.synchronize()" not in run_plan
     assert "model_load" not in run_plan
+
+
+def test_p04_boundary_diagnostics_are_default_off_rank_local_and_do_not_add_step_sync() -> None:
+    source = HARNESS.read_text(encoding="utf-8")
+    diagnostics = PERFORMANCE_DIAGNOSTICS.read_text(encoding="utf-8")
+    run_case = source[source.index("def _run_case(") : source.index("def _run_plan(")]
+    flush_finished = source[source.index("def _flush_finished_request(") : source.index("def _run_case(")]
+
+    assert '"DSPARK_M25A_PERFORMANCE_BOUNDARY_DIAGNOSTICS"' in source
+    assert 'environ.get(_PERFORMANCE_BOUNDARY_DIAGNOSTICS_ENV, "0")' in source
+    assert "requires exactly one" in source
+    assert '"slow_host_step"' in run_case
+    assert '"request_start_npu_sync_before"' in run_case
+    assert '"request_end_npu_sync_after"' in run_case
+    assert '"scheduler_cleanup_before"' in flush_finished
+    assert '"logical_runner_kv_proposal_cleanup_after"' in flush_finished
+    assert run_case.count("runtime.torch.npu.synchronize()") == 3
+    assert '"boundary_semantics": "observe_existing_no_barrier"' in diagnostics
+    assert 'self.path.open("x"' in diagnostics
+    assert 'root / "performance-boundary"' in diagnostics
+    assert "output_token_ids" not in diagnostics
 
 
 def test_performance_summarizer_preserves_exact_validator_and_reports_provisional_speedups() -> None:
@@ -388,6 +409,9 @@ def test_performance_summarizer_preserves_exact_validator_and_reports_provisiona
     assert '"single-run aggregate"' in summarizer
     assert '"accepted_candidate_metrics_available"' in summarizer
     assert '"matched_case_performance"' in summarizer
+    assert "M2_5A_PERFORMANCE_REPORT_GENERATION_PASS" in summarizer
+    assert "M2_5A_FORMAL_PERFORMANCE_GATE_" in summarizer
+    assert '"formal_performance_gate"' in summarizer
     assert '"steady_state_case_performance"' in summarizer
     assert '"performance_stability_gate"' in summarizer
     assert '"per-case steady-state measured repeats"' in summarizer

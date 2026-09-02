@@ -21,6 +21,10 @@ from tests.e2e.nightly.single_node.spec_decode.dspark_loader_harness import (
     parse_launch_context,
     parse_loader_settings,
 )
+from tests.e2e.nightly.single_node.spec_decode.m2_5a_performance_diagnostics import (
+    PerformanceBoundaryWriter,
+    performance_boundary_writer,
+)
 from tests.e2e.nightly.single_node.spec_decode.m2_5a_trace_io import RankTraceWriter, rank_trace_writer
 from tests.e2e.nightly.single_node.spec_decode.test_dspark_kv_cache_init import (
     _kv_cache_budget,
@@ -71,6 +75,10 @@ _PERFORMANCE_ENV = "DSPARK_M25A_PERFORMANCE"
 _PERFORMANCE_WARMUP_REPEATS_ENV = "DSPARK_M25A_PERFORMANCE_WARMUP_REPEATS"
 _PERFORMANCE_MEASURED_REPEATS_ENV = "DSPARK_M25A_PERFORMANCE_MEASURED_REPEATS"
 _PERFORMANCE_CASE_IDS_ENV = "DSPARK_M25A_PERFORMANCE_CASE_IDS"
+# Test-only, non-sensitive and default-off. Records rank-local request and
+# slow-host-step boundaries without adding a per-step device synchronize.
+_PERFORMANCE_BOUNDARY_DIAGNOSTICS_ENV = "DSPARK_M25A_PERFORMANCE_BOUNDARY_DIAGNOSTICS"
+PERFORMANCE_SLOW_STEP_SECONDS = 5.0
 MAX_EARLY_TRACE_TOKENS = 16
 
 
@@ -111,6 +119,29 @@ class _PerformanceConfig:
     warmup_repeats: int = 0
     measured_repeats: int = 1
     case_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class _PerformanceBoundaryDiagnosticConfig:
+    enabled: bool = False
+
+
+def _performance_boundary_diagnostic_config(
+    environ: Mapping[str, str],
+    performance: _PerformanceConfig,
+) -> _PerformanceBoundaryDiagnosticConfig:
+    value = environ.get(_PERFORMANCE_BOUNDARY_DIAGNOSTICS_ENV, "0").strip()
+    if value not in {"0", "1"}:
+        raise ValueError(f"{_PERFORMANCE_BOUNDARY_DIAGNOSTICS_ENV} must be 0 or 1, got {value!r}.")
+    if value == "0":
+        return _PerformanceBoundaryDiagnosticConfig()
+    if not performance.enabled:
+        raise ValueError(f"{_PERFORMANCE_BOUNDARY_DIAGNOSTICS_ENV}=1 requires {_PERFORMANCE_ENV}=1.")
+    if len(performance.case_ids) != 1:
+        raise ValueError(
+            f"{_PERFORMANCE_BOUNDARY_DIAGNOSTICS_ENV}=1 requires exactly one {_PERFORMANCE_CASE_IDS_ENV} case."
+        )
+    return _PerformanceBoundaryDiagnosticConfig(enabled=True)
 
 
 def _performance_repeat_count(
@@ -703,6 +734,49 @@ def _counter_snapshot(speculator: Any | None) -> dict[str, int | None]:
     }
 
 
+def _boundary_async_state(runtime: Any) -> dict[str, Any]:
+    """Read only host-visible state; never synchronize or materialize a tensor."""
+    runner = runtime.runner
+    speculator = getattr(runtime, "speculator", None)
+    lifecycle = getattr(speculator, "_current_proposal_lifecycle", None)
+    pp_send_work = getattr(runtime.worker, "_pp_send_work", ()) or ()
+    return {
+        "worker_pp_send_work_count": len(pp_send_work),
+        "runner_execute_model_state_present": getattr(runner, "execute_model_state", None) is not None,
+        "published_candidate_present": (
+            getattr(speculator, "_published_candidate_tokens", None) is not None if speculator is not None else False
+        ),
+        "proposal_step_epoch": getattr(speculator, "_proposal_step_epoch", None),
+        "proposal_consumer_epoch": getattr(speculator, "_proposal_consumer_step_epoch", None),
+        "proposal_disposition": getattr(lifecycle, "disposition", None),
+        "proposal_consumed": getattr(lifecycle, "consumed", None),
+        # Current V2 worker/speculator exposes no public Future, task queue, or
+        # stream-completion query. Keep that absence explicit rather than
+        # inventing a drain guarantee from logical state.
+        "public_pending_future_count": None,
+        "public_pending_task_count": None,
+        "public_stream_completion_state": "unavailable_without_synchronization",
+    }
+
+
+def _boundary_event(
+    writer: PerformanceBoundaryWriter | None,
+    case: Mapping[str, Any],
+    event: str,
+    payload: dict[str, Any] | None = None,
+) -> None:
+    if writer is None:
+        return
+    writer.write_event(
+        event,
+        request_id=_request_id(str(writer.owner["mode"]), case),
+        request_sequence_index=int(case["request_sequence_index"]),
+        repeat_kind=str(case["performance_repeat_kind"]),
+        repeat_index=int(case["performance_repeat_index"]),
+        payload=payload,
+    )
+
+
 @dataclass
 class _FinishedRequestLifecycle:
     """Track the one-shot scheduler event through worker cleanup."""
@@ -881,8 +955,19 @@ def _flush_finished_request(
     runtime: Any,
     scheduler: Any,
     finished_lifecycle: _FinishedRequestLifecycle,
+    *,
+    case: Mapping[str, Any] | None = None,
+    boundary_writer: PerformanceBoundaryWriter | None = None,
 ) -> None:
     request_id = finished_lifecycle.request_id
+    if boundary_writer is not None:
+        assert case is not None
+        _boundary_event(
+            boundary_writer,
+            case,
+            "scheduler_cleanup_before",
+            _boundary_async_state(runtime),
+        )
     finished_lifecycle.assert_delivered_once()
     cleanup_output = scheduler.schedule()
     if cleanup_output.total_num_scheduled_tokens != 0:
@@ -894,8 +979,25 @@ def _flush_finished_request(
         )
     runner_output = _execute_scheduler_output(runtime, cleanup_output, finished_lifecycle)
     _assert_canonical_zero_token_runner_output(runner_output)
+    if boundary_writer is not None:
+        _boundary_event(
+            boundary_writer,
+            case,
+            "zero_token_worker_cleanup_after",
+            _boundary_async_state(runtime),
+        )
     finished_lifecycle.assert_delivered_once()
     _assert_released_request_state(runtime, scheduler, request_id)
+    if boundary_writer is not None:
+        _boundary_event(
+            boundary_writer,
+            case,
+            "logical_runner_kv_proposal_cleanup_after",
+            {
+                **_boundary_async_state(runtime),
+                "released_request_state_verified": True,
+            },
+        )
 
 
 def _run_case(
@@ -911,6 +1013,9 @@ def _run_case(
     trace_early_tokens: int = 0,
     early_trace_writer: RankTraceWriter | None = None,
     performance: bool = False,
+    boundary_writer: PerformanceBoundaryWriter | None = None,
+    previous_request_id: str | None = None,
+    next_request_id: str | None = None,
 ) -> dict[str, Any]:
     if trace_early_tokens and early_trace_writer is None:
         raise ValueError("Early-range trace must have an exclusive rank-local writer.")
@@ -945,6 +1050,7 @@ def _run_case(
     terminal_partial_commit = False
     consumer_epochs: list[int] = []
     finished_lifecycle = _FinishedRequestLifecycle(request_id)
+    last_commit_observation: dict[str, Any] | None = None
     _marker(
         REAL_DATA_CASE_STARTED,
         {
@@ -958,21 +1064,72 @@ def _run_case(
         },
     )
     if performance:
+        _boundary_event(
+            boundary_writer,
+            case,
+            "request_begin",
+            {
+                "previous_request_id": previous_request_id,
+                "next_request_id": next_request_id,
+                **_boundary_async_state(runtime),
+            },
+        )
+        # The original P0.3 path has no distributed barrier between repeats.
+        # Record that fact without adding a diagnostic barrier to formal data.
+        _boundary_event(
+            boundary_writer,
+            case,
+            "request_start_barrier_before",
+            {"executed": False},
+        )
+        _boundary_event(
+            boundary_writer,
+            case,
+            "request_start_barrier_after",
+            {"executed": False},
+        )
+        sync_started_at = time.perf_counter()
+        _boundary_event(boundary_writer, case, "request_start_npu_sync_before")
         runtime.torch.npu.synchronize()
+        _boundary_event(
+            boundary_writer,
+            case,
+            "request_start_npu_sync_after",
+            {
+                "duration_seconds": time.perf_counter() - sync_started_at,
+                **_boundary_async_state(runtime),
+            },
+        )
         runtime.torch.npu.reset_peak_memory_stats(runtime.worker.device)
         memory_before = _performance_memory_snapshot(runtime)
         performance_started_at = time.perf_counter()
+        _boundary_event(boundary_writer, case, "inference_timer_start")
     scheduler.add_request(request)
+    _boundary_event(boundary_writer, case, "scheduler_admission_after")
     while scheduler.has_requests():
         schedule_started_at = time.perf_counter() if performance else None
         scheduler_output = scheduler.schedule()
+        schedule_elapsed = 0.0
         if schedule_started_at is not None:
-            scheduler_seconds += time.perf_counter() - schedule_started_at
+            schedule_elapsed = time.perf_counter() - schedule_started_at
+            scheduler_seconds += schedule_elapsed
         if scheduler_output.total_num_scheduled_tokens == 0:
             execute_started_at = time.perf_counter() if performance else None
+            observed_before_execute = finished_lifecycle.observed_count
             runner_output = _execute_scheduler_output(runtime, scheduler_output, finished_lifecycle)
             if execute_started_at is not None:
                 model_execute_host_seconds += time.perf_counter() - execute_started_at
+            if finished_lifecycle.observed_count != observed_before_execute:
+                _boundary_event(
+                    boundary_writer,
+                    case,
+                    "finished_event_delivered",
+                    {
+                        "total_num_scheduled_tokens": 0,
+                        "finished_event_observed_count": finished_lifecycle.observed_count,
+                        "finished_event_worker_delivery_count": finished_lifecycle.worker_delivery_count,
+                    },
+                )
             _assert_canonical_zero_token_runner_output(runner_output)
             continue
         is_verification = bool(scheduler_output.scheduled_spec_decode_tokens)
@@ -993,9 +1150,23 @@ def _run_case(
         if request.is_finished():
             raise RuntimeError("A finished request reached another target forward.")
         execute_started_at = time.perf_counter() if performance else None
+        observed_before_execute = finished_lifecycle.observed_count
         execute_output = _execute_scheduler_output(runtime, scheduler_output, finished_lifecycle)
+        execute_elapsed = 0.0
         if execute_started_at is not None:
-            model_execute_host_seconds += time.perf_counter() - execute_started_at
+            execute_elapsed = time.perf_counter() - execute_started_at
+            model_execute_host_seconds += execute_elapsed
+        if finished_lifecycle.observed_count != observed_before_execute:
+            _boundary_event(
+                boundary_writer,
+                case,
+                "finished_event_delivered",
+                {
+                    "total_num_scheduled_tokens": scheduler_output.total_num_scheduled_tokens,
+                    "finished_event_observed_count": finished_lifecycle.observed_count,
+                    "finished_event_worker_delivery_count": finished_lifecycle.worker_delivery_count,
+                },
+            )
         if execute_output is not None:
             raise RuntimeError("PP=1 execution must defer model output to sampling.")
         if mode == "dspark" and is_verification:
@@ -1124,8 +1295,10 @@ def _run_case(
             else None
         )
         model_output = _materialize_model_output(async_output)
+        sample_elapsed = 0.0
         if sample_started_at is not None:
-            sample_materialize_seconds += time.perf_counter() - sample_started_at
+            sample_elapsed = time.perf_counter() - sample_started_at
+            sample_materialize_seconds += sample_elapsed
         proposer_latency_seconds += float(getattr(model_output, "spec_decode_proposer_latency_seconds", 0.0))
         verification_latency_seconds += float(getattr(model_output, "spec_decode_verification_latency_seconds", 0.0))
         raw_tokens = list(model_output.sampled_token_ids[0])
@@ -1146,8 +1319,11 @@ def _run_case(
             consumer_epochs.append(consumer_epoch)
         update_started_at = time.perf_counter() if performance else None
         scheduler.update_from_output(scheduler_output, model_output)
+        update_elapsed = 0.0
         if update_started_at is not None:
-            scheduler_update_seconds += time.perf_counter() - update_started_at
+            update_elapsed = time.perf_counter() - update_started_at
+            scheduler_update_seconds += update_elapsed
+        draft_install_elapsed = 0.0
         if mode == "dspark":
             draft_install_started_at = time.perf_counter() if performance else None
             next_draft_ids = runtime.worker.take_draft_token_ids()
@@ -1155,7 +1331,8 @@ def _run_case(
                 raise RuntimeError("DSpark did not return its canonical draft-token result.")
             scheduler.update_draft_token_ids(next_draft_ids)
             if draft_install_started_at is not None:
-                draft_install_seconds += time.perf_counter() - draft_install_started_at
+                draft_install_elapsed = time.perf_counter() - draft_install_started_at
+                draft_install_seconds += draft_install_elapsed
         committed_tokens = list(request.output_token_ids)[output_length_before:]
         if is_verification:
             verification_committed_tokens_total += len(committed_tokens)
@@ -1163,6 +1340,45 @@ def _run_case(
             assert performance_started_at is not None
             first_commit_seconds = time.perf_counter() - performance_started_at
             first_commit_token_count = len(committed_tokens)
+            _boundary_event(
+                boundary_writer,
+                case,
+                "first_commit",
+                {
+                    "output_length_before": output_length_before,
+                    "output_length_after": len(request.output_token_ids),
+                    "committed_token_count": len(committed_tokens),
+                },
+            )
+        if committed_tokens:
+            last_commit_observation = {
+                "output_length_before": output_length_before,
+                "output_length_after": len(request.output_token_ids),
+                "committed_token_count": len(committed_tokens),
+                "target_step_index": target_forward_count - 1,
+            }
+        host_phase_seconds = {
+            "scheduler": schedule_elapsed,
+            "model_execute": execute_elapsed,
+            "sample_materialize": sample_elapsed,
+            "scheduler_update": update_elapsed,
+            "draft_install": draft_install_elapsed,
+        }
+        if boundary_writer is not None and max(host_phase_seconds.values()) >= PERFORMANCE_SLOW_STEP_SECONDS:
+            _boundary_event(
+                boundary_writer,
+                case,
+                "slow_host_step",
+                {
+                    "target_step_index": target_forward_count - 1,
+                    "is_verification": is_verification,
+                    "scheduled_proposal_length": scheduled_length,
+                    "output_length_before": output_length_before,
+                    "output_length_after": len(request.output_token_ids),
+                    "host_phase_seconds": host_phase_seconds,
+                    **_boundary_async_state(runtime),
+                },
+            )
         if trace_record is not None and (raw_tokens or is_verification):
             expected_greedy_tokens = None
             accepted_prefix_length = None
@@ -1272,14 +1488,65 @@ def _run_case(
 
     if performance:
         assert performance_started_at is not None
+        if last_commit_observation is not None:
+            _boundary_event(
+                boundary_writer,
+                case,
+                "last_commit",
+                last_commit_observation,
+            )
+        end_sync_started_at = time.perf_counter()
+        _boundary_event(boundary_writer, case, "request_end_npu_sync_before")
         runtime.torch.npu.synchronize()
+        _boundary_event(
+            boundary_writer,
+            case,
+            "request_end_npu_sync_after",
+            {
+                "duration_seconds": time.perf_counter() - end_sync_started_at,
+                **_boundary_async_state(runtime),
+            },
+        )
         inference_seconds = time.perf_counter() - performance_started_at
+        _boundary_event(
+            boundary_writer,
+            case,
+            "inference_timer_end",
+            {"inference_latency_seconds": inference_seconds},
+        )
         memory_after = _performance_memory_snapshot(runtime)
     else:
         inference_seconds = 0.0
     if trace_output_index is not None and not output_index_trace_emitted:
         raise RuntimeError(f"Output-index trace {trace_output_index} was not reached by the selected request.")
-    _flush_finished_request(runtime, scheduler, finished_lifecycle)
+    _flush_finished_request(
+        runtime,
+        scheduler,
+        finished_lifecycle,
+        case=case,
+        boundary_writer=boundary_writer,
+    )
+    _boundary_event(
+        boundary_writer,
+        case,
+        "request_final_barrier_before",
+        {"executed": False},
+    )
+    _boundary_event(
+        boundary_writer,
+        case,
+        "request_final_barrier_after",
+        {"executed": False},
+    )
+    _boundary_event(
+        boundary_writer,
+        case,
+        "request_complete",
+        {
+            "next_request_id": next_request_id,
+            **_boundary_async_state(runtime),
+        },
+    )
     after = _counter_snapshot(speculator)
     if case["ignore_eos"] and len(request.output_token_ids) != case["output_cap"]:
         raise RuntimeError("Synthetic ignore_eos request stopped before its fixed output cap.")
@@ -1400,8 +1667,8 @@ def _run_case(
         "state_isolation_verified": True,
         "historical_error_count": 0,
         "manifest_sha256": manifest_sha256,
-        "diagnostic_only": not performance,
-        "performance_validated": performance,
+        "diagnostic_only": not performance or boundary_writer is not None,
+        "performance_validated": performance and boundary_writer is None,
         "performance_provisional": performance,
         "bit_exact_validated": False,
         "performance": performance_metrics,
@@ -1460,44 +1727,62 @@ def _run_plan(
     trace_early_tokens: int = 0,
     trace_result_dir: Path | None = None,
     performance: bool = False,
+    performance_boundary_diagnostics: bool = False,
 ) -> list[dict[str, Any]]:
     scheduler = _build_scheduler(runtime)
     records = []
     current_repeat = None
-    for case in plan:
-        if current_repeat is not None and case["lifecycle_repeat"] != current_repeat:
-            _marker(
-                "DSPARK_M2_5A_LIFECYCLE",
-                {"rank": runtime.launch.rank, "mode": mode, "lifecycle_repeat": current_repeat},
-            )
-            _marker(
-                REAL_DATA_LIFECYCLE_COMPLETED,
-                {"rank": runtime.launch.rank, "mode": mode, "lifecycle_repeat": current_repeat},
-            )
-        current_repeat = case["lifecycle_repeat"]
-        owner = {
-            "rank": runtime.launch.rank,
-            "mode": mode,
-            "case_id": case["case_id"],
-            "lifecycle_repeat": case["lifecycle_repeat"],
-            "request_sequence_index": case["request_sequence_index"],
-            "request_id": _request_id(mode, case),
-        }
-        with rank_trace_writer(trace_result_dir, owner, trace_early_tokens) as writer:
-            record = _run_case(
-                runtime,
-                scheduler,
-                case,
-                mode=mode,
-                profile=profile,
-                manifest_sha256=manifest_hash,
-                trace_first_round=trace_first_round,
-                trace_output_index=trace_output_index,
-                trace_early_tokens=trace_early_tokens,
-                early_trace_writer=writer,
-                performance=performance,
-            )
-        records.append(record)
+    boundary_owner = {
+        "rank": runtime.launch.rank,
+        "mode": mode,
+        "case_id": plan[0]["case_id"] if plan else None,
+    }
+    with performance_boundary_writer(
+        trace_result_dir,
+        boundary_owner,
+        enabled=performance_boundary_diagnostics,
+    ) as boundary_writer:
+        for case_index, case in enumerate(plan):
+            if current_repeat is not None and case["lifecycle_repeat"] != current_repeat:
+                _marker(
+                    "DSPARK_M2_5A_LIFECYCLE",
+                    {"rank": runtime.launch.rank, "mode": mode, "lifecycle_repeat": current_repeat},
+                )
+                _marker(
+                    REAL_DATA_LIFECYCLE_COMPLETED,
+                    {"rank": runtime.launch.rank, "mode": mode, "lifecycle_repeat": current_repeat},
+                )
+            current_repeat = case["lifecycle_repeat"]
+            owner = {
+                "rank": runtime.launch.rank,
+                "mode": mode,
+                "case_id": case["case_id"],
+                "lifecycle_repeat": case["lifecycle_repeat"],
+                "request_sequence_index": case["request_sequence_index"],
+                "request_id": _request_id(mode, case),
+            }
+            previous_request_id = _request_id(mode, plan[case_index - 1]) if case_index else None
+            next_request_id = _request_id(mode, plan[case_index + 1]) if case_index + 1 < len(plan) else None
+            with rank_trace_writer(trace_result_dir, owner, trace_early_tokens) as writer:
+                record = _run_case(
+                    runtime,
+                    scheduler,
+                    case,
+                    mode=mode,
+                    profile=profile,
+                    manifest_sha256=manifest_hash,
+                    trace_first_round=trace_first_round,
+                    trace_output_index=trace_output_index,
+                    trace_early_tokens=trace_early_tokens,
+                    early_trace_writer=writer,
+                    performance=performance,
+                    boundary_writer=boundary_writer,
+                    previous_request_id=previous_request_id,
+                    next_request_id=next_request_id,
+                )
+            records.append(record)
+        if boundary_writer is not None:
+            boundary_writer.finish(len(plan))
     if current_repeat is not None:
         _marker(
             "DSPARK_M2_5A_LIFECYCLE",
@@ -1566,6 +1851,7 @@ def _settings_and_matrix() -> tuple[
     int,
     _ForensicTraceConfig,
     _PerformanceConfig,
+    _PerformanceBoundaryDiagnosticConfig,
 ]:
     manifest_value = os.environ.get("DSPARK_M25A_MANIFEST")
     if not manifest_value:
@@ -1597,6 +1883,10 @@ def _settings_and_matrix() -> tuple[
         trace_config,
         lifecycle_repeat,
     )
+    performance_boundary_diagnostics = _performance_boundary_diagnostic_config(
+        os.environ,
+        performance_config,
+    )
     plan = _build_performance_plan(plan, performance_config)
     return (
         settings,
@@ -1609,6 +1899,7 @@ def _settings_and_matrix() -> tuple[
         kv_cache_bytes,
         trace_config,
         performance_config,
+        performance_boundary_diagnostics,
     )
 
 
@@ -1624,6 +1915,7 @@ def test_dspark_single_request_realdata_npu() -> None:
         kv_cache_bytes,
         trace_config,
         performance_config,
+        performance_boundary_diagnostics,
     ) = _settings_and_matrix()
     selected_case_ids = list(dict.fromkeys(str(case["case_id"]) for case in plan))
     artifact_identity = _performance_artifact_identity(settings, manifest_hash) if performance_config.enabled else None
@@ -1653,6 +1945,7 @@ def test_dspark_single_request_realdata_npu() -> None:
             "warmup_repeats": performance_config.warmup_repeats,
             "measured_repeats": performance_config.measured_repeats,
             "case_ids": selected_case_ids,
+            "boundary_diagnostics": performance_boundary_diagnostics.enabled,
         },
     )
     records: list[dict[str, Any]] = []
@@ -1684,6 +1977,7 @@ def test_dspark_single_request_realdata_npu() -> None:
                     trace_early_tokens=trace_config.early_tokens,
                     trace_result_dir=result_dir,
                     performance=performance_config.enabled,
+                    performance_boundary_diagnostics=(performance_boundary_diagnostics.enabled),
                 )
             except BaseException as exc:
                 target_primary_error = exc
@@ -1710,6 +2004,7 @@ def test_dspark_single_request_realdata_npu() -> None:
                     trace_early_tokens=trace_config.early_tokens,
                     trace_result_dir=result_dir,
                     performance=performance_config.enabled,
+                    performance_boundary_diagnostics=(performance_boundary_diagnostics.enabled),
                 )
                 return True
 
@@ -1744,8 +2039,9 @@ def test_dspark_single_request_realdata_npu() -> None:
             "artifact": str(artifact_path),
             "artifact_sha256": sha256_file(artifact_path),
             "phase_timings": phase_timings,
-            "performance_validated": performance_config.enabled,
+            "performance_validated": (performance_config.enabled and not performance_boundary_diagnostics.enabled),
             "performance_provisional": performance_config.enabled,
+            "performance_boundary_diagnostics": (performance_boundary_diagnostics.enabled),
             "exact_token_cross_mode_blocking": not performance_config.enabled,
             "performance_protocol": ("per_case_steady_state_v1" if performance_config.enabled else None),
             "performance_warmup_repeats": performance_config.warmup_repeats,

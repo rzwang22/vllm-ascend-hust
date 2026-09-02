@@ -1445,6 +1445,13 @@ def _write_steady_state_markdown(path: Path, pairs: Sequence[Mapping[str, Any]])
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _formal_performance_gate_status(summary: Mapping[str, Any]) -> str:
+    gate = summary["performance_stability_gate"]
+    if not gate["applicable"]:
+        return "NOT_APPLICABLE"
+    return "PASS" if gate["passed"] else "FAIL"
+
+
 def main() -> int:
     args = _parse_args()
     runs = [_parse_run(value) for value in args.run]
@@ -1494,7 +1501,14 @@ def main() -> int:
         ),
         "performance_provisional": True,
         "exact_token_cross_mode_blocking": False,
+        "report_generation": "PASS",
+        "formal_performance_gate": _formal_performance_gate_status(summary),
     }
+    print("M2_5A_PERFORMANCE_REPORT_GENERATION_PASS=" + json.dumps(marker, sort_keys=True))
+    formal_marker = "M2_5A_FORMAL_PERFORMANCE_GATE_" + marker["formal_performance_gate"]
+    print(formal_marker + "=" + json.dumps(marker, sort_keys=True))
+    # Backward-compatible marker: this names report generation only. The
+    # explicit formal-gate marker above is authoritative for publishability.
     print("M2_5A_PERFORMANCE_SUMMARY_PASS=" + json.dumps(marker, sort_keys=True))
     return 0
 
