@@ -1237,17 +1237,134 @@ def test_steady_state_summary_excludes_warmup_and_reports_per_case_statistics(
     assert target_decode["min"] == 1.9
     assert target_decode["max"] == 2.1
     assert target_decode["coefficient_of_variation"] == pytest.approx(0.040824829)
+    assert target_decode["population_coefficient_of_variation"] == pytest.approx(0.040824829)
+    assert target_decode["sample_coefficient_of_variation"] == pytest.approx(0.05)
     assert first["decode_speedup"] == 2.0
     assert first["dspark"]["average_accepted_candidate_tokens_per_verification"] == 4.0
     assert len({repeat["request_id"] for repeat in first["dspark"]["measured_repeats"]}) == 3
 
     csv_path = tmp_path / "steady.csv"
     markdown_path = tmp_path / "steady.md"
+    repeat_path = tmp_path / "repeats.csv"
     performance_summary._write_steady_state_csv(csv_path, summary["steady_state_case_performance"])
     performance_summary._write_steady_state_markdown(markdown_path, summary["steady_state_case_performance"])
+    performance_summary._write_repeat_csv(repeat_path, summary["steady_state_case_performance"])
     assert len(csv_path.read_text(encoding="utf-8").splitlines()) == 4
     assert len(markdown_path.read_text(encoding="utf-8").splitlines()) == 5
     assert "target_decode_cv" in csv_path.read_text(encoding="utf-8").splitlines()[0]
+    repeat_rows = repeat_path.read_text(encoding="utf-8").splitlines()
+    assert len(repeat_rows) == 25
+    assert "decode_seconds_per_target_forward" in repeat_rows[0]
+    assert summary["work_normalized_telemetry"] == {
+        "additive_diagnostics_only": True,
+        "changes_formal_performance_gate": False,
+        "statistical_sample": "independent measured request repeat",
+        "tp_timing_source": "maximum rank-local value for each timer in the TP group",
+        "warmup_included_in_measured_statistics": False,
+        "normalization_denominators": {
+            "decode_seconds_per_output_token": "decode_output_token_count",
+            "decode_seconds_per_target_forward": "target_forward_count",
+            "model_execute_host_seconds_per_target_forward": "target_forward_count",
+            "decode_seconds_per_verification": "verification_count",
+            "proposer_seconds_per_verification": "verification_count",
+            "verification_seconds_per_verification": "verification_count",
+            "accepted_candidate_tokens_per_verification": "verification_count",
+            "effective_committed_tokens_per_verification": "verification_count",
+        },
+        "phase_timers_additive": False,
+        "unavailable_value": None,
+    }
+
+
+def test_work_normalized_statistics_retain_slow_repeats_and_explain_work_count_variance(
+    frozen_assets: Path,
+    tmp_path: Path,
+) -> None:
+    target, dspark = _steady_state_performance_result_dirs(tmp_path, frozen_assets)
+    verification_counts = (100, 200, 400)
+    decode_seconds = (50.0, 100.0, 200.0)
+    accepted_counts = (400, 400, 400)
+    verification_commits = (500, 600, 800)
+    for rank in range(2):
+        path = dspark / f"rank-{rank}.jsonl"
+        records = read_jsonl(path)
+        for record, verification_count, decode, accepted, committed in zip(
+            records[9:12],
+            verification_counts,
+            decode_seconds,
+            accepted_counts,
+            verification_commits,
+        ):
+            record["target_forward_count"] = verification_count + 1
+            record["verification_count"] = verification_count
+            record["proposal_generated_count"] = verification_count
+            record["proposal_installed_count"] = verification_count
+            record["proposal_consumed_count"] = verification_count
+            performance = record["performance"]
+            performance["decode_latency_seconds"] = decode
+            performance["inference_latency_seconds"] = performance["prefill_latency_seconds"] + decode
+            performance["model_execute_host_seconds"] = 0.4 * verification_count
+            performance["spec_decode_proposer_latency_seconds"] = 0.1 * verification_count
+            performance["spec_decode_verification_latency_seconds"] = 0.2 * verification_count
+            performance["scheduled_draft_token_count"] = 5 * verification_count
+            performance["accepted_candidate_tokens_total"] = accepted
+            performance["average_accepted_candidate_tokens_per_verification"] = accepted / verification_count
+            performance["replacement_tokens_total"] = verification_count
+            performance["bonus_tokens_total"] = 0
+            performance["verification_committed_tokens_total"] = committed
+            performance["effective_committed_tokens_per_verification"] = committed / verification_count
+        _rewrite_results(path, records)
+
+    summary = summarize_performance(
+        frozen_assets,
+        [("target_only", target), ("dspark", dspark)],
+        expected_ranks=2,
+        min_runs_per_mode=1,
+    )
+
+    case = summary["steady_state_case_performance"][0]["cases"][2]["dspark"]
+    assert [repeat["decode_latency_seconds"] for repeat in case["measured_repeats"]] == list(decode_seconds)
+    assert [repeat["verification_count"] for repeat in case["measured_repeats"]] == list(verification_counts)
+    assert [repeat["decode_seconds_per_verification"] for repeat in case["measured_repeats"]] == [0.5] * 3
+    assert case["statistics"]["decode_latency_seconds"]["max"] == 200.0
+    assert case["work_count_statistics"]["verification_count"]["sample_coefficient_of_variation"] > 0
+    assert (
+        case["work_normalized_statistics"]["decode_seconds_per_verification"]["sample_coefficient_of_variation"] == 0.0
+    )
+    assert case["correlations"]["decode_latency_vs_verification_count"] == pytest.approx(1.0)
+    assert case["correlations"]["decode_latency_vs_accepted_candidate_tokens_per_verification"] < 0
+    assert case["work_normalized_execution_stability"]["changes_formal_gate"] is False
+
+
+def test_work_normalized_ratios_use_tp_critical_path_and_handle_unavailable_values(
+    frozen_assets: Path,
+    tmp_path: Path,
+) -> None:
+    target, dspark = _steady_state_performance_result_dirs(tmp_path, frozen_assets)
+    path = dspark / "rank-1.jsonl"
+    records = read_jsonl(path)
+    records[1]["performance"]["decode_latency_seconds"] = 9.5
+    records[1]["performance"]["inference_latency_seconds"] = 10.0
+    _rewrite_results(path, records)
+
+    summary = summarize_performance(
+        frozen_assets,
+        [("target_only", target), ("dspark", dspark)],
+        expected_ranks=2,
+        min_runs_per_mode=1,
+    )
+
+    first = summary["steady_state_case_performance"][0]["cases"][0]
+    dspark_repeat = first["dspark"]["measured_repeats"][0]
+    target_repeat = first["target_only"]["measured_repeats"][0]
+    assert dspark_repeat["decode_latency_seconds"] == 9.5
+    assert dspark_repeat["decode_seconds_per_verification"] == 9.5
+    assert target_repeat["decode_seconds_per_verification"] is None
+    assert target_repeat["accepted_candidate_tokens_per_verification"] is None
+    assert first["target_only"]["correlations"]["decode_latency_vs_target_forward_count"] is None
+    assert performance_summary._safe_ratio(1.0, 0) is None
+    assert performance_summary._pearson_correlation([1.0], [1.0]) is None
+    assert performance_summary._pearson_correlation([1.0, 2.0], [1.0, 1.0]) is None
 
 
 @pytest.mark.parametrize(

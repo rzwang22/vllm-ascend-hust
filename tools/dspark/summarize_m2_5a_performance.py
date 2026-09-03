@@ -147,6 +147,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--output-case-markdown", type=Path)
     parser.add_argument("--output-steady-state-csv", type=Path)
     parser.add_argument("--output-steady-state-markdown", type=Path)
+    parser.add_argument("--output-repeat-csv", type=Path)
     return parser.parse_args()
 
 
@@ -677,25 +678,102 @@ def _percentile(values: Sequence[float], quantile: float) -> float:
     return ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
 
 
-def _statistics(values: Sequence[float]) -> dict[str, float]:
+def _statistics(values: Sequence[float]) -> dict[str, float | None]:
     mean = statistics.mean(values)
-    standard_deviation = statistics.pstdev(values)
+    population_standard_deviation = statistics.pstdev(values)
+    sample_standard_deviation = statistics.stdev(values) if len(values) > 1 else None
     return {
         "min": min(values),
         "max": max(values),
         "mean": mean,
         "median": statistics.median(values),
-        "standard_deviation": standard_deviation,
-        "coefficient_of_variation": standard_deviation / mean if mean else 0.0,
+        # Preserve the original population fields for existing consumers.
+        "standard_deviation": population_standard_deviation,
+        "coefficient_of_variation": population_standard_deviation / mean if mean else 0.0,
+        "population_standard_deviation": population_standard_deviation,
+        "population_coefficient_of_variation": population_standard_deviation / mean if mean else None,
+        "sample_standard_deviation": sample_standard_deviation,
+        "sample_coefficient_of_variation": (
+            sample_standard_deviation / mean if sample_standard_deviation is not None and mean else None
+        ),
         "p50": _percentile(values, 0.50),
         "p90": _percentile(values, 0.90),
     }
 
 
-def _nullable_statistics(values: Sequence[float | None]) -> dict[str, float] | None:
+def _nullable_statistics(values: Sequence[float | None]) -> dict[str, float | None] | None:
     if any(value is None for value in values):
         return None
     return _statistics([float(value) for value in values if value is not None])
+
+
+def _safe_ratio(numerator: int | float | None, denominator: int | float | None) -> float | None:
+    if numerator is None or denominator is None or denominator == 0:
+        return None
+    return float(numerator) / float(denominator)
+
+
+def _pearson_correlation(left: Sequence[float | None], right: Sequence[float | None]) -> float | None:
+    if len(left) != len(right) or len(left) < 2 or any(value is None for value in (*left, *right)):
+        return None
+    left_values = [float(value) for value in left if value is not None]
+    right_values = [float(value) for value in right if value is not None]
+    left_mean = statistics.mean(left_values)
+    right_mean = statistics.mean(right_values)
+    left_delta = [value - left_mean for value in left_values]
+    right_delta = [value - right_mean for value in right_values]
+    left_norm = math.sqrt(sum(value * value for value in left_delta))
+    right_norm = math.sqrt(sum(value * value for value in right_delta))
+    if left_norm == 0 or right_norm == 0:
+        return None
+    return sum(left_value * right_value for left_value, right_value in zip(left_delta, right_delta)) / (
+        left_norm * right_norm
+    )
+
+
+WORK_NORMALIZED_FIELDS = (
+    "decode_seconds_per_output_token",
+    "decode_seconds_per_target_forward",
+    "model_execute_host_seconds_per_target_forward",
+    "decode_seconds_per_verification",
+    "proposer_seconds_per_verification",
+    "verification_seconds_per_verification",
+    "accepted_candidate_tokens_per_verification",
+    "effective_committed_tokens_per_verification",
+)
+
+
+def _repeat_work_metrics(record: Mapping[str, Any], mode: str) -> dict[str, float | None]:
+    performance = record["performance"]
+    target_forward_count = int(record["target_forward_count"])
+    verification_count = int(record["verification_count"])
+    acceptance = _case_acceptance_metrics(record)
+    decode_output_tokens = int(performance["decode_output_token_count"])
+    is_dspark = mode == "dspark"
+    return {
+        "decode_seconds_per_output_token": _safe_ratio(performance["decode_latency_seconds"], decode_output_tokens),
+        "decode_seconds_per_target_forward": _safe_ratio(performance["decode_latency_seconds"], target_forward_count),
+        "model_execute_host_seconds_per_target_forward": _safe_ratio(
+            performance["model_execute_host_seconds"], target_forward_count
+        ),
+        "decode_seconds_per_verification": (
+            _safe_ratio(performance["decode_latency_seconds"], verification_count) if is_dspark else None
+        ),
+        "proposer_seconds_per_verification": (
+            _safe_ratio(performance["spec_decode_proposer_latency_seconds"], verification_count) if is_dspark else None
+        ),
+        "verification_seconds_per_verification": (
+            _safe_ratio(performance["spec_decode_verification_latency_seconds"], verification_count)
+            if is_dspark
+            else None
+        ),
+        "accepted_candidate_tokens_per_verification": (
+            _safe_ratio(acceptance["accepted"], verification_count) if is_dspark else None
+        ),
+        "effective_committed_tokens_per_verification": (
+            _safe_ratio(acceptance["verification_committed"], verification_count) if is_dspark else None
+        ),
+    }
 
 
 STEADY_STATE_METRICS = (
@@ -724,49 +802,119 @@ def _records_by_case(records: Sequence[Mapping[str, Any]]) -> dict[str, list[Map
     return grouped
 
 
+def _repeat_performance_row(record: Mapping[str, Any], mode: str) -> dict[str, Any]:
+    return {
+        "repeat_index": record["performance_repeat_index"],
+        "request_id": record["request_id"],
+        **{metric: record["performance"][metric] for metric in STEADY_STATE_METRICS},
+        "target_forward_count": record["target_forward_count"],
+        "verification_count": record["verification_count"],
+        "proposal_generated_count": record["proposal_generated_count"],
+        "proposal_installed_count": record["proposal_installed_count"],
+        "proposal_consumed_count": record["proposal_consumed_count"],
+        **_repeat_work_metrics(record, mode),
+    }
+
+
+def _sample_cv(statistics_value: Mapping[str, float | None] | None) -> float | None:
+    return None if statistics_value is None else statistics_value["sample_coefficient_of_variation"]
+
+
+def _diagnostic_stability(sample_cvs: Sequence[float | None]) -> dict[str, Any]:
+    available = [value for value in sample_cvs if value is not None]
+    maximum = max(available) if available else None
+    return {
+        "classification": _stability_classification(maximum) if maximum is not None else "UNAVAILABLE",
+        "maximum_sample_coefficient_of_variation": maximum,
+        "diagnostic_only": True,
+        "changes_formal_gate": False,
+    }
+
+
 def _steady_state_mode_case(
     measured: Sequence[Mapping[str, Any]],
     warmups: Sequence[Mapping[str, Any]],
+    mode: str,
 ) -> dict[str, Any]:
     aggregate = _aggregate_case_records(measured)
+    repeat_rows = [_repeat_performance_row(record, mode) for record in measured]
+    warmup_rows = [_repeat_performance_row(record, mode) for record in warmups]
     statistics_by_metric = {
         metric: _statistics([float(record["performance"][metric]) for record in measured])
         for metric in STEADY_STATE_METRICS
     }
+    work_normalized_statistics = {
+        metric: _nullable_statistics([row[metric] for row in repeat_rows]) for metric in WORK_NORMALIZED_FIELDS
+    }
+    count_statistics = {
+        "target_forward_count": _statistics([float(record["target_forward_count"]) for record in measured]),
+        "verification_count": (
+            _statistics([float(record["verification_count"]) for record in measured]) if mode == "dspark" else None
+        ),
+    }
+    decode_values = [float(record["performance"]["decode_latency_seconds"]) for record in measured]
+    target_forward_values = [float(record["target_forward_count"]) for record in measured]
+    verification_values = [float(record["verification_count"]) for record in measured]
+    accepted_values = [row["accepted_candidate_tokens_per_verification"] for row in repeat_rows]
     stability_cv = max(
         statistics_by_metric["decode_latency_seconds"]["coefficient_of_variation"],
         statistics_by_metric["inference_latency_seconds"]["coefficient_of_variation"],
     )
-    return {
-        "cold_first_use": (
-            {
-                "repeat_index": warmups[0]["performance_repeat_index"],
-                **{metric: warmups[0]["performance"][metric] for metric in STEADY_STATE_METRICS},
-            }
-            if warmups
-            else None
+    work_stability_fields = (
+        "decode_seconds_per_target_forward",
+        "model_execute_host_seconds_per_target_forward",
+        *(
+            (
+                "decode_seconds_per_verification",
+                "proposer_seconds_per_verification",
+                "verification_seconds_per_verification",
+            )
+            if mode == "dspark"
+            else ()
         ),
-        "warmup_repeats": [
-            {
-                "repeat_index": record["performance_repeat_index"],
-                **{metric: record["performance"][metric] for metric in STEADY_STATE_METRICS},
-            }
-            for record in warmups
-        ],
-        "measured_repeats": [
-            {
-                "repeat_index": record["performance_repeat_index"],
-                "request_id": record["request_id"],
-                **{metric: record["performance"][metric] for metric in STEADY_STATE_METRICS},
-                "target_forward_count": record["target_forward_count"],
-                "verification_count": record["verification_count"],
-                "proposal_generated_count": record["proposal_generated_count"],
-                "proposal_installed_count": record["proposal_installed_count"],
-                "proposal_consumed_count": record["proposal_consumed_count"],
-            }
-            for record in measured
-        ],
+    )
+    return {
+        "cold_first_use": warmup_rows[0] if warmup_rows else None,
+        "warmup_repeats": warmup_rows,
+        "measured_repeats": repeat_rows,
         "statistics": statistics_by_metric,
+        "work_normalized_statistics": work_normalized_statistics,
+        "work_count_statistics": count_statistics,
+        "raw_latency_stability": {
+            "classification": _stability_classification(stability_cv),
+            "decode_population_coefficient_of_variation": statistics_by_metric["decode_latency_seconds"][
+                "population_coefficient_of_variation"
+            ],
+            "decode_sample_coefficient_of_variation": statistics_by_metric["decode_latency_seconds"][
+                "sample_coefficient_of_variation"
+            ],
+            "formal_gate_basis": True,
+        },
+        "acceptance_path_variability": {
+            "target_forward_count_sample_coefficient_of_variation": _sample_cv(
+                count_statistics["target_forward_count"]
+            ),
+            "verification_count_sample_coefficient_of_variation": _sample_cv(count_statistics["verification_count"]),
+            "accepted_candidate_tokens_per_verification_sample_coefficient_of_variation": _sample_cv(
+                work_normalized_statistics["accepted_candidate_tokens_per_verification"]
+            ),
+            "effective_committed_tokens_per_verification_sample_coefficient_of_variation": _sample_cv(
+                work_normalized_statistics["effective_committed_tokens_per_verification"]
+            ),
+            "diagnostic_only": True,
+        },
+        "work_normalized_execution_stability": _diagnostic_stability(
+            [_sample_cv(work_normalized_statistics[field]) for field in work_stability_fields]
+        ),
+        "correlations": {
+            "decode_latency_vs_target_forward_count": _pearson_correlation(decode_values, target_forward_values),
+            "decode_latency_vs_verification_count": (
+                _pearson_correlation(decode_values, verification_values) if mode == "dspark" else None
+            ),
+            "decode_latency_vs_accepted_candidate_tokens_per_verification": (
+                _pearson_correlation(decode_values, accepted_values) if mode == "dspark" else None
+            ),
+        },
         "accepted_candidate_tokens_total": aggregate["accepted_candidate_tokens_total"],
         "average_accepted_candidate_tokens_per_verification": aggregate[
             "average_accepted_candidate_tokens_per_verification"
@@ -832,8 +980,8 @@ def _steady_state_case_performance(
             ):
                 if target_record[field] != dspark_record[field]:
                     raise ValueError(f"Steady-state matched case {case_id} differs for {field}.")
-        target_case = _steady_state_mode_case(target_records, target_case_warmups)
-        dspark_case = _steady_state_mode_case(dspark_records, dspark_case_warmups)
+        target_case = _steady_state_mode_case(target_records, target_case_warmups, "target_only")
+        dspark_case = _steady_state_mode_case(dspark_records, dspark_case_warmups, "dspark")
         rows.append(
             {
                 "case_id": case_id,
@@ -1159,6 +1307,25 @@ def summarize_performance(
             },
             "metric": "max(decode_latency_cv, inference_latency_cv)",
         },
+        "work_normalized_telemetry": {
+            "additive_diagnostics_only": True,
+            "changes_formal_performance_gate": False,
+            "statistical_sample": "independent measured request repeat",
+            "tp_timing_source": "maximum rank-local value for each timer in the TP group",
+            "warmup_included_in_measured_statistics": False,
+            "normalization_denominators": {
+                "decode_seconds_per_output_token": "decode_output_token_count",
+                "decode_seconds_per_target_forward": "target_forward_count",
+                "model_execute_host_seconds_per_target_forward": "target_forward_count",
+                "decode_seconds_per_verification": "verification_count",
+                "proposer_seconds_per_verification": "verification_count",
+                "verification_seconds_per_verification": "verification_count",
+                "accepted_candidate_tokens_per_verification": "verification_count",
+                "effective_committed_tokens_per_verification": "verification_count",
+            },
+            "phase_timers_additive": False,
+            "unavailable_value": None,
+        },
         "timer_relationships": TIMER_RELATIONSHIPS,
         "historical_error_scan": {"roots": [str(path.resolve()) for path in error_log_roots], "matches": {}},
     }
@@ -1336,6 +1503,25 @@ STEADY_STATE_CSV_FIELDS = (
     "target_stability",
     "dspark_stability",
     "tp8_consistent",
+    # Additive P0.6A diagnostics follow the legacy column prefix.
+    "target_decode_sample_cv",
+    "target_forward_count_sample_cv",
+    "target_decode_per_target_forward_sample_cv",
+    "target_model_execute_per_target_forward_sample_cv",
+    "dspark_decode_sample_cv",
+    "dspark_target_forward_count_sample_cv",
+    "dspark_verification_count_sample_cv",
+    "dspark_accepted_candidates_per_verification_sample_cv",
+    "dspark_effective_committed_per_verification_sample_cv",
+    "dspark_decode_per_target_forward_sample_cv",
+    "dspark_decode_per_verification_sample_cv",
+    "dspark_proposer_per_verification_sample_cv",
+    "dspark_verification_per_verification_sample_cv",
+    "dspark_decode_vs_target_forward_count_pearson",
+    "dspark_decode_vs_verification_count_pearson",
+    "dspark_decode_vs_accepted_candidates_per_verification_pearson",
+    "target_work_normalized_stability",
+    "dspark_work_normalized_stability",
 )
 
 
@@ -1344,6 +1530,10 @@ def _steady_state_csv_row(pair_index: int, case: Mapping[str, Any]) -> dict[str,
     dspark = case["dspark"]
     target_decode = target["statistics"]["decode_latency_seconds"]
     dspark_decode = dspark["statistics"]["decode_latency_seconds"]
+    target_normalized = target["work_normalized_statistics"]
+    dspark_normalized = dspark["work_normalized_statistics"]
+    target_counts = target["work_count_statistics"]
+    dspark_counts = dspark["work_count_statistics"]
     return {
         "pair_index": pair_index,
         "case_id": case["case_id"],
@@ -1363,16 +1553,50 @@ def _steady_state_csv_row(pair_index: int, case: Mapping[str, Any]) -> dict[str,
         "target_decode_max_seconds": target_decode["max"],
         "target_decode_standard_deviation": target_decode["standard_deviation"],
         "target_decode_cv": target_decode["coefficient_of_variation"],
+        "target_decode_sample_cv": target_decode["sample_coefficient_of_variation"],
         "target_decode_p50_seconds": target_decode["p50"],
         "target_decode_p90_seconds": target_decode["p90"],
+        "target_forward_count_sample_cv": _sample_cv(target_counts["target_forward_count"]),
+        "target_decode_per_target_forward_sample_cv": _sample_cv(
+            target_normalized["decode_seconds_per_target_forward"]
+        ),
+        "target_model_execute_per_target_forward_sample_cv": _sample_cv(
+            target_normalized["model_execute_host_seconds_per_target_forward"]
+        ),
         "dspark_decode_median_seconds": dspark_decode["median"],
         "dspark_decode_mean_seconds": dspark_decode["mean"],
         "dspark_decode_min_seconds": dspark_decode["min"],
         "dspark_decode_max_seconds": dspark_decode["max"],
         "dspark_decode_standard_deviation": dspark_decode["standard_deviation"],
         "dspark_decode_cv": dspark_decode["coefficient_of_variation"],
+        "dspark_decode_sample_cv": dspark_decode["sample_coefficient_of_variation"],
         "dspark_decode_p50_seconds": dspark_decode["p50"],
         "dspark_decode_p90_seconds": dspark_decode["p90"],
+        "dspark_target_forward_count_sample_cv": _sample_cv(dspark_counts["target_forward_count"]),
+        "dspark_verification_count_sample_cv": _sample_cv(dspark_counts["verification_count"]),
+        "dspark_accepted_candidates_per_verification_sample_cv": _sample_cv(
+            dspark_normalized["accepted_candidate_tokens_per_verification"]
+        ),
+        "dspark_effective_committed_per_verification_sample_cv": _sample_cv(
+            dspark_normalized["effective_committed_tokens_per_verification"]
+        ),
+        "dspark_decode_per_target_forward_sample_cv": _sample_cv(
+            dspark_normalized["decode_seconds_per_target_forward"]
+        ),
+        "dspark_decode_per_verification_sample_cv": _sample_cv(dspark_normalized["decode_seconds_per_verification"]),
+        "dspark_proposer_per_verification_sample_cv": _sample_cv(
+            dspark_normalized["proposer_seconds_per_verification"]
+        ),
+        "dspark_verification_per_verification_sample_cv": _sample_cv(
+            dspark_normalized["verification_seconds_per_verification"]
+        ),
+        "dspark_decode_vs_target_forward_count_pearson": dspark["correlations"][
+            "decode_latency_vs_target_forward_count"
+        ],
+        "dspark_decode_vs_verification_count_pearson": dspark["correlations"]["decode_latency_vs_verification_count"],
+        "dspark_decode_vs_accepted_candidates_per_verification_pearson": dspark["correlations"][
+            "decode_latency_vs_accepted_candidate_tokens_per_verification"
+        ],
         "decode_speedup": case["decode_speedup"],
         "inference_speedup": case["inference_speedup"],
         "accepted_candidate_tokens_per_verification": dspark["average_accepted_candidate_tokens_per_verification"],
@@ -1381,6 +1605,8 @@ def _steady_state_csv_row(pair_index: int, case: Mapping[str, Any]) -> dict[str,
         "verification_median_seconds": dspark["statistics"]["spec_decode_verification_latency_seconds"]["median"],
         "target_stability": target["stability"],
         "dspark_stability": dspark["stability"],
+        "target_work_normalized_stability": target["work_normalized_execution_stability"]["classification"],
+        "dspark_work_normalized_stability": dspark["work_normalized_execution_stability"]["classification"],
         "tp8_consistent": case["tp8_consistent"],
     }
 
@@ -1396,6 +1622,62 @@ def _write_steady_state_csv(path: Path, pairs: Sequence[Mapping[str, Any]]) -> N
                 writer.writerow({field: row[field] for field in STEADY_STATE_CSV_FIELDS})
 
 
+REPEAT_CSV_FIELDS = (
+    "pair_index",
+    "case_id",
+    "profile_case_index",
+    "mode",
+    "repeat_kind",
+    "repeat_index",
+    "included_in_measured_statistics",
+    "request_id",
+    "prompt_token_count",
+    "output_token_count",
+    *STEADY_STATE_METRICS,
+    "target_forward_count",
+    "verification_count",
+    "proposal_generated_count",
+    "proposal_installed_count",
+    "proposal_consumed_count",
+    *WORK_NORMALIZED_FIELDS,
+    "tp8_consistent",
+)
+
+
+def _repeat_csv_rows(pairs: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for pair in pairs:
+        for case in pair["cases"]:
+            for mode in MODES:
+                mode_case = case[mode]
+                for repeat_kind, key in (("warmup", "warmup_repeats"), ("measured", "measured_repeats")):
+                    for repeat in mode_case[key]:
+                        rows.append(
+                            {
+                                "pair_index": pair["pair_index"],
+                                "case_id": case["case_id"],
+                                "profile_case_index": case["profile_case_index"],
+                                "mode": mode,
+                                "repeat_kind": repeat_kind,
+                                "included_in_measured_statistics": repeat_kind == "measured",
+                                "prompt_token_count": case["prompt_token_count"],
+                                "output_token_count": case["output_token_count"],
+                                "tp8_consistent": case["tp8_consistent"],
+                                **repeat,
+                            }
+                        )
+    return rows
+
+
+def _write_repeat_csv(path: Path, pairs: Sequence[Mapping[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=REPEAT_CSV_FIELDS)
+        writer.writeheader()
+        for row in _repeat_csv_rows(pairs):
+            writer.writerow({field: row[field] for field in REPEAT_CSV_FIELDS})
+
+
 def _write_steady_state_markdown(path: Path, pairs: Sequence[Mapping[str, Any]]) -> None:
     columns = (
         "case",
@@ -1405,7 +1687,11 @@ def _write_steady_state_markdown(path: Path, pairs: Sequence[Mapping[str, Any]])
         "DSpark median s",
         "decode speedup",
         "target CV",
+        "target sample CV",
         "DSpark CV",
+        "DSpark sample CV",
+        "DSpark ver count CV",
+        "DSpark decode/ver CV",
         "accepted/ver",
         "committed/ver",
         "stability",
@@ -1428,7 +1714,11 @@ def _write_steady_state_markdown(path: Path, pairs: Sequence[Mapping[str, Any]])
                 dspark_decode["median"],
                 case["decode_speedup"],
                 target_decode["coefficient_of_variation"],
+                target_decode["sample_coefficient_of_variation"],
                 dspark_decode["coefficient_of_variation"],
+                dspark_decode["sample_coefficient_of_variation"],
+                _sample_cv(dspark["work_count_statistics"]["verification_count"]),
+                _sample_cv(dspark["work_normalized_statistics"]["decode_seconds_per_verification"]),
                 dspark["average_accepted_candidate_tokens_per_verification"],
                 dspark["effective_committed_tokens_per_verification"],
                 f"{target['stability']}/{dspark['stability']}",
@@ -1484,6 +1774,11 @@ def main() -> int:
             args.output_steady_state_markdown.expanduser().resolve(),
             summary["steady_state_case_performance"],
         )
+    if args.output_repeat_csv is not None:
+        _write_repeat_csv(
+            args.output_repeat_csv.expanduser().resolve(),
+            summary["steady_state_case_performance"],
+        )
     marker = {
         "runs": len(summary["runs"]),
         "speedup": summary["speedup"],
@@ -1499,6 +1794,7 @@ def main() -> int:
         "output_steady_state_markdown": (
             str(args.output_steady_state_markdown.expanduser().resolve()) if args.output_steady_state_markdown else None
         ),
+        "output_repeat_csv": (str(args.output_repeat_csv.expanduser().resolve()) if args.output_repeat_csv else None),
         "performance_provisional": True,
         "exact_token_cross_mode_blocking": False,
         "report_generation": "PASS",

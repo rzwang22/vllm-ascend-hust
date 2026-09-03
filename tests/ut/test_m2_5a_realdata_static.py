@@ -182,6 +182,29 @@ def test_result_validator_enforces_exact_tokens_usage_and_rank_consistency() -> 
     assert "M2_5A_EXACT_TOKEN_GATE_PASS=" in source
 
 
+def test_performance_summarizer_adds_work_normalized_diagnostics_without_redefining_gate() -> None:
+    source = PERFORMANCE_SUMMARIZER.read_text(encoding="utf-8")
+
+    for field in (
+        '"decode_seconds_per_output_token"',
+        '"decode_seconds_per_target_forward"',
+        '"model_execute_host_seconds_per_target_forward"',
+        '"decode_seconds_per_verification"',
+        '"proposer_seconds_per_verification"',
+        '"verification_seconds_per_verification"',
+        '"accepted_candidate_tokens_per_verification"',
+        '"effective_committed_tokens_per_verification"',
+        '"raw_latency_stability"',
+        '"acceptance_path_variability"',
+        '"work_normalized_execution_stability"',
+    ):
+        assert field in source
+    assert '"changes_formal_performance_gate": False' in source
+    assert '"phase_timers_additive": False' in source
+    assert '"metric": "max(decode_latency_cv, inference_latency_cv)"' in source
+    assert 'parser.add_argument("--output-repeat-csv", type=Path)' in source
+
+
 def test_r6b_forensic_trace_is_targeted_and_disabled_by_default() -> None:
     source = HARNESS.read_text(encoding="utf-8")
 
