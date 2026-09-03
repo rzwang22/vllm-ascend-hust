@@ -1067,6 +1067,7 @@ def _run_case(
     memory_before: dict[str, int] | None = None
     memory_after: dict[str, int] | None = None
     terminal_partial_commit = False
+    terminal_truncated_candidate_tokens = 0
     consumer_epochs: list[int] = []
     finished_lifecycle = _FinishedRequestLifecycle(request_id)
     last_commit_observation: dict[str, Any] | None = None
@@ -1383,12 +1384,20 @@ def _run_case(
             "scheduler_update": update_elapsed,
             "draft_install": draft_install_elapsed,
         }
-        if boundary_writer is not None and max(host_phase_seconds.values()) >= PERFORMANCE_SLOW_STEP_SECONDS:
+        slow_phase, slow_duration = max(host_phase_seconds.items(), key=lambda item: item[1])
+        if boundary_writer is not None and slow_duration >= PERFORMANCE_SLOW_STEP_SECONDS:
             _boundary_event(
                 boundary_writer,
                 case,
                 "slow_host_step",
                 {
+                    "case_id": case["case_id"],
+                    "rank": runtime.launch.rank,
+                    "request_sequence_index": case["request_sequence_index"],
+                    "repeat_kind": case["performance_repeat_kind"],
+                    "repeat_index": case["performance_repeat_index"],
+                    "phase": slow_phase,
+                    "duration_seconds": slow_duration,
                     "target_step_index": target_forward_count - 1,
                     "is_verification": is_verification,
                     "scheduled_proposal_length": scheduled_length,
@@ -1502,6 +1511,8 @@ def _run_case(
             if committed_tokens != raw_tokens[: len(committed_tokens)]:
                 raise RuntimeError("Terminal scheduler commit is outside the raw verified prefix.")
             terminal_partial_commit |= len(committed_tokens) < len(raw_tokens)
+            if is_verification:
+                terminal_truncated_candidate_tokens += len(raw_tokens) - len(committed_tokens)
         elif committed_tokens != raw_tokens:
             raise RuntimeError("Active scheduler commit differs from raw sampled/verified tokens.")
 
@@ -1603,6 +1614,32 @@ def _run_case(
             "draft_install_seconds": draft_install_seconds,
             "spec_decode_proposer_latency_seconds": proposer_latency_seconds,
             "spec_decode_verification_latency_seconds": verification_latency_seconds,
+            "decode_seconds_per_verification": (
+                decode_seconds / verification_count if mode == "dspark" and verification_count else None
+            ),
+            "proposer_seconds_per_verification": (
+                proposer_latency_seconds / verification_count if mode == "dspark" and verification_count else None
+            ),
+            "verification_seconds_per_verification": (
+                verification_latency_seconds / verification_count if mode == "dspark" and verification_count else None
+            ),
+            "model_execute_host_seconds_per_verification": (
+                model_execute_host_seconds / verification_count if mode == "dspark" and verification_count else None
+            ),
+            "sample_materialize_seconds_per_verification": (
+                sample_materialize_seconds / verification_count if mode == "dspark" and verification_count else None
+            ),
+            "decode_seconds_per_output_token": (
+                decode_seconds / decode_token_count if mode == "target_only" and decode_token_count else None
+            ),
+            "decode_seconds_per_target_forward": (
+                decode_seconds / target_forward_count if mode == "target_only" and target_forward_count else None
+            ),
+            "model_execute_host_seconds_per_target_forward": (
+                model_execute_host_seconds / target_forward_count
+                if mode == "target_only" and target_forward_count
+                else None
+            ),
             "scheduled_draft_token_count": scheduled_draft_token_count,
             "accepted_candidate_metrics_source": "greedy_rejection_output_length_minus_one",
             "accepted_candidate_tokens_total": accepted_candidate_tokens_total,
@@ -1613,6 +1650,7 @@ def _run_case(
             "bonus_tokens_total": bonus_tokens_total,
             "committed_tokens_total": len(output_ids),
             "verification_committed_tokens_total": verification_committed_tokens_total,
+            "terminal_truncated_candidate_tokens": (terminal_truncated_candidate_tokens if mode == "dspark" else None),
             "effective_committed_tokens_per_verification": (
                 verification_committed_tokens_total / verification_count if verification_count else None
             ),
@@ -1686,8 +1724,11 @@ def _run_case(
         "state_isolation_verified": True,
         "historical_error_count": 0,
         "manifest_sha256": manifest_sha256,
-        "diagnostic_only": not performance or boundary_writer is not None,
-        "performance_validated": performance and boundary_writer is None,
+        # Boundary telemetry observes existing request-level sync points and
+        # host phases; unlike the A/B suppression filter, it does not alter
+        # production logging or add a per-step device synchronization.
+        "diagnostic_only": not performance,
+        "performance_validated": performance,
         "performance_provisional": performance,
         "bit_exact_validated": False,
         "performance": performance_metrics,
@@ -1803,6 +1844,9 @@ def _run_plan(
                     previous_request_id=previous_request_id,
                     next_request_id=next_request_id,
                 )
+            if suppress_disposition_stream:
+                record["diagnostic_only"] = True
+                record["performance_validated"] = False
             records.append(record)
         if boundary_writer is not None:
             boundary_writer.finish(
@@ -2072,7 +2116,9 @@ def test_dspark_single_request_realdata_npu() -> None:
             "artifact": str(artifact_path),
             "artifact_sha256": sha256_file(artifact_path),
             "phase_timings": phase_timings,
-            "performance_validated": (performance_config.enabled and not performance_boundary_diagnostics.enabled),
+            "performance_validated": (
+                performance_config.enabled and not performance_boundary_diagnostics.suppress_disposition_stream
+            ),
             "performance_provisional": performance_config.enabled,
             "performance_boundary_diagnostics": (performance_boundary_diagnostics.enabled),
             "performance_suppress_disposition_stream": (performance_boundary_diagnostics.suppress_disposition_stream),

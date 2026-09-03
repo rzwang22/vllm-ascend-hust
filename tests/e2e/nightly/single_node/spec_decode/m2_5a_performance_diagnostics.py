@@ -211,6 +211,25 @@ def load_performance_boundary_traces(
                 request_id = payload.get("request_id")
                 if event not in _KNOWN_EVENTS or not isinstance(request_id, str):
                     raise ValueError(f"Unknown performance-boundary event: {path}.")
+                if event == "slow_host_step":
+                    if payload.get("case_id") != owner["case_id"] or payload.get("rank") != rank:
+                        raise ValueError(f"Slow-host event has incomplete ownership: {path}.")
+                    sequence_index = payload.get("request_sequence_index")
+                    repeat_kind = payload.get("repeat_kind")
+                    repeat_index = payload.get("repeat_index")
+                    if (
+                        isinstance(sequence_index, bool)
+                        or not isinstance(sequence_index, int)
+                        or repeat_kind not in {"warmup", "measured"}
+                        or isinstance(repeat_index, bool)
+                        or not isinstance(repeat_index, int)
+                    ):
+                        raise ValueError(f"Slow-host event has incomplete repeat identity: {path}.")
+                    if not isinstance(payload.get("phase"), str) or not payload["phase"]:
+                        raise ValueError(f"Slow-host event has no phase: {path}.")
+                    duration = payload.get("duration_seconds")
+                    if isinstance(duration, bool) or not isinstance(duration, (int, float)) or duration < 0:
+                        raise ValueError(f"Slow-host event has invalid duration: {path}.")
                 request_owner = (
                     payload.get("request_sequence_index"),
                     payload.get("repeat_kind"),

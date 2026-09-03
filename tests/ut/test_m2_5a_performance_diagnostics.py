@@ -40,7 +40,7 @@ EVENTS = (
 OWNER = {"mode": "dspark", "rank": 0, "case_id": "case-a"}
 
 
-def _write_valid_trace(root: Path) -> Path:
+def _write_valid_trace(root: Path, *, slow_event: bool = False) -> Path:
     writer = PerformanceBoundaryWriter(root, OWNER)
     for event in EVENTS:
         writer.write_event(
@@ -51,6 +51,20 @@ def _write_valid_trace(root: Path) -> Path:
             repeat_index=0,
             payload=({"public_pending_future_count": None} if event == "request_complete" else None),
         )
+        if slow_event and event == "first_commit":
+            writer.write_event(
+                "slow_host_step",
+                request_id="request-a",
+                request_sequence_index=0,
+                repeat_kind="measured",
+                repeat_index=0,
+                payload={
+                    "case_id": "case-a",
+                    "rank": 0,
+                    "phase": "model_execute",
+                    "duration_seconds": 5.25,
+                },
+            )
     writer.finish(
         1,
         diagnostics={
@@ -90,6 +104,42 @@ def test_disabled_performance_boundary_writer_has_no_files(tmp_path: Path) -> No
     with performance_boundary_writer(tmp_path, OWNER, enabled=False) as writer:
         assert writer is None
     assert list(tmp_path.rglob("*")) == []
+
+
+def test_slow_host_event_has_complete_repeat_phase_and_duration_identity(
+    tmp_path: Path,
+) -> None:
+    _write_valid_trace(tmp_path, slow_event=True)
+
+    traces = load_performance_boundary_traces(
+        tmp_path,
+        expected_ranks=1,
+        expected_requests=1,
+    )
+    slow = next(row for row in traces[0] if row["kind"] == "event" and row["payload"]["event"] == "slow_host_step")[
+        "payload"
+    ]
+
+    assert {
+        key: slow[key]
+        for key in (
+            "case_id",
+            "rank",
+            "request_sequence_index",
+            "repeat_kind",
+            "repeat_index",
+            "phase",
+            "duration_seconds",
+        )
+    } == {
+        "case_id": "case-a",
+        "rank": 0,
+        "request_sequence_index": 0,
+        "repeat_kind": "measured",
+        "repeat_index": 0,
+        "phase": "model_execute",
+        "duration_seconds": 5.25,
+    }
 
 
 def test_disposition_stream_filter_is_exact_counted_and_default_off(
