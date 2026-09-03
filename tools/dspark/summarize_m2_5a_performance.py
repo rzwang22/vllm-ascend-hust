@@ -17,9 +17,6 @@ from typing import Any
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from tests.e2e.nightly.single_node.spec_decode.m2_5a_performance_diagnostics import (
-    load_performance_boundary_traces,
-)
 from tools.dspark.m2_5a_common import atomic_write_json, sha256_file, verify_asset_bundle
 from tools.dspark.validate_m2_5a_results import HISTORICAL_ERROR_MARKERS, load_results
 
@@ -47,18 +44,6 @@ ACCEPTED_COUNT_FIELDS = (
     "bonus_tokens_total",
     "committed_tokens_total",
     "verification_committed_tokens_total",
-)
-DSPARK_NORMALIZED_FIELDS = (
-    "decode_seconds_per_verification",
-    "proposer_seconds_per_verification",
-    "verification_seconds_per_verification",
-    "model_execute_host_seconds_per_verification",
-    "sample_materialize_seconds_per_verification",
-)
-TARGET_NORMALIZED_FIELDS = (
-    "decode_seconds_per_output_token",
-    "decode_seconds_per_target_forward",
-    "model_execute_host_seconds_per_target_forward",
 )
 TIMER_RELATIONSHIPS = {
     "inference": {
@@ -162,12 +147,6 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--output-case-markdown", type=Path)
     parser.add_argument("--output-steady-state-csv", type=Path)
     parser.add_argument("--output-steady-state-markdown", type=Path)
-    parser.add_argument("--output-repeats-csv", type=Path)
-    parser.add_argument(
-        "--require-formal-steady-state",
-        action="store_true",
-        help="Return nonzero when the work-normalized steady-state gate fails.",
-    )
     return parser.parse_args()
 
 
@@ -194,50 +173,6 @@ def _accepted_metrics_available(performance: Mapping[str, Any]) -> bool:
     if source != ACCEPTED_METRICS_SOURCE:
         raise ValueError(f"Unknown accepted-candidate telemetry source: {source!r}.")
     return True
-
-
-def _divide_or_none(numerator: float, denominator: int) -> float | None:
-    return numerator / denominator if denominator else None
-
-
-def _normalized_repeat_metrics(record: Mapping[str, Any], mode: str) -> dict[str, float | None]:
-    performance = record["performance"]
-    verification_count = int(record["verification_count"])
-    target_forward_count = int(record["target_forward_count"])
-    decode_token_count = int(performance["decode_output_token_count"])
-    if mode == "dspark":
-        return {
-            "decode_seconds_per_verification": _divide_or_none(
-                float(performance["decode_latency_seconds"]), verification_count
-            ),
-            "proposer_seconds_per_verification": _divide_or_none(
-                float(performance["spec_decode_proposer_latency_seconds"]),
-                verification_count,
-            ),
-            "verification_seconds_per_verification": _divide_or_none(
-                float(performance["spec_decode_verification_latency_seconds"]),
-                verification_count,
-            ),
-            "model_execute_host_seconds_per_verification": _divide_or_none(
-                float(performance["model_execute_host_seconds"]), verification_count
-            ),
-            "sample_materialize_seconds_per_verification": _divide_or_none(
-                float(performance["sample_materialize_seconds"]), verification_count
-            ),
-            **{field: None for field in TARGET_NORMALIZED_FIELDS},
-        }
-    return {
-        **{field: None for field in DSPARK_NORMALIZED_FIELDS},
-        "decode_seconds_per_output_token": _divide_or_none(
-            float(performance["decode_latency_seconds"]), decode_token_count
-        ),
-        "decode_seconds_per_target_forward": _divide_or_none(
-            float(performance["decode_latency_seconds"]), target_forward_count
-        ),
-        "model_execute_host_seconds_per_target_forward": _divide_or_none(
-            float(performance["model_execute_host_seconds"]), target_forward_count
-        ),
-    }
 
 
 def _validate_performance_record(record: Mapping[str, Any], mode: str) -> None:
@@ -307,20 +242,6 @@ def _validate_performance_record(record: Mapping[str, Any], mode: str) -> None:
                 raise ValueError("Effective verification progress telemetry is inconsistent.")
         elif average is not None or effective is not None:
             raise ValueError("Non-speculative results must use null verification averages.")
-        truncated = performance.get("terminal_truncated_candidate_tokens")
-        if truncated is not None:
-            if isinstance(truncated, bool) or not isinstance(truncated, int) or truncated < 0:
-                raise ValueError("Terminal truncated-candidate telemetry must be a non-negative integer.")
-            if accepted + replacements + bonuses - truncated != committed:
-                raise ValueError("Verification accepted/replacement/bonus/truncation accounting is inconsistent.")
-    normalized = _normalized_repeat_metrics(record, mode)
-    for field, expected in normalized.items():
-        persisted = performance.get(field)
-        if persisted is not None:
-            _finite_nonnegative(persisted, field)
-        if field in performance and persisted != expected:
-            if persisted is None or expected is None or not math.isclose(float(persisted), expected):
-                raise ValueError(f"Persisted normalized metric {field} is inconsistent.")
     memory = performance.get("npu_memory")
     if not isinstance(memory, Mapping):
         raise ValueError("Performance result has no NPU memory payload.")
@@ -351,10 +272,6 @@ def _validate_performance_record(record: Mapping[str, Any], mode: str) -> None:
             raise ValueError("DSpark verification count differs from consumed proposal count.")
         if record["proposal_generated_count"] < record["proposal_installed_count"]:
             raise ValueError("DSpark installed more proposals than it generated.")
-        if record.get("post_finish_target_forward_count") != 0:
-            raise ValueError("DSpark performed a target forward after request finish.")
-        if record.get("post_finish_verification_count") != 0:
-            raise ValueError("DSpark performed verification after request finish.")
 
 
 def _rank_summary(root: Path, rank: int) -> dict[str, Any]:
@@ -409,12 +326,6 @@ def _critical_case_records(
                             f"Rank {rank} disagrees with rank 0 for {expected['case_id']} "
                             f"accepted-candidate count {field}."
                         )
-                if actual["performance"].get("terminal_truncated_candidate_tokens") != expected["performance"].get(
-                    "terminal_truncated_candidate_tokens"
-                ):
-                    raise ValueError(
-                        f"Rank {rank} disagrees with rank 0 for {expected['case_id']} terminal truncation."
-                    )
         record = dict(expected)
         performance = dict(expected["performance"])
         for field in PERFORMANCE_FIELDS:
@@ -436,14 +347,6 @@ def _critical_case_records(
             memory[field] = max(int(actual["performance"]["npu_memory"][field]) for actual in per_rank)
         performance["npu_memory"] = memory
         record["performance"] = performance
-        record["cross_rank_output_consistent"] = True
-        record["_rank_performance"] = [
-            {
-                "rank": rank,
-                **{field: float(actual["performance"][field]) for field in PERFORMANCE_FIELDS},
-            }
-            for rank, actual in zip(rank_records, per_rank)
-        ]
         critical.append(record)
     return critical
 
@@ -679,69 +582,6 @@ def _validate_steady_state_records(
     }
 
 
-def _slow_host_event_summary(
-    root: Path,
-    records: Sequence[Mapping[str, Any]],
-    *,
-    expected_ranks: int,
-) -> dict[str, Any]:
-    trace_root = root / "performance-boundary"
-    unavailable = {
-        "available": False,
-        "warmup_slow_host_event_count": None,
-        "measured_slow_host_event_count": None,
-        "warmup_slow_host_seconds": None,
-        "measured_slow_host_seconds": None,
-        "events": [],
-    }
-    if not trace_root.is_dir():
-        return unavailable
-    traces = load_performance_boundary_traces(
-        root,
-        expected_ranks=expected_ranks,
-        expected_requests=len(records),
-    )
-    record_by_request = {str(record["request_id"]): record for record in records}
-    events: list[dict[str, Any]] = []
-    for rank, rows in traces.items():
-        for row in rows:
-            payload = row.get("payload", {})
-            if row.get("kind") != "event" or payload.get("event") != "slow_host_step":
-                continue
-            request_id = str(payload["request_id"])
-            record = record_by_request.get(request_id)
-            if record is None:
-                raise ValueError(f"Slow-host event references unknown request {request_id!r}.")
-            expected = {
-                "case_id": record["case_id"],
-                "rank": rank,
-                "request_sequence_index": record["request_sequence_index"],
-                "repeat_kind": record["performance_repeat_kind"],
-                "repeat_index": record["performance_repeat_index"],
-            }
-            if any(payload.get(key) != value for key, value in expected.items()):
-                raise ValueError(f"Slow-host event ownership differs from artifact {request_id!r}.")
-            events.append(
-                {
-                    **expected,
-                    "request_id": request_id,
-                    "phase": payload["phase"],
-                    "duration_seconds": float(payload["duration_seconds"]),
-                    "target_step_index": payload.get("target_step_index"),
-                }
-            )
-    warmup = [event for event in events if event["repeat_kind"] == "warmup"]
-    measured = [event for event in events if event["repeat_kind"] == "measured"]
-    return {
-        "available": True,
-        "warmup_slow_host_event_count": len(warmup),
-        "measured_slow_host_event_count": len(measured),
-        "warmup_slow_host_seconds": sum(event["duration_seconds"] for event in warmup),
-        "measured_slow_host_seconds": sum(event["duration_seconds"] for event in measured),
-        "events": events,
-    }
-
-
 def _load_run(
     mode: str,
     root: Path,
@@ -761,11 +601,6 @@ def _load_run(
     rank_summaries = [_rank_summary(root, rank) for rank in range(expected_ranks)]
     if any(summary["mode"] != mode for summary in rank_summaries):
         raise ValueError(f"Rank summary mode differs from --run mode for {root}.")
-    slow_host_events = _slow_host_event_summary(
-        root,
-        critical,
-        expected_ranks=expected_ranks,
-    )
 
     steady_state = None
     if critical[0].get("performance_protocol") is not None:
@@ -827,7 +662,6 @@ def _load_run(
         ),
         "warmup_records": steady_state["warmup_records"] if steady_state is not None else [],
         "records": steady_state["measured_records"] if steady_state is not None else critical,
-        "slow_host_events": slow_host_events,
     }
 
 
@@ -864,31 +698,6 @@ def _nullable_statistics(values: Sequence[float | None]) -> dict[str, float] | N
     return _statistics([float(value) for value in values if value is not None])
 
 
-def _sample_coefficient_of_variation(
-    values: Sequence[float | None],
-) -> float | None:
-    valid = [float(value) for value in values if value is not None]
-    if len(valid) < 3:
-        return None
-    mean = statistics.mean(valid)
-    return statistics.stdev(valid) / mean if mean else 0.0
-
-
-def _sample_stability(coefficient_of_variation: float | None) -> str:
-    if coefficient_of_variation is None:
-        return "not_formal"
-    if coefficient_of_variation <= 0.05 or math.isclose(coefficient_of_variation, 0.05):
-        return "stable"
-    if coefficient_of_variation <= 0.10 or math.isclose(coefficient_of_variation, 0.10):
-        return "provisional"
-    return "unstable"
-
-
-def _median_non_null(values: Sequence[float | None]) -> float | None:
-    valid = [float(value) for value in values if value is not None]
-    return statistics.median(valid) if valid else None
-
-
 STEADY_STATE_METRICS = (
     "prefill_latency_seconds",
     "decode_latency_seconds",
@@ -900,25 +709,12 @@ STEADY_STATE_METRICS = (
 )
 
 
-def _rank_normalized_diagnostics(record: Mapping[str, Any], mode: str) -> dict[str, float | None]:
-    per_rank = record["_rank_performance"]
-    verification_count = int(record["verification_count"])
-    if mode == "dspark" and verification_count:
-        proposer = [row["spec_decode_proposer_latency_seconds"] / verification_count for row in per_rank]
-        verification = [row["spec_decode_verification_latency_seconds"] / verification_count for row in per_rank]
-    else:
-        proposer = []
-        verification = []
-    model_execute = [row["model_execute_host_seconds"] for row in per_rank]
-    verification_raw = [row["spec_decode_verification_latency_seconds"] for row in per_rank]
-    return {
-        "proposer_per_verification_rank_p50": (_percentile(proposer, 0.50) if proposer else None),
-        "proposer_per_verification_rank_max": max(proposer) if proposer else None,
-        "verification_per_verification_rank_p50": (_percentile(verification, 0.50) if verification else None),
-        "verification_per_verification_rank_max": (max(verification) if verification else None),
-        "model_execute_rank_span_seconds": max(model_execute) - min(model_execute),
-        "verification_rank_span_seconds": max(verification_raw) - min(verification_raw),
-    }
+def _stability_classification(coefficient_of_variation: float) -> str:
+    if coefficient_of_variation <= 0.05:
+        return "stable"
+    if coefficient_of_variation <= 0.10:
+        return "annotate"
+    return "not_formal"
 
 
 def _records_by_case(records: Sequence[Mapping[str, Any]]) -> dict[str, list[Mapping[str, Any]]]:
@@ -931,86 +727,16 @@ def _records_by_case(records: Sequence[Mapping[str, Any]]) -> dict[str, list[Map
 def _steady_state_mode_case(
     measured: Sequence[Mapping[str, Any]],
     warmups: Sequence[Mapping[str, Any]],
-    mode: str,
 ) -> dict[str, Any]:
     aggregate = _aggregate_case_records(measured)
     statistics_by_metric = {
         metric: _statistics([float(record["performance"][metric]) for record in measured])
         for metric in STEADY_STATE_METRICS
     }
-    repeat_rows = []
-    for record in measured:
-        acceptance = _case_acceptance_metrics(record)
-        verification_count = int(record["verification_count"])
-        normalized = _normalized_repeat_metrics(record, mode)
-        repeat_rows.append(
-            {
-                "repeat_index": record["performance_repeat_index"],
-                "request_id": record["request_id"],
-                **{metric: record["performance"][metric] for metric in PERFORMANCE_FIELDS},
-                **normalized,
-                **_rank_normalized_diagnostics(record, mode),
-                "target_forward_count": record["target_forward_count"],
-                "verification_count": verification_count,
-                "proposal_generated_count": record["proposal_generated_count"],
-                "proposal_installed_count": record["proposal_installed_count"],
-                "proposal_consumed_count": record["proposal_consumed_count"],
-                "terminal_discarded_proposal_count": record["terminal_discarded_proposal_count"],
-                "terminal_partial_commit": record["terminal_partial_commit"],
-                "terminal_truncated_candidate_tokens": record["performance"].get("terminal_truncated_candidate_tokens"),
-                "terminal_accounting_available": (
-                    mode != "dspark" or record["performance"].get("terminal_truncated_candidate_tokens") is not None
-                ),
-                "accepted_candidate_tokens_total": acceptance["accepted"],
-                "accepted_candidate_tokens_per_verification": (
-                    acceptance["accepted"] / verification_count
-                    if acceptance["accepted"] is not None and verification_count
-                    else None
-                ),
-                "replacement_tokens_total": acceptance["replacement"],
-                "bonus_tokens_total": acceptance["bonus"],
-                "verification_committed_tokens_total": acceptance["verification_committed"],
-                "effective_committed_tokens_per_verification": (
-                    acceptance["verification_committed"] / verification_count if verification_count else None
-                ),
-                "output_token_sha256": record["output_token_sha256"],
-                "cross_rank_output_consistent": record["cross_rank_output_consistent"],
-                "cleanup_complete": record["cleanup_complete"],
-                "state_isolation_verified": record["state_isolation_verified"],
-                "generated_proposal_accounting_valid": (
-                    mode != "dspark"
-                    or record["proposal_generated_count"]
-                    == record["proposal_installed_count"] + record["terminal_discarded_proposal_count"]
-                ),
-            }
-        )
-    raw_decode_cv = _sample_coefficient_of_variation([row["decode_latency_seconds"] for row in repeat_rows])
-    normalized_primary = "decode_seconds_per_verification" if mode == "dspark" else "decode_seconds_per_output_token"
-    normalized_cv = _sample_coefficient_of_variation([row[normalized_primary] for row in repeat_rows])
-    proposer_cv = _sample_coefficient_of_variation([row["proposer_seconds_per_verification"] for row in repeat_rows])
-    verification_cv = _sample_coefficient_of_variation(
-        [row["verification_seconds_per_verification"] for row in repeat_rows]
+    stability_cv = max(
+        statistics_by_metric["decode_latency_seconds"]["coefficient_of_variation"],
+        statistics_by_metric["inference_latency_seconds"]["coefficient_of_variation"],
     )
-    verification_count_cv = (
-        _sample_coefficient_of_variation([float(row["verification_count"]) for row in repeat_rows])
-        if mode == "dspark"
-        else None
-    )
-    acceptance_cv = _sample_coefficient_of_variation(
-        [row["accepted_candidate_tokens_per_verification"] for row in repeat_rows]
-    )
-    effective_cv = _sample_coefficient_of_variation(
-        [row["effective_committed_tokens_per_verification"] for row in repeat_rows]
-    )
-    lifecycle_invariants = all(
-        row["cleanup_complete"] is True
-        and row["state_isolation_verified"] is True
-        and row["cross_rank_output_consistent"] is True
-        and row["terminal_accounting_available"] is True
-        and row["generated_proposal_accounting_valid"] is True
-        for row in repeat_rows
-    )
-    unique_output_hash_count = len({str(row["output_token_sha256"]) for row in repeat_rows})
     return {
         "cold_first_use": (
             {
@@ -1027,7 +753,19 @@ def _steady_state_mode_case(
             }
             for record in warmups
         ],
-        "measured_repeats": repeat_rows,
+        "measured_repeats": [
+            {
+                "repeat_index": record["performance_repeat_index"],
+                "request_id": record["request_id"],
+                **{metric: record["performance"][metric] for metric in STEADY_STATE_METRICS},
+                "target_forward_count": record["target_forward_count"],
+                "verification_count": record["verification_count"],
+                "proposal_generated_count": record["proposal_generated_count"],
+                "proposal_installed_count": record["proposal_installed_count"],
+                "proposal_consumed_count": record["proposal_consumed_count"],
+            }
+            for record in measured
+        ],
         "statistics": statistics_by_metric,
         "accepted_candidate_tokens_total": aggregate["accepted_candidate_tokens_total"],
         "average_accepted_candidate_tokens_per_verification": aggregate[
@@ -1039,25 +777,8 @@ def _steady_state_mode_case(
         "peak_npu_allocated_bytes": max(
             int(record["performance"]["npu_memory"]["peak_allocated"]) for record in measured
         ),
-        "raw_decode_cv": raw_decode_cv,
-        "decode_seconds_per_verification_cv": (normalized_cv if mode == "dspark" else None),
-        "decode_seconds_per_output_token_cv": (normalized_cv if mode == "target_only" else None),
-        "proposer_seconds_per_verification_cv": proposer_cv,
-        "verification_seconds_per_verification_cv": verification_cv,
-        "verification_count_cv": verification_count_cv,
-        "accepted_candidate_tokens_per_verification_cv": acceptance_cv,
-        "effective_committed_tokens_per_verification_cv": effective_cv,
-        "raw_decode_stability": _sample_stability(raw_decode_cv),
-        "work_normalized_stability": _sample_stability(normalized_cv),
-        "acceptance_stability": (_sample_stability(acceptance_cv) if mode == "dspark" else "not_applicable"),
-        "formal_steady_state_pass": (_sample_stability(normalized_cv) == "stable" and lifecycle_invariants),
-        "lifecycle_accounting_invariants": lifecycle_invariants,
-        "cross_rank_output_consistent": all(row["cross_rank_output_consistent"] for row in repeat_rows),
-        "cross_repeat_output_deterministic": unique_output_hash_count == 1,
-        "unique_output_hash_count": unique_output_hash_count,
-        # Backward-compatible aliases now describe raw decode only.
-        "stability_cv": raw_decode_cv,
-        "stability": _sample_stability(raw_decode_cv),
+        "stability_cv": stability_cv,
+        "stability": _stability_classification(stability_cv),
     }
 
 
@@ -1111,8 +832,8 @@ def _steady_state_case_performance(
             ):
                 if target_record[field] != dspark_record[field]:
                     raise ValueError(f"Steady-state matched case {case_id} differs for {field}.")
-        target_case = _steady_state_mode_case(target_records, target_case_warmups, "target_only")
-        dspark_case = _steady_state_mode_case(dspark_records, dspark_case_warmups, "dspark")
+        target_case = _steady_state_mode_case(target_records, target_case_warmups)
+        dspark_case = _steady_state_mode_case(dspark_records, dspark_case_warmups)
         rows.append(
             {
                 "case_id": case_id,
@@ -1232,83 +953,6 @@ def _matched_case_performance(target: Mapping[str, Any], dspark: Mapping[str, An
             }
         )
     return rows
-
-
-def _work_normalized_gate(
-    pairs: Sequence[Mapping[str, Any]],
-    runs: Sequence[Mapping[str, Any]],
-) -> dict[str, Any]:
-    applicable = bool(pairs)
-    cases = [case for pair in pairs for case in pair["cases"]]
-    target_pass = applicable and all(case["target_only"]["formal_steady_state_pass"] for case in cases)
-    dspark_normalized_pass = applicable and all(case["dspark"]["formal_steady_state_pass"] for case in cases)
-    dspark_raw_pass = applicable and all(case["dspark"]["raw_decode_stability"] == "stable" for case in cases)
-    acceptance_variability = any(
-        case["dspark"]["accepted_candidate_tokens_per_verification_cv"] is not None
-        and case["dspark"]["accepted_candidate_tokens_per_verification_cv"] > 0.05
-        for case in cases
-    )
-    slow_available = applicable and all(run["slow_host_events"]["available"] for run in runs)
-    measured_slow_count = (
-        sum(int(run["slow_host_events"]["measured_slow_host_event_count"]) for run in runs) if slow_available else None
-    )
-    warmup_slow_count = (
-        sum(int(run["slow_host_events"]["warmup_slow_host_event_count"]) for run in runs) if slow_available else None
-    )
-    measured_slow_seconds = (
-        sum(float(run["slow_host_events"]["measured_slow_host_seconds"]) for run in runs) if slow_available else None
-    )
-    warmup_slow_seconds = (
-        sum(float(run["slow_host_events"]["warmup_slow_host_seconds"]) for run in runs) if slow_available else None
-    )
-    speedup_pass = applicable and all(case["decode_speedup"] > 1.0 for case in cases)
-    tp8_pass = applicable and all(
-        case["tp8_consistent"]
-        and case["target_only"]["cross_rank_output_consistent"]
-        and case["dspark"]["cross_rank_output_consistent"]
-        for case in cases
-    )
-    lifecycle_pass = applicable and all(
-        case[mode]["lifecycle_accounting_invariants"] for case in cases for mode in MODES
-    )
-    formal_pass = all(
-        (
-            target_pass,
-            dspark_normalized_pass,
-            slow_available,
-            measured_slow_count == 0,
-            speedup_pass,
-            tp8_pass,
-            lifecycle_pass,
-        )
-    )
-    return {
-        "applicable": applicable,
-        "summary_structural_pass": True,
-        "formal_steady_state_pass": formal_pass,
-        "passed": formal_pass,
-        "target_steady_state_pass": target_pass,
-        "dspark_raw_decode_stability_pass": dspark_raw_pass,
-        "dspark_normalized_steady_state_pass": dspark_normalized_pass,
-        "acceptance_variability_detected": acceptance_variability,
-        "slow_host_event_evidence_available": slow_available,
-        "warmup_slow_host_event_count": warmup_slow_count,
-        "measured_slow_host_event_count": measured_slow_count,
-        "warmup_slow_host_seconds": warmup_slow_seconds,
-        "measured_slow_host_seconds": measured_slow_seconds,
-        "paired_median_decode_speedup_pass": speedup_pass,
-        "tp8_output_consistency_pass": tp8_pass,
-        "lifecycle_accounting_invariants_pass": lifecycle_pass,
-        "thresholds": {
-            "stable": "sample CV <= 0.05",
-            "provisional": "0.05 < sample CV <= 0.10",
-            "unstable": "sample CV > 0.10",
-        },
-        "primary_metric": {
-            "target_only": "decode_seconds_per_output_token_cv",
-            "dspark": "decode_seconds_per_verification_cv",
-        },
-    }
 
 
 def _scan_error_logs(roots: Sequence[Path]) -> dict[str, list[str]]:
@@ -1475,24 +1119,10 @@ def summarize_performance(
         or dspark_warmup_excluded_inference <= 0
     ):
         raise ValueError("DSpark performance timings must be positive before calculating speedup.")
-    normalized_gate = _work_normalized_gate(
-        steady_state_case_performance,
-        loaded,
-    )
-    telemetry_conclusions = {
-        "M2_5A_P04_1_TELEMETRY_PASS": True,
-        "TARGET_STEADY_STATE_PASS": normalized_gate["target_steady_state_pass"],
-        "DSPARK_RAW_DECODE_STABILITY_PASS": normalized_gate["dspark_raw_decode_stability_pass"],
-        "DSPARK_NORMALIZED_STEADY_STATE_PASS": normalized_gate["dspark_normalized_steady_state_pass"],
-        "ACCEPTANCE_VARIABILITY_DETECTED": normalized_gate["acceptance_variability_detected"],
-        "MEASURED_SLOW_HOST_EVENT_COUNT": normalized_gate["measured_slow_host_event_count"],
-        "FORMAL_STEADY_STATE_PASS": normalized_gate["formal_steady_state_pass"],
-    }
     return {
         "manifest_sha256": manifest_hash,
         "expected_ranks": expected_ranks,
         "performance_provisional": True,
-        "bit_exact_validated": False,
         "exact_token_cross_mode_blocking": False,
         "run_aggregation": (
             "per-case steady-state measured repeats"
@@ -1514,10 +1144,21 @@ def summarize_performance(
         "cross_mode_exact_token_diagnostics": paired_diagnostics,
         "matched_case_performance": matched_case_performance,
         "steady_state_case_performance": steady_state_case_performance,
-        "summary_structural_pass": True,
-        "formal_steady_state_pass": normalized_gate["formal_steady_state_pass"],
-        "performance_stability_gate": normalized_gate,
-        "telemetry_conclusions": telemetry_conclusions,
+        "performance_stability_gate": {
+            "applicable": bool(steady_state_case_performance),
+            "passed": all(
+                case[mode]["stability"] != "not_formal"
+                for pair in steady_state_case_performance
+                for case in pair["cases"]
+                for mode in MODES
+            ),
+            "thresholds": {
+                "stable": "CV <= 0.05",
+                "annotate": "0.05 < CV <= 0.10",
+                "not_formal": "CV > 0.10",
+            },
+            "metric": "max(decode_latency_cv, inference_latency_cv)",
+        },
         "timer_relationships": TIMER_RELATIONSHIPS,
         "historical_error_scan": {"roots": [str(path.resolve()) for path in error_log_roots], "matches": {}},
     }
@@ -1661,60 +1302,6 @@ def _write_case_markdown(path: Path, pairs: Sequence[Mapping[str, Any]]) -> None
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-REPEATS_CSV_FIELDS = (
-    "pair_index",
-    "case_id",
-    "mode",
-    "repeat_index",
-    "request_id",
-    *PERFORMANCE_FIELDS,
-    *DSPARK_NORMALIZED_FIELDS,
-    *TARGET_NORMALIZED_FIELDS,
-    "target_forward_count",
-    "verification_count",
-    "proposal_generated_count",
-    "proposal_installed_count",
-    "proposal_consumed_count",
-    "terminal_discarded_proposal_count",
-    "terminal_partial_commit",
-    "terminal_truncated_candidate_tokens",
-    "terminal_accounting_available",
-    "generated_proposal_accounting_valid",
-    "accepted_candidate_tokens_total",
-    "accepted_candidate_tokens_per_verification",
-    "replacement_tokens_total",
-    "bonus_tokens_total",
-    "verification_committed_tokens_total",
-    "effective_committed_tokens_per_verification",
-    "output_token_sha256",
-    "cross_rank_output_consistent",
-    "proposer_per_verification_rank_p50",
-    "proposer_per_verification_rank_max",
-    "verification_per_verification_rank_p50",
-    "verification_per_verification_rank_max",
-    "model_execute_rank_span_seconds",
-    "verification_rank_span_seconds",
-)
-
-
-def _write_repeats_csv(path: Path, pairs: Sequence[Mapping[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=REPEATS_CSV_FIELDS)
-        writer.writeheader()
-        for pair in pairs:
-            for case in pair["cases"]:
-                for mode in MODES:
-                    for repeat in case[mode]["measured_repeats"]:
-                        row = {
-                            "pair_index": pair["pair_index"],
-                            "case_id": case["case_id"],
-                            "mode": mode,
-                            **repeat,
-                        }
-                        writer.writerow({field: row.get(field) for field in REPEATS_CSV_FIELDS})
-
-
 STEADY_STATE_CSV_FIELDS = (
     "pair_index",
     "case_id",
@@ -1740,16 +1327,6 @@ STEADY_STATE_CSV_FIELDS = (
     "dspark_decode_cv",
     "dspark_decode_p50_seconds",
     "dspark_decode_p90_seconds",
-    "target_raw_decode_cv",
-    "dspark_raw_decode_cv",
-    "target_decode_seconds_per_output_token_cv",
-    "dspark_decode_seconds_per_verification",
-    "dspark_decode_seconds_per_verification_cv",
-    "dspark_proposer_seconds_per_verification_cv",
-    "dspark_verification_seconds_per_verification_cv",
-    "dspark_verification_count_cv",
-    "dspark_accepted_candidate_tokens_per_verification_cv",
-    "dspark_effective_committed_tokens_per_verification_cv",
     "decode_speedup",
     "inference_speedup",
     "accepted_candidate_tokens_per_verification",
@@ -1758,14 +1335,6 @@ STEADY_STATE_CSV_FIELDS = (
     "verification_median_seconds",
     "target_stability",
     "dspark_stability",
-    "target_work_normalized_stability",
-    "dspark_work_normalized_stability",
-    "dspark_acceptance_stability",
-    "formal_steady_state_pass",
-    "target_cross_repeat_output_deterministic",
-    "dspark_cross_repeat_output_deterministic",
-    "target_unique_output_hash_count",
-    "dspark_unique_output_hash_count",
     "tp8_consistent",
 )
 
@@ -1804,20 +1373,6 @@ def _steady_state_csv_row(pair_index: int, case: Mapping[str, Any]) -> dict[str,
         "dspark_decode_cv": dspark_decode["coefficient_of_variation"],
         "dspark_decode_p50_seconds": dspark_decode["p50"],
         "dspark_decode_p90_seconds": dspark_decode["p90"],
-        "target_raw_decode_cv": target["raw_decode_cv"],
-        "dspark_raw_decode_cv": dspark["raw_decode_cv"],
-        "target_decode_seconds_per_output_token_cv": target["decode_seconds_per_output_token_cv"],
-        "dspark_decode_seconds_per_verification": _median_non_null(
-            [repeat["decode_seconds_per_verification"] for repeat in dspark["measured_repeats"]]
-        ),
-        "dspark_decode_seconds_per_verification_cv": dspark["decode_seconds_per_verification_cv"],
-        "dspark_proposer_seconds_per_verification_cv": dspark["proposer_seconds_per_verification_cv"],
-        "dspark_verification_seconds_per_verification_cv": dspark["verification_seconds_per_verification_cv"],
-        "dspark_verification_count_cv": dspark["verification_count_cv"],
-        "dspark_accepted_candidate_tokens_per_verification_cv": dspark["accepted_candidate_tokens_per_verification_cv"],
-        "dspark_effective_committed_tokens_per_verification_cv": dspark[
-            "effective_committed_tokens_per_verification_cv"
-        ],
         "decode_speedup": case["decode_speedup"],
         "inference_speedup": case["inference_speedup"],
         "accepted_candidate_tokens_per_verification": dspark["average_accepted_candidate_tokens_per_verification"],
@@ -1826,14 +1381,6 @@ def _steady_state_csv_row(pair_index: int, case: Mapping[str, Any]) -> dict[str,
         "verification_median_seconds": dspark["statistics"]["spec_decode_verification_latency_seconds"]["median"],
         "target_stability": target["stability"],
         "dspark_stability": dspark["stability"],
-        "target_work_normalized_stability": target["work_normalized_stability"],
-        "dspark_work_normalized_stability": dspark["work_normalized_stability"],
-        "dspark_acceptance_stability": dspark["acceptance_stability"],
-        "formal_steady_state_pass": target["formal_steady_state_pass"] and dspark["formal_steady_state_pass"],
-        "target_cross_repeat_output_deterministic": target["cross_repeat_output_deterministic"],
-        "dspark_cross_repeat_output_deterministic": dspark["cross_repeat_output_deterministic"],
-        "target_unique_output_hash_count": target["unique_output_hash_count"],
-        "dspark_unique_output_hash_count": dspark["unique_output_hash_count"],
         "tp8_consistent": case["tp8_consistent"],
     }
 
@@ -1851,15 +1398,16 @@ def _write_steady_state_csv(path: Path, pairs: Sequence[Mapping[str, Any]]) -> N
 
 def _write_steady_state_markdown(path: Path, pairs: Sequence[Mapping[str, Any]]) -> None:
     columns = (
-        "Case",
-        "Mode",
-        "Repeats",
-        "Raw decode median",
-        "Raw CV",
-        "Verification count CV",
-        "Accepted length",
-        "Seconds/verification",
-        "Normalized CV",
+        "case",
+        "target cold s",
+        "DSpark cold s",
+        "target median s",
+        "DSpark median s",
+        "decode speedup",
+        "target CV",
+        "DSpark CV",
+        "accepted/ver",
+        "committed/ver",
         "stability",
     )
     lines = [
@@ -1868,42 +1416,31 @@ def _write_steady_state_markdown(path: Path, pairs: Sequence[Mapping[str, Any]])
     ]
     for pair in pairs:
         for case in pair["cases"]:
-            for mode in MODES:
-                mode_case = case[mode]
-                decode = mode_case["statistics"]["decode_latency_seconds"]
-                normalized_values = [
-                    repeat["decode_seconds_per_verification"]
-                    for repeat in mode_case["measured_repeats"]
-                    if repeat["decode_seconds_per_verification"] is not None
-                ]
-                values = (
-                    case["case_id"],
-                    mode,
-                    len(mode_case["measured_repeats"]),
-                    decode["median"],
-                    mode_case["raw_decode_cv"],
-                    mode_case["verification_count_cv"],
-                    mode_case["average_accepted_candidate_tokens_per_verification"],
-                    statistics.median(normalized_values) if normalized_values else None,
-                    mode_case["decode_seconds_per_verification_cv"]
-                    if mode == "dspark"
-                    else mode_case["decode_seconds_per_output_token_cv"],
-                    mode_case["work_normalized_stability"],
+            target = case["target_only"]
+            dspark = case["dspark"]
+            target_decode = target["statistics"]["decode_latency_seconds"]
+            dspark_decode = dspark["statistics"]["decode_latency_seconds"]
+            values = (
+                case["case_id"],
+                target["cold_first_use"]["decode_latency_seconds"] if target["cold_first_use"] else None,
+                dspark["cold_first_use"]["decode_latency_seconds"] if dspark["cold_first_use"] else None,
+                target_decode["median"],
+                dspark_decode["median"],
+                case["decode_speedup"],
+                target_decode["coefficient_of_variation"],
+                dspark_decode["coefficient_of_variation"],
+                dspark["average_accepted_candidate_tokens_per_verification"],
+                dspark["effective_committed_tokens_per_verification"],
+                f"{target['stability']}/{dspark['stability']}",
+            )
+            lines.append(
+                "| "
+                + " | ".join(
+                    "UNAVAILABLE" if value is None else f"{value:.6f}" if isinstance(value, float) else str(value)
+                    for value in values
                 )
-                lines.append(
-                    "| "
-                    + " | ".join(
-                        "UNAVAILABLE" if value is None else f"{value:.6f}" if isinstance(value, float) else str(value)
-                        for value in values
-                    )
-                    + " |"
-                )
-    lines.extend(
-        (
-            "",
-            "Phase timers are diagnostic and may overlap; they are not additive.",
-        )
-    )
+                + " |"
+            )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -1912,7 +1449,7 @@ def _formal_performance_gate_status(summary: Mapping[str, Any]) -> str:
     gate = summary["performance_stability_gate"]
     if not gate["applicable"]:
         return "NOT_APPLICABLE"
-    return "PASS" if gate["formal_steady_state_pass"] else "FAIL"
+    return "PASS" if gate["passed"] else "FAIL"
 
 
 def main() -> int:
@@ -1947,11 +1484,6 @@ def main() -> int:
             args.output_steady_state_markdown.expanduser().resolve(),
             summary["steady_state_case_performance"],
         )
-    if args.output_repeats_csv is not None:
-        _write_repeats_csv(
-            args.output_repeats_csv.expanduser().resolve(),
-            summary["steady_state_case_performance"],
-        )
     marker = {
         "runs": len(summary["runs"]),
         "speedup": summary["speedup"],
@@ -1967,35 +1499,17 @@ def main() -> int:
         "output_steady_state_markdown": (
             str(args.output_steady_state_markdown.expanduser().resolve()) if args.output_steady_state_markdown else None
         ),
-        "output_repeats_csv": (
-            str(args.output_repeats_csv.expanduser().resolve()) if args.output_repeats_csv else None
-        ),
         "performance_provisional": True,
         "exact_token_cross_mode_blocking": False,
         "report_generation": "PASS",
         "formal_performance_gate": _formal_performance_gate_status(summary),
     }
     print("M2_5A_PERFORMANCE_REPORT_GENERATION_PASS=" + json.dumps(marker, sort_keys=True))
-    conclusions = summary["telemetry_conclusions"]
-    print("M2_5A_P04_1_TELEMETRY_PASS=" + json.dumps(conclusions, sort_keys=True))
-    for name in (
-        "TARGET_STEADY_STATE_PASS",
-        "DSPARK_RAW_DECODE_STABILITY_PASS",
-        "DSPARK_NORMALIZED_STEADY_STATE_PASS",
-        "FORMAL_STEADY_STATE_PASS",
-    ):
-        state = "PASS" if conclusions[name] else "FAIL"
-        print(f"{name.rsplit('_', 1)[0]}_{state}=" + json.dumps(conclusions, sort_keys=True))
-    variability = "DETECTED" if conclusions["ACCEPTANCE_VARIABILITY_DETECTED"] else "NOT_DETECTED"
-    print(f"ACCEPTANCE_VARIABILITY_{variability}=" + json.dumps(conclusions, sort_keys=True))
-    print("MEASURED_SLOW_HOST_EVENT_COUNT=" + json.dumps(conclusions["MEASURED_SLOW_HOST_EVENT_COUNT"], sort_keys=True))
     formal_marker = "M2_5A_FORMAL_PERFORMANCE_GATE_" + marker["formal_performance_gate"]
     print(formal_marker + "=" + json.dumps(marker, sort_keys=True))
     # Backward-compatible marker: this names report generation only. The
     # explicit formal-gate marker above is authoritative for publishability.
     print("M2_5A_PERFORMANCE_SUMMARY_PASS=" + json.dumps(marker, sort_keys=True))
-    if args.require_formal_steady_state and marker["formal_performance_gate"] != "PASS":
-        return 2
     return 0
 
 

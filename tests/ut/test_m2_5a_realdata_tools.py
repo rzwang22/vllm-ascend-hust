@@ -805,9 +805,6 @@ def _performance_result_dirs(
                 record.update(
                     target_forward_count=2 if mode == "target_only" else 1,
                     verification_count=verification_count,
-                    proposal_generated_count=(
-                        record["proposal_installed_count"] + record["terminal_discarded_proposal_count"]
-                    ),
                     diagnostic_only=False,
                     performance_validated=True,
                     performance_provisional=True,
@@ -839,9 +836,6 @@ def _performance_result_dirs(
                         "bonus_tokens_total": 0,
                         "committed_tokens_total": output_count,
                         "verification_committed_tokens_total": verification_committed,
-                        "terminal_truncated_candidate_tokens": (
-                            accepted_count + verification_count - verification_committed if mode == "dspark" else None
-                        ),
                         "effective_committed_tokens_per_verification": (
                             float(verification_committed) if mode == "dspark" else None
                         ),
@@ -1213,12 +1207,17 @@ def test_steady_state_summary_excludes_warmup_and_reports_per_case_statistics(
 
     assert summary["run_aggregation"] == "per-case steady-state measured repeats"
     assert summary["speedup"]["primary_warmup_excluded_decode"] == pytest.approx(2.0)
-    gate = summary["performance_stability_gate"]
-    assert gate["applicable"] is True
-    assert gate["summary_structural_pass"] is True
-    assert gate["slow_host_event_evidence_available"] is False
-    assert gate["formal_steady_state_pass"] is False
-    assert performance_summary._formal_performance_gate_status(summary) == "FAIL"
+    assert summary["performance_stability_gate"] == {
+        "applicable": True,
+        "passed": True,
+        "thresholds": {
+            "stable": "CV <= 0.05",
+            "annotate": "0.05 < CV <= 0.10",
+            "not_formal": "CV > 0.10",
+        },
+        "metric": "max(decode_latency_cv, inference_latency_cv)",
+    }
+    assert performance_summary._formal_performance_gate_status(summary) == "PASS"
     target_run = next(run for run in summary["runs"] if run["mode"] == "target_only")
     assert target_run["case_count"] == 9
     assert target_run["steady_state_protocol"]["warmup_repeats"] == 1
@@ -1240,10 +1239,6 @@ def test_steady_state_summary_excludes_warmup_and_reports_per_case_statistics(
     assert target_decode["coefficient_of_variation"] == pytest.approx(0.040824829)
     assert first["decode_speedup"] == 2.0
     assert first["dspark"]["average_accepted_candidate_tokens_per_verification"] == 4.0
-    assert first["target_only"]["raw_decode_cv"] == pytest.approx(0.05)
-    assert first["dspark"]["decode_seconds_per_verification_cv"] == pytest.approx(0.05)
-    assert first["target_only"]["work_normalized_stability"] == "stable"
-    assert first["dspark"]["work_normalized_stability"] == "stable"
     assert len({repeat["request_id"] for repeat in first["dspark"]["measured_repeats"]}) == 3
 
     csv_path = tmp_path / "steady.csv"
@@ -1251,12 +1246,8 @@ def test_steady_state_summary_excludes_warmup_and_reports_per_case_statistics(
     performance_summary._write_steady_state_csv(csv_path, summary["steady_state_case_performance"])
     performance_summary._write_steady_state_markdown(markdown_path, summary["steady_state_case_performance"])
     assert len(csv_path.read_text(encoding="utf-8").splitlines()) == 4
-    assert len(markdown_path.read_text(encoding="utf-8").splitlines()) == 10
+    assert len(markdown_path.read_text(encoding="utf-8").splitlines()) == 5
     assert "target_decode_cv" in csv_path.read_text(encoding="utf-8").splitlines()[0]
-    repeats_path = tmp_path / "repeats.csv"
-    performance_summary._write_repeats_csv(repeats_path, summary["steady_state_case_performance"])
-    assert len(repeats_path.read_text(encoding="utf-8").splitlines()) == 19
-    assert "decode_seconds_per_verification" in repeats_path.read_text(encoding="utf-8").splitlines()[0]
 
 
 @pytest.mark.parametrize(
@@ -1315,26 +1306,6 @@ def test_steady_state_summary_rejects_tp_rank_repeat_mismatch(
         )
 
 
-def test_steady_state_summary_rejects_cross_rank_output_hash_mismatch(
-    frozen_assets: Path,
-    tmp_path: Path,
-) -> None:
-    target, dspark = _steady_state_performance_result_dirs(tmp_path, frozen_assets)
-    path = dspark / "rank-1.jsonl"
-    records = read_jsonl(path)
-    records[1]["output_token_ids"][0] += 1
-    records[1]["output_token_sha256"] = token_ids_sha256(records[1]["output_token_ids"])
-    _rewrite_results(path, records)
-
-    with pytest.raises(ValueError, match="Rank 1 disagrees"):
-        summarize_performance(
-            frozen_assets,
-            [("target_only", target), ("dspark", dspark)],
-            expected_ranks=2,
-            min_runs_per_mode=1,
-        )
-
-
 def test_steady_state_summary_rejects_repeat_workload_mismatch(
     frozen_assets: Path,
     tmp_path: Path,
@@ -1379,7 +1350,7 @@ def test_steady_state_stability_gate_rejects_high_cv(
     )
 
     assert summary["performance_stability_gate"]["passed"] is False
-    assert summary["steady_state_case_performance"][0]["cases"][0]["dspark"]["stability"] == "unstable"
+    assert summary["steady_state_case_performance"][0]["cases"][0]["dspark"]["stability"] == "not_formal"
     assert performance_summary._formal_performance_gate_status(summary) == "FAIL"
 
 

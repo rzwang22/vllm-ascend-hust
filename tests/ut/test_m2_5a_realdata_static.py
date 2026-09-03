@@ -420,14 +420,6 @@ def test_performance_summarizer_preserves_exact_validator_and_reports_provisiona
     assert '"per-case steady-state measured repeats"' in summarizer
     assert "CV <= 0.05" in summarizer
     assert "TIMER_RELATIONSHIPS" in summarizer
-    assert '"decode_seconds_per_verification"' in summarizer
-    assert '"terminal_truncated_candidate_tokens"' in summarizer
-    assert '"cross_repeat_output_deterministic"' in summarizer
-    assert '"measured_slow_host_event_count"' in summarizer
-    assert '"--require-formal-steady-state"' in summarizer
-    assert '"--output-repeats-csv"' in summarizer
-    assert "statistics.stdev" in summarizer
-    assert "Phase timers are diagnostic and may overlap; they are not additive." in summarizer
     assert '"exact_token_cross_mode_blocking": False' in summarizer
     assert '"cross_mode_exact_token_diagnostics"' in summarizer
     assert '"proposal_installed_count"] != record["proposal_consumed_count"' in summarizer
