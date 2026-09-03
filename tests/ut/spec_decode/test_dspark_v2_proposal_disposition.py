@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 Huawei Technologies Co., Ltd. All Rights Reserved.
 
+import io
+import json
+import logging
 from types import SimpleNamespace
 
 import numpy as np
@@ -14,6 +17,7 @@ from tests.ut.spec_decode.test_dspark_v2_proposal_publication import (
     _publish_proposal,
 )
 from vllm_ascend.worker.v2.model_runner import NPUModelRunner
+from vllm_ascend.worker.v2.spec_decode.dspark import speculator as speculator_module
 
 
 def _scheduler_tokens(request_ids: tuple[str, ...], lengths: tuple[int, ...]):
@@ -69,6 +73,90 @@ def _consumer_batch(proposal_inputs, proposal, lengths: tuple[int, ...]):
     batch.is_padding = torch.zeros(batch.num_tokens, dtype=torch.bool)
     batch.req_ids = list(proposal_inputs.request_ids)
     return batch
+
+
+def test_disposition_payload_is_not_built_or_emitted_at_info(
+    monkeypatch,
+) -> None:
+    speculator, _proposal_inputs, _result, proposal = _publish_proposal(
+        continue_after_verification=True,
+    )
+    lifecycle = speculator._current_proposal_lifecycle
+    assert lifecycle is not None
+    candidate_storage = proposal.untyped_storage().data_ptr()
+
+    monkeypatch.setattr(
+        speculator_module.json,
+        "dumps",
+        lambda *_args, **_kwargs: pytest.fail("INFO disposition logging serialized its payload"),
+    )
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setLevel(logging.DEBUG)
+    previous_level = speculator_module.logger.level
+    speculator_module.logger.addHandler(handler)
+    speculator_module.logger.setLevel(logging.INFO)
+    try:
+        speculator._log_proposal_disposition(lifecycle)
+        speculator_module.logger.warning("DSPARK_WARNING_SENTINEL")
+        speculator_module.logger.error("DSPARK_ERROR_SENTINEL")
+    finally:
+        speculator_module.logger.setLevel(previous_level)
+        speculator_module.logger.removeHandler(handler)
+        handler.close()
+
+    output = stream.getvalue()
+    assert "DSPARK_PROPOSAL_DISPOSITION=" not in output
+    assert "DSPARK_WARNING_SENTINEL" in output
+    assert "DSPARK_ERROR_SENTINEL" in output
+    assert speculator._current_proposal_lifecycle is lifecycle
+    assert speculator._published_candidate_tokens is proposal
+    assert proposal.untyped_storage().data_ptr() == candidate_storage
+
+
+def test_disposition_debug_record_preserves_structured_contract() -> None:
+    speculator, proposal_inputs, _result, proposal = _publish_proposal(
+        continue_after_verification=True,
+    )
+    lifecycle = speculator._current_proposal_lifecycle
+    assert lifecycle is not None
+
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setLevel(logging.DEBUG)
+    previous_level = speculator_module.logger.level
+    speculator_module.logger.addHandler(handler)
+    speculator_module.logger.setLevel(logging.DEBUG)
+    try:
+        speculator._log_proposal_disposition(lifecycle)
+    finally:
+        speculator_module.logger.setLevel(previous_level)
+        speculator_module.logger.removeHandler(handler)
+        handler.close()
+
+    records = [line for line in stream.getvalue().splitlines() if line.startswith("DSPARK_PROPOSAL_DISPOSITION=")]
+    assert len(records) == proposal_inputs.num_reqs
+    payloads = [json.loads(record.split("=", 1)[1]) for record in records]
+    assert [payload["request_id"] for payload in payloads] == list(proposal_inputs.request_ids)
+    for payload in payloads:
+        assert payload == {
+            "consumed": False,
+            "consumer_epoch": None,
+            "disposition": "GENERATED",
+            "drop_reason": None,
+            "dropped": False,
+            "installed": False,
+            "producer_epoch": proposal_inputs.step_epoch,
+            "published_length": proposal.shape[1],
+            "rank": speculator.rank,
+            "request_id": payload["request_id"],
+            "scheduled_length": 0,
+            "terminal": False,
+            "token_prefix_match": None,
+            "truncated": False,
+        }
+    assert speculator._current_proposal_lifecycle is lifecycle
+    assert speculator._published_candidate_tokens is proposal
 
 
 @pytest.mark.parametrize("scheduled_length", range(1, 6))

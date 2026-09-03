@@ -60,6 +60,11 @@ def test_verification_compares_only_the_scheduled_candidate_prefix() -> None:
 def test_lifecycle_and_diagnostic_expose_terminal_disposition_fields() -> None:
     lifecycle = LIFECYCLE.read_text(encoding="utf-8")
     speculator = SPECULATOR.read_text(encoding="utf-8")
+    logging_method = speculator[
+        speculator.index("    def _log_proposal_disposition(") : speculator.index(
+            "    def _clear_published_proposal_state("
+        )
+    ]
 
     for field in (
         "scheduled_lengths",
@@ -71,6 +76,12 @@ def test_lifecycle_and_diagnostic_expose_terminal_disposition_fields() -> None:
     ):
         assert field in lifecycle
     assert "DSPARK_PROPOSAL_DISPOSITION=" in speculator
+    assert "if not logger.isEnabledFor(logging.DEBUG):" in logging_method
+    assert logging_method.index("if not logger.isEnabledFor(logging.DEBUG):") < logging_method.index(
+        "published_length ="
+    )
+    assert "logger.debug(" in logging_method
+    assert "logger.info(" not in logging_method
     for field in (
         '"rank"',
         '"request_id"',

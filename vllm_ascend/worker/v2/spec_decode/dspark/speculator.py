@@ -3,6 +3,7 @@
 # Copyright (c) 2026 Huawei Technologies Co., Ltd. All Rights Reserved.
 
 import json
+import logging
 from collections.abc import Mapping
 from dataclasses import replace
 from itertools import product
@@ -1721,6 +1722,8 @@ class AscendDSparkSpeculator(BaseSpeculator):
         lifecycle: AscendDSparkProposalLifecycle,
     ) -> None:
         """Emit one content-free record for a disposition transition."""
+        if not logger.isEnabledFor(logging.DEBUG):
+            return
         published_length = (
             int(self._published_candidate_tokens.shape[1])
             if self._published_candidate_tokens is not None
@@ -1730,7 +1733,7 @@ class AscendDSparkSpeculator(BaseSpeculator):
             scheduled_length = (
                 lifecycle.scheduled_lengths[request_index] if request_index < len(lifecycle.scheduled_lengths) else 0
             )
-            logger.info(
+            logger.debug(
                 "DSPARK_PROPOSAL_DISPOSITION=%s",
                 json.dumps(
                     {
