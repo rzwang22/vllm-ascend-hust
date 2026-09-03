@@ -386,8 +386,11 @@ def test_p04_boundary_diagnostics_are_default_off_rank_local_and_do_not_add_step
     flush_finished = source[source.index("def _flush_finished_request(") : source.index("def _run_case(")]
 
     assert '"DSPARK_M25A_PERFORMANCE_BOUNDARY_DIAGNOSTICS"' in source
+    assert '"DSPARK_M25A_PERFORMANCE_SUPPRESS_DISPOSITION_STREAM"' in source
     assert 'environ.get(_PERFORMANCE_BOUNDARY_DIAGNOSTICS_ENV, "0")' in source
     assert "requires exactly one" in source
+    assert "suppress_dspark_disposition_stream(" in source
+    assert '"suppressed_disposition_record_count"' in source
     assert '"slow_host_step"' in run_case
     assert '"request_start_npu_sync_before"' in run_case
     assert '"request_end_npu_sync_after"' in run_case

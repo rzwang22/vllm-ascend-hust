@@ -24,6 +24,7 @@ from tests.e2e.nightly.single_node.spec_decode.dspark_loader_harness import (
 from tests.e2e.nightly.single_node.spec_decode.m2_5a_performance_diagnostics import (
     PerformanceBoundaryWriter,
     performance_boundary_writer,
+    suppress_dspark_disposition_stream,
 )
 from tests.e2e.nightly.single_node.spec_decode.m2_5a_trace_io import RankTraceWriter, rank_trace_writer
 from tests.e2e.nightly.single_node.spec_decode.test_dspark_kv_cache_init import (
@@ -78,6 +79,9 @@ _PERFORMANCE_CASE_IDS_ENV = "DSPARK_M25A_PERFORMANCE_CASE_IDS"
 # Test-only, non-sensitive and default-off. Records rank-local request and
 # slow-host-step boundaries without adding a per-step device synchronize.
 _PERFORMANCE_BOUNDARY_DIAGNOSTICS_ENV = "DSPARK_M25A_PERFORMANCE_BOUNDARY_DIAGNOSTICS"
+# Test-only A/B control. It suppresses only the high-frequency disposition
+# stream record and requires rank-local boundary diagnostics for attribution.
+_PERFORMANCE_SUPPRESS_DISPOSITION_STREAM_ENV = "DSPARK_M25A_PERFORMANCE_SUPPRESS_DISPOSITION_STREAM"
 PERFORMANCE_SLOW_STEP_SECONDS = 5.0
 MAX_EARLY_TRACE_TOKENS = 16
 
@@ -124,16 +128,26 @@ class _PerformanceConfig:
 @dataclass(frozen=True)
 class _PerformanceBoundaryDiagnosticConfig:
     enabled: bool = False
+    suppress_disposition_stream: bool = False
 
 
 def _performance_boundary_diagnostic_config(
     environ: Mapping[str, str],
     performance: _PerformanceConfig,
+    mode: str,
 ) -> _PerformanceBoundaryDiagnosticConfig:
     value = environ.get(_PERFORMANCE_BOUNDARY_DIAGNOSTICS_ENV, "0").strip()
     if value not in {"0", "1"}:
         raise ValueError(f"{_PERFORMANCE_BOUNDARY_DIAGNOSTICS_ENV} must be 0 or 1, got {value!r}.")
+    suppress_value = environ.get(_PERFORMANCE_SUPPRESS_DISPOSITION_STREAM_ENV, "0").strip()
+    if suppress_value not in {"0", "1"}:
+        raise ValueError(f"{_PERFORMANCE_SUPPRESS_DISPOSITION_STREAM_ENV} must be 0 or 1, got {suppress_value!r}.")
+    suppress_disposition_stream = suppress_value == "1"
     if value == "0":
+        if suppress_disposition_stream:
+            raise ValueError(
+                f"{_PERFORMANCE_SUPPRESS_DISPOSITION_STREAM_ENV}=1 requires {_PERFORMANCE_BOUNDARY_DIAGNOSTICS_ENV}=1."
+            )
         return _PerformanceBoundaryDiagnosticConfig()
     if not performance.enabled:
         raise ValueError(f"{_PERFORMANCE_BOUNDARY_DIAGNOSTICS_ENV}=1 requires {_PERFORMANCE_ENV}=1.")
@@ -141,7 +155,12 @@ def _performance_boundary_diagnostic_config(
         raise ValueError(
             f"{_PERFORMANCE_BOUNDARY_DIAGNOSTICS_ENV}=1 requires exactly one {_PERFORMANCE_CASE_IDS_ENV} case."
         )
-    return _PerformanceBoundaryDiagnosticConfig(enabled=True)
+    if suppress_disposition_stream and mode != "dspark":
+        raise ValueError(f"{_PERFORMANCE_SUPPRESS_DISPOSITION_STREAM_ENV}=1 requires DSPARK_M25A_MODE=dspark.")
+    return _PerformanceBoundaryDiagnosticConfig(
+        enabled=True,
+        suppress_disposition_stream=suppress_disposition_stream,
+    )
 
 
 def _performance_repeat_count(
@@ -1728,6 +1747,7 @@ def _run_plan(
     trace_result_dir: Path | None = None,
     performance: bool = False,
     performance_boundary_diagnostics: bool = False,
+    suppress_disposition_stream: bool = False,
 ) -> list[dict[str, Any]]:
     scheduler = _build_scheduler(runtime)
     records = []
@@ -1737,11 +1757,14 @@ def _run_plan(
         "mode": mode,
         "case_id": plan[0]["case_id"] if plan else None,
     }
-    with performance_boundary_writer(
-        trace_result_dir,
-        boundary_owner,
-        enabled=performance_boundary_diagnostics,
-    ) as boundary_writer:
+    with (
+        performance_boundary_writer(
+            trace_result_dir,
+            boundary_owner,
+            enabled=performance_boundary_diagnostics,
+        ) as boundary_writer,
+        suppress_dspark_disposition_stream(enabled=suppress_disposition_stream) as disposition_filter,
+    ):
         for case_index, case in enumerate(plan):
             if current_repeat is not None and case["lifecycle_repeat"] != current_repeat:
                 _marker(
@@ -1782,7 +1805,13 @@ def _run_plan(
                 )
             records.append(record)
         if boundary_writer is not None:
-            boundary_writer.finish(len(plan))
+            boundary_writer.finish(
+                len(plan),
+                diagnostics={
+                    "disposition_stream_suppressed": suppress_disposition_stream,
+                    "suppressed_disposition_record_count": disposition_filter.suppressed_count,
+                },
+            )
     if current_repeat is not None:
         _marker(
             "DSPARK_M2_5A_LIFECYCLE",
@@ -1886,6 +1915,7 @@ def _settings_and_matrix() -> tuple[
     performance_boundary_diagnostics = _performance_boundary_diagnostic_config(
         os.environ,
         performance_config,
+        mode,
     )
     plan = _build_performance_plan(plan, performance_config)
     return (
@@ -1946,6 +1976,7 @@ def test_dspark_single_request_realdata_npu() -> None:
             "measured_repeats": performance_config.measured_repeats,
             "case_ids": selected_case_ids,
             "boundary_diagnostics": performance_boundary_diagnostics.enabled,
+            "suppress_disposition_stream": performance_boundary_diagnostics.suppress_disposition_stream,
         },
     )
     records: list[dict[str, Any]] = []
@@ -1978,6 +2009,7 @@ def test_dspark_single_request_realdata_npu() -> None:
                     trace_result_dir=result_dir,
                     performance=performance_config.enabled,
                     performance_boundary_diagnostics=(performance_boundary_diagnostics.enabled),
+                    suppress_disposition_stream=(performance_boundary_diagnostics.suppress_disposition_stream),
                 )
             except BaseException as exc:
                 target_primary_error = exc
@@ -2005,6 +2037,7 @@ def test_dspark_single_request_realdata_npu() -> None:
                     trace_result_dir=result_dir,
                     performance=performance_config.enabled,
                     performance_boundary_diagnostics=(performance_boundary_diagnostics.enabled),
+                    suppress_disposition_stream=(performance_boundary_diagnostics.suppress_disposition_stream),
                 )
                 return True
 
@@ -2042,6 +2075,7 @@ def test_dspark_single_request_realdata_npu() -> None:
             "performance_validated": (performance_config.enabled and not performance_boundary_diagnostics.enabled),
             "performance_provisional": performance_config.enabled,
             "performance_boundary_diagnostics": (performance_boundary_diagnostics.enabled),
+            "performance_suppress_disposition_stream": (performance_boundary_diagnostics.suppress_disposition_stream),
             "exact_token_cross_mode_blocking": not performance_config.enabled,
             "performance_protocol": ("per_case_steady_state_v1" if performance_config.enabled else None),
             "performance_warmup_repeats": performance_config.warmup_repeats,

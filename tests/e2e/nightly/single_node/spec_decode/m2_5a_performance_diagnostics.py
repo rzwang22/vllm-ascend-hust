@@ -6,12 +6,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 SCHEMA_VERSION = 1
+DSPARK_SPECULATOR_LOGGER = "vllm_ascend.worker.v2.spec_decode.dspark.speculator"
+DSPARK_PROPOSAL_DISPOSITION_FORMAT = "DSPARK_PROPOSAL_DISPOSITION=%s"
 _REQUIRED_EVENT_ORDER = (
     "request_begin",
     "request_start_barrier_before",
@@ -93,15 +96,23 @@ class PerformanceBoundaryWriter:
         )
         self.event_count += 1
 
-    def finish(self, request_count: int) -> None:
+    def finish(
+        self,
+        request_count: int,
+        *,
+        diagnostics: dict[str, Any] | None = None,
+    ) -> None:
         if self.complete:
             raise RuntimeError("Performance-boundary trace completed more than once.")
+        payload = {
+            "event_count": self.event_count,
+            "request_count": request_count,
+        }
+        if diagnostics is not None:
+            payload["diagnostics"] = diagnostics
         self._write(
             "complete",
-            {
-                "event_count": self.event_count,
-                "request_count": request_count,
-            },
+            payload,
         )
         self.complete = True
 
@@ -136,6 +147,36 @@ def performance_boundary_writer(
         except BaseException:
             if primary_error is None:
                 raise
+
+
+class ProposalDispositionStreamFilter(logging.Filter):
+    """Count and suppress only the DSpark disposition stream record."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.suppressed_count = 0
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.name == DSPARK_SPECULATOR_LOGGER and record.msg == DSPARK_PROPOSAL_DISPOSITION_FORMAT:
+            self.suppressed_count += 1
+            return False
+        return True
+
+
+@contextmanager
+def suppress_dspark_disposition_stream(*, enabled: bool):
+    """Test-only A/B filter; the default production logger is unchanged."""
+    stream_filter = ProposalDispositionStreamFilter()
+    if not enabled:
+        yield stream_filter
+        return
+
+    logger = logging.getLogger(DSPARK_SPECULATOR_LOGGER)
+    logger.addFilter(stream_filter)
+    try:
+        yield stream_filter
+    finally:
+        logger.removeFilter(stream_filter)
 
 
 def load_performance_boundary_traces(

@@ -993,11 +993,12 @@ def test_performance_boundary_diagnostics_are_default_off_and_single_case_only()
         case_ids=("gsm8k:0024518bd53c2ee30ba12032",),
     )
 
-    assert realdata_harness._performance_boundary_diagnostic_config({}, disabled).enabled is False
+    assert realdata_harness._performance_boundary_diagnostic_config({}, disabled, "dspark").enabled is False
     with pytest.raises(ValueError, match="requires DSPARK_M25A_PERFORMANCE=1"):
         realdata_harness._performance_boundary_diagnostic_config(
             {"DSPARK_M25A_PERFORMANCE_BOUNDARY_DIAGNOSTICS": "1"},
             disabled,
+            "dspark",
         )
     with pytest.raises(ValueError, match="exactly one"):
         realdata_harness._performance_boundary_diagnostic_config(
@@ -1006,14 +1007,40 @@ def test_performance_boundary_diagnostics_are_default_off_and_single_case_only()
                 enabled=True,
                 case_ids=("case-a", "case-b"),
             ),
+            "dspark",
         )
     assert (
         realdata_harness._performance_boundary_diagnostic_config(
             {"DSPARK_M25A_PERFORMANCE_BOUNDARY_DIAGNOSTICS": "1"},
             enabled,
+            "dspark",
         ).enabled
         is True
     )
+    with pytest.raises(ValueError, match="requires DSPARK_M25A_PERFORMANCE_BOUNDARY_DIAGNOSTICS=1"):
+        realdata_harness._performance_boundary_diagnostic_config(
+            {"DSPARK_M25A_PERFORMANCE_SUPPRESS_DISPOSITION_STREAM": "1"},
+            enabled,
+            "dspark",
+        )
+    comparison = realdata_harness._performance_boundary_diagnostic_config(
+        {
+            "DSPARK_M25A_PERFORMANCE_BOUNDARY_DIAGNOSTICS": "1",
+            "DSPARK_M25A_PERFORMANCE_SUPPRESS_DISPOSITION_STREAM": "1",
+        },
+        enabled,
+        "dspark",
+    )
+    assert comparison.suppress_disposition_stream is True
+    with pytest.raises(ValueError, match="requires DSPARK_M25A_MODE=dspark"):
+        realdata_harness._performance_boundary_diagnostic_config(
+            {
+                "DSPARK_M25A_PERFORMANCE_BOUNDARY_DIAGNOSTICS": "1",
+                "DSPARK_M25A_PERFORMANCE_SUPPRESS_DISPOSITION_STREAM": "1",
+            },
+            enabled,
+            "target_only",
+        )
 
 
 def test_performance_plan_runs_each_case_warmup_then_measured_with_unique_requests(

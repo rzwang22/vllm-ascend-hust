@@ -2,14 +2,18 @@
 # Copyright (c) 2026 Huawei Technologies Co., Ltd. All Rights Reserved.
 
 import json
+import logging
 from pathlib import Path
 
 import pytest
 
 from tests.e2e.nightly.single_node.spec_decode.m2_5a_performance_diagnostics import (
+    DSPARK_PROPOSAL_DISPOSITION_FORMAT,
+    DSPARK_SPECULATOR_LOGGER,
     PerformanceBoundaryWriter,
     load_performance_boundary_traces,
     performance_boundary_writer,
+    suppress_dspark_disposition_stream,
 )
 
 EVENTS = (
@@ -47,7 +51,13 @@ def _write_valid_trace(root: Path) -> Path:
             repeat_index=0,
             payload=({"public_pending_future_count": None} if event == "request_complete" else None),
         )
-    writer.finish(1)
+    writer.finish(
+        1,
+        diagnostics={
+            "disposition_stream_suppressed": False,
+            "suppressed_disposition_record_count": 0,
+        },
+    )
     writer.close()
     return writer.path
 
@@ -69,6 +79,10 @@ def test_performance_boundary_trace_is_rank_local_ordered_and_complete(
         "complete",
     ]
     assert traces[0][-2]["payload"]["public_pending_future_count"] is None
+    assert traces[0][-1]["payload"]["diagnostics"] == {
+        "disposition_stream_suppressed": False,
+        "suppressed_disposition_record_count": 0,
+    }
     assert "output_token_ids" not in path.read_text(encoding="utf-8")
 
 
@@ -76,6 +90,41 @@ def test_disabled_performance_boundary_writer_has_no_files(tmp_path: Path) -> No
     with performance_boundary_writer(tmp_path, OWNER, enabled=False) as writer:
         assert writer is None
     assert list(tmp_path.rglob("*")) == []
+
+
+def test_disposition_stream_filter_is_exact_counted_and_default_off(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    logger = logging.getLogger(DSPARK_SPECULATOR_LOGGER)
+    logger.setLevel(logging.INFO)
+    caplog.set_level(logging.INFO, logger=DSPARK_SPECULATOR_LOGGER)
+
+    with suppress_dspark_disposition_stream(enabled=False) as disabled:
+        logger.info(DSPARK_PROPOSAL_DISPOSITION_FORMAT, '{"rank": 0}')
+    assert disabled.suppressed_count == 0
+    assert "DSPARK_PROPOSAL_DISPOSITION=" in caplog.text
+
+    caplog.clear()
+    with suppress_dspark_disposition_stream(enabled=True) as enabled:
+        logger.info(DSPARK_PROPOSAL_DISPOSITION_FORMAT, '{"rank": 0}')
+        logger.info("unrelated diagnostic")
+    assert enabled.suppressed_count == 1
+    assert "DSPARK_PROPOSAL_DISPOSITION=" not in caplog.text
+    assert "unrelated diagnostic" in caplog.text
+
+
+def test_disposition_stream_filter_is_removed_after_exception(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    logger = logging.getLogger(DSPARK_SPECULATOR_LOGGER)
+    logger.setLevel(logging.INFO)
+    caplog.set_level(logging.INFO, logger=DSPARK_SPECULATOR_LOGGER)
+
+    with pytest.raises(RuntimeError, match="primary"), suppress_dspark_disposition_stream(enabled=True):
+        raise RuntimeError("primary")
+    logger.info(DSPARK_PROPOSAL_DISPOSITION_FORMAT, '{"rank": 0}')
+
+    assert "DSPARK_PROPOSAL_DISPOSITION=" in caplog.text
 
 
 @pytest.mark.parametrize("failure", ("truncated", "corrupt"))
