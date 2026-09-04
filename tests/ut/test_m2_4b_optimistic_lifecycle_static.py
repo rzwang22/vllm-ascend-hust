@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 Huawei Technologies Co., Ltd. All Rights Reserved.
 
+from __future__ import annotations
+
 import ast
 from pathlib import Path
 from types import SimpleNamespace
@@ -28,6 +30,17 @@ def _load_function(path: Path, name: str):
     namespace = {"Any": object, "VllmConfig": object}
     exec(compile(module, str(path), "exec"), namespace)
     return namespace[name]
+
+
+def _load_class_method(path: Path, class_name: str, method_name: str):
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    owner = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == class_name)
+    method = next(node for node in owner.body if isinstance(node, ast.FunctionDef) and node.name == method_name)
+    method.decorator_list = []
+    module = ast.fix_missing_locations(ast.Module(body=[method], type_ignores=[]))
+    namespace = {}
+    exec(compile(module, str(path), "exec"), namespace)
+    return namespace[method_name]
 
 
 def test_active_scheduler_commit_must_equal_raw_verified_tokens() -> None:
@@ -73,6 +86,37 @@ def test_proposal_lifecycle_fields_and_terminal_cleanup_are_explicit() -> None:
     assert "speculator.reconcile_scheduler_proposal(" in runner_source
     assert "finished_request_ids=scheduler_output.finished_req_ids" in runner_source
     assert "finally:\n            super().finish_requests" in runner_source
+
+
+def test_batched_proposal_ownership_uses_explicit_row_bijection() -> None:
+    speculator_source = SPECULATOR.read_text(encoding="utf-8")
+    verification_rows = _load_class_method(
+        SPECULATOR,
+        "AscendDSparkSpeculator",
+        "_verification_to_published_rows",
+    )
+
+    assert "def _verification_to_published_rows(" in speculator_source
+    assert "published_rows[request_id] = row" in speculator_source
+    assert "verification_rows.append(published_row)" in speculator_source
+    assert "verification_candidate_tokens = candidate_tokens.index_select(" in (speculator_source)
+    assert "expected_request_state_indices = request_state_indices.index_select(" in (speculator_source)
+    assert "tuple(input_batch.req_ids) != request_ids" not in speculator_source
+    assert "with -1 placeholders" in speculator_source
+    assert verification_rows(
+        ("request-1", "request-2", "request-3", "request-4"),
+        ("request-4", "request-3", "request-1", "request-2"),
+    ) == (3, 2, 0, 1)
+    with pytest.raises(RuntimeError, match="duplicate request ownership"):
+        verification_rows(
+            ("request-1", "request-2"),
+            ("request-1", "request-1"),
+        )
+    with pytest.raises(RuntimeError, match="does not match"):
+        verification_rows(
+            ("request-1", "request-2"),
+            ("request-1", "request-extra"),
+        )
 
 
 def test_single_round_and_multi_round_harnesses_select_distinct_modes() -> None:

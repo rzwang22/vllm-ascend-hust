@@ -1679,6 +1679,8 @@ class AscendDSparkSpeculator(BaseSpeculator):
             raise RuntimeError("Ascend DSpark proposal request ownership does not match its target step.")
         if result.num_reqs != proposal_inputs.num_reqs:
             raise RuntimeError("Ascend DSpark proposal request count does not match its target step.")
+        if len(set(result.request_ids)) != result.num_reqs:
+            raise RuntimeError("Ascend DSpark proposal request ownership contains duplicate request IDs.")
         if (
             result.num_speculative_tokens != self.num_speculative_steps
             or result.num_speculative_tokens != proposal_inputs.num_speculative_tokens
@@ -1829,6 +1831,114 @@ class AscendDSparkSpeculator(BaseSpeculator):
         self._clear_published_proposal_state()
         return True
 
+    def _drop_published_proposal_rows(
+        self,
+        request_ids_to_drop: set[str],
+        *,
+        reason: str,
+        terminal: bool,
+    ) -> bool:
+        """Atomically retire explicit owner rows while preserving survivors."""
+        lifecycle = self._current_proposal_lifecycle
+        request_ids = self._published_proposal_request_ids
+        candidate_tokens = self._published_candidate_tokens
+        request_state_indices = self._published_proposal_request_state_indices
+        if lifecycle is None or request_ids is None or candidate_tokens is None or request_state_indices is None:
+            return False
+        if lifecycle.consumed:
+            self._release_consumed_proposal()
+            return False
+
+        dropped_rows = tuple(row for row, request_id in enumerate(request_ids) if request_id in request_ids_to_drop)
+        if not dropped_rows:
+            return False
+        if len(dropped_rows) == len(request_ids):
+            return self._drop_published_proposal(
+                reason=reason,
+                terminal=terminal,
+            )
+
+        kept_rows = tuple(row for row in range(len(request_ids)) if row not in dropped_rows)
+        kept_request_ids = tuple(request_ids[row] for row in kept_rows)
+        dropped_request_ids = tuple(request_ids[row] for row in dropped_rows)
+        kept_row_indices = torch.tensor(
+            kept_rows,
+            dtype=torch.int64,
+            device=candidate_tokens.device,
+        )
+        kept_candidate_tokens = candidate_tokens.index_select(0, kept_row_indices)
+        state_row_indices = kept_row_indices.to(request_state_indices.device)
+        kept_request_state_indices = request_state_indices.index_select(
+            0,
+            state_row_indices,
+        )
+        scheduled_lengths = lifecycle.scheduled_lengths
+        kept_scheduled_lengths = tuple(scheduled_lengths[row] for row in kept_rows if row < len(scheduled_lengths))
+        dropped_scheduled_lengths = tuple(
+            scheduled_lengths[row] for row in dropped_rows if row < len(scheduled_lengths)
+        )
+        dropped = replace(
+            lifecycle,
+            request_ids=dropped_request_ids,
+            scheduled_lengths=dropped_scheduled_lengths,
+            disposition="DROPPED",
+            token_prefix_match=None,
+            installed=False,
+            truncated=False,
+            dropped=True,
+            drop_reason=reason,
+            discarded_terminal=terminal,
+        )
+        kept = replace(
+            lifecycle,
+            request_ids=kept_request_ids,
+            scheduled_lengths=kept_scheduled_lengths,
+        )
+
+        # Publish the complete survivor state together. No partially sliced
+        # ownership is observable if tensor indexing above fails.
+        self._published_proposal_request_ids = kept_request_ids
+        self._published_proposal_request_state_indices = kept_request_state_indices
+        self._published_candidate_tokens = kept_candidate_tokens
+        self._current_proposal_lifecycle = kept
+        self._dropped_proposal_lifecycle = dropped
+        self._proposal_dropped_count += 1
+        if terminal:
+            self._terminal_proposal_lifecycle = dropped
+            self._terminal_proposal_discard_count += 1
+        self._log_proposal_disposition(dropped)
+        return True
+
+    @staticmethod
+    def _verification_to_published_rows(
+        published_request_ids: tuple[str, ...],
+        verification_request_ids: tuple[str, ...],
+    ) -> tuple[int, ...]:
+        """Build the exact verification-row to publication-row bijection."""
+        if len(published_request_ids) != len(verification_request_ids):
+            raise RuntimeError("Ascend DSpark verification request ownership does not match the published proposal.")
+        published_rows: dict[str, int] = {}
+        for row, request_id in enumerate(published_request_ids):
+            if request_id in published_rows:
+                raise RuntimeError("Ascend DSpark published proposal contains duplicate request ownership.")
+            published_rows[request_id] = row
+
+        verification_rows: list[int] = []
+        seen_verification_ids: set[str] = set()
+        for request_id in verification_request_ids:
+            if request_id in seen_verification_ids:
+                raise RuntimeError("Ascend DSpark verification contains duplicate request ownership.")
+            seen_verification_ids.add(request_id)
+            published_row = published_rows.get(request_id)
+            if published_row is None:
+                raise RuntimeError(
+                    "Ascend DSpark verification request ownership does not match the published proposal."
+                )
+            verification_rows.append(published_row)
+        if len(verification_rows) != len(published_rows):
+            raise RuntimeError("Ascend DSpark verification request ownership does not match the published proposal.")
+        return tuple(verification_rows)
+
     def reconcile_scheduler_proposal(
         self,
         *,
@@ -1862,23 +1972,31 @@ class AscendDSparkSpeculator(BaseSpeculator):
         owners = set(request_ids)
         terminal_owners = owners.intersection(finished_request_ids)
         if terminal_owners:
-            if terminal_owners != owners:
-                raise RuntimeError("Ascend DSpark cannot terminal-discard only part of a proposal batch.")
-            self._drop_published_proposal(
+            self._drop_published_proposal_rows(
+                terminal_owners,
                 reason="terminal",
                 terminal=True,
             )
-            return "DROPPED"
+            request_ids = self._published_proposal_request_ids
+            candidate_tokens = self._published_candidate_tokens
+            lifecycle = self._current_proposal_lifecycle
+            if request_ids is None or candidate_tokens is None or lifecycle is None:
+                return "DROPPED"
+            owners = set(request_ids)
 
         preempted_owners = owners.intersection(preempted_request_ids)
         if preempted_owners:
-            if preempted_owners != owners:
-                raise RuntimeError("Ascend DSpark cannot preemption-discard only part of a proposal batch.")
-            self._drop_published_proposal(
+            self._drop_published_proposal_rows(
+                preempted_owners,
                 reason="preempted",
                 terminal=False,
             )
-            return "DROPPED"
+            request_ids = self._published_proposal_request_ids
+            candidate_tokens = self._published_candidate_tokens
+            lifecycle = self._current_proposal_lifecycle
+            if request_ids is None or candidate_tokens is None or lifecycle is None:
+                return "DROPPED"
+            owners = set(request_ids)
 
         missing_owners = owners.difference(known_request_ids)
         if missing_owners:
@@ -1899,6 +2017,12 @@ class AscendDSparkSpeculator(BaseSpeculator):
             raise RuntimeError("Ascend DSpark scheduler cannot partially execute a published proposal batch.")
 
         scheduled_owners = owners.intersection(scheduled_spec_decode_tokens)
+        unexpected_scheduled_owners = set(scheduled_spec_decode_tokens).difference(owners)
+        if unexpected_scheduled_owners:
+            raise RuntimeError(
+                "Ascend DSpark scheduler installed proposal tokens for requests "
+                f"outside published ownership {sorted(unexpected_scheduled_owners)!r}."
+            )
         if not scheduled_owners:
             self._drop_published_proposal(
                 reason="scheduled_without_proposal",
@@ -1909,10 +2033,11 @@ class AscendDSparkSpeculator(BaseSpeculator):
             raise RuntimeError("Ascend DSpark scheduler installed proposal tokens for only part of the owner batch.")
 
         published_length = candidate_tokens.shape[1]
-        # In the synchronous core path these lists are intentionally filled
-        # with -1 placeholders; SchedulerOutput is authoritative for presence
-        # and length. The exact device-token prefix is validated below from
-        # the InputBatch built by the core runner without adding a host sync.
+        # In the padded async core path these lists may initially be filled
+        # with -1 placeholders and are updated request-by-request. The
+        # SchedulerOutput remains authoritative for presence and length. The
+        # exact device-token prefix is validated below from the InputBatch
+        # built by the core runner without adding a host sync.
         scheduled_lengths = tuple(len(scheduled_spec_decode_tokens[request_id]) for request_id in request_ids)
         if any(length <= 0 or length > published_length for length in scheduled_lengths):
             raise RuntimeError("Ascend DSpark scheduler returned an invalid installed proposal length.")
@@ -1952,16 +2077,28 @@ class AscendDSparkSpeculator(BaseSpeculator):
             raise RuntimeError("Ascend DSpark proposal was already consumed.")
         if producer_epoch != self._proposal_step_epoch:
             raise RuntimeError("Ascend DSpark verification belongs to a stale proposal epoch.")
-        if tuple(input_batch.req_ids) != request_ids or input_batch.num_reqs != len(request_ids):
-            raise RuntimeError("Ascend DSpark verification request ownership does not match the published proposal.")
+        verification_request_ids = tuple(input_batch.req_ids)
+        if input_batch.num_reqs != len(verification_request_ids):
+            raise RuntimeError("Ascend DSpark verification InputBatch request count is inconsistent.")
+        # Core may permute equal-length requests between proposal production
+        # and verification. Resolve every current tensor row back to its
+        # published owner instead of treating either dictionary order as ABI.
+        verification_to_published = self._verification_to_published_rows(
+            request_ids,
+            verification_request_ids,
+        )
         if input_batch.num_draft_tokens_per_req is None:
             raise RuntimeError("Ascend DSpark verification is missing scheduled proposal lengths.")
-        scheduled_lengths = tuple(int(length) for length in input_batch.num_draft_tokens_per_req)
+        verification_scheduled_lengths = tuple(int(length) for length in input_batch.num_draft_tokens_per_req)
         published_length = candidate_tokens.shape[1]
-        if len(scheduled_lengths) != input_batch.num_reqs or any(
-            length <= 0 or length > published_length for length in scheduled_lengths
+        if len(verification_scheduled_lengths) != input_batch.num_reqs or any(
+            length <= 0 or length > published_length for length in verification_scheduled_lengths
         ):
             raise RuntimeError("Ascend DSpark verification received an invalid scheduled proposal length.")
+        published_scheduled_lengths = [0] * input_batch.num_reqs
+        for verification_row, published_row in enumerate(verification_to_published):
+            published_scheduled_lengths[published_row] = verification_scheduled_lengths[verification_row]
+        scheduled_lengths = tuple(published_scheduled_lengths)
         lifecycle = self._current_proposal_lifecycle
         if lifecycle is None or lifecycle.proposal_epoch != producer_epoch:
             raise RuntimeError("Ascend DSpark proposal lifecycle ownership is missing or stale.")
@@ -1985,6 +2122,26 @@ class AscendDSparkSpeculator(BaseSpeculator):
         if input_batch.num_draft_tokens != sum(scheduled_lengths):
             raise RuntimeError("Ascend DSpark verification draft-token count is inconsistent.")
 
+        identity_rows = tuple(range(input_batch.num_reqs))
+        if verification_to_published == identity_rows:
+            verification_candidate_tokens = candidate_tokens
+            expected_request_state_indices = request_state_indices
+        else:
+            candidate_row_indices = torch.tensor(
+                verification_to_published,
+                dtype=torch.int64,
+                device=candidate_tokens.device,
+            )
+            verification_candidate_tokens = candidate_tokens.index_select(
+                0,
+                candidate_row_indices,
+            )
+            state_row_indices = candidate_row_indices.to(request_state_indices.device)
+            expected_request_state_indices = request_state_indices.index_select(
+                0,
+                state_row_indices,
+            )
+
         active_request_indices = self._validate_step_tensor(
             "verification request-state indices",
             input_batch.idx_mapping,
@@ -1993,7 +2150,7 @@ class AscendDSparkSpeculator(BaseSpeculator):
             min_size=input_batch.num_reqs,
         )[: input_batch.num_reqs]
         _assert_markov_tensor_contract(
-            (active_request_indices == request_state_indices).all(),
+            (active_request_indices == expected_request_state_indices).all(),
             "Ascend DSpark verification request-state mapping changed after publication.",
         )
         query_start_loc = self._validate_step_tensor(
@@ -2004,7 +2161,7 @@ class AscendDSparkSpeculator(BaseSpeculator):
             min_size=input_batch.num_reqs + 1,
         )[: input_batch.num_reqs + 1]
         scheduled_lengths_tensor = torch.tensor(
-            scheduled_lengths,
+            verification_scheduled_lengths,
             dtype=query_start_loc.dtype,
             device=query_start_loc.device,
         )
@@ -2030,7 +2187,7 @@ class AscendDSparkSpeculator(BaseSpeculator):
         scheduled_mask = candidate_offsets[None, :] <= scheduled_lengths_tensor[:, None]
         candidate_indices = (query_start_loc[:-1, None] + candidate_offsets[None, :])[scheduled_mask]
         consumed_candidates = target_input_ids[candidate_indices.to(torch.int64)]
-        expected_candidates = candidate_tokens[:, :max_scheduled_length][scheduled_mask]
+        expected_candidates = verification_candidate_tokens[:, :max_scheduled_length][scheduled_mask]
         _assert_markov_tensor_contract(
             (consumed_candidates.to(torch.int64) == expected_candidates).all(),
             "Ascend DSpark verification inputs do not contain the published candidate set prefix scheduled by core.",
@@ -2144,9 +2301,8 @@ class AscendDSparkSpeculator(BaseSpeculator):
         if lifecycle.consumed:
             self._release_consumed_proposal()
             return False
-        if overlap != set(request_ids):
-            raise RuntimeError("Ascend DSpark cannot terminal-discard only part of a proposal batch.")
-        return self._drop_published_proposal(
+        return self._drop_published_proposal_rows(
+            overlap,
             reason="terminal",
             terminal=True,
         )

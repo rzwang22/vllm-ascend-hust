@@ -252,19 +252,26 @@ def test_terminal_scheduler_outcome_discards_one_uninstalled_proposal(
     assert proposal.shape == (proposal_inputs.num_reqs, 5)
 
 
-def test_partial_terminal_batch_fails_without_releasing_ownership() -> None:
+def test_partial_terminal_batch_retires_only_finished_owner() -> None:
     speculator, proposal_inputs, _result, proposal = _publish_proposal(
         continue_after_verification=True,
     )
     lifecycle = speculator._current_proposal_lifecycle
 
-    with pytest.raises(RuntimeError, match="only part of a proposal batch"):
-        speculator.discard_terminal_proposal({proposal_inputs.request_ids[0]})
+    assert speculator.discard_terminal_proposal(
+        {proposal_inputs.request_ids[0]},
+    )
 
-    assert speculator._current_proposal_lifecycle is lifecycle
-    assert speculator._published_candidate_tokens is proposal
-    assert speculator._terminal_proposal_lifecycle is None
-    assert speculator._terminal_proposal_discard_count == 0
+    assert speculator._current_proposal_lifecycle is not lifecycle
+    assert speculator._published_proposal_request_ids == (proposal_inputs.request_ids[1],)
+    assert torch.equal(speculator._published_candidate_tokens, proposal[1:])
+    assert torch.equal(
+        speculator._published_proposal_request_state_indices,
+        proposal_inputs.request_state_indices[1:],
+    )
+    assert speculator._terminal_proposal_lifecycle is not None
+    assert speculator._terminal_proposal_lifecycle.request_ids == (proposal_inputs.request_ids[0],)
+    assert speculator._terminal_proposal_discard_count == 1
 
 
 def test_next_round_failure_does_not_republish_consumed_proposal(
@@ -374,7 +381,7 @@ def test_runner_finish_discards_terminal_proposal_before_base_cleanup(
     assert speculator._terminal_proposal_discard_count == 1
 
 
-def test_runner_finish_keeps_base_cleanup_on_terminal_discard_error(
+def test_runner_finish_keeps_base_cleanup_on_partial_terminal_discard(
     monkeypatch,
 ) -> None:
     from vllm.v1.worker.gpu.model_runner import GPUModelRunner
@@ -398,8 +405,10 @@ def test_runner_finish_keeps_base_cleanup_on_terminal_discard_error(
     scheduler_output = SchedulerOutput.make_empty()
     scheduler_output.finished_req_ids = {proposal_inputs.request_ids[0]}
 
-    with pytest.raises(RuntimeError, match="only part of a proposal batch"):
-        runner.finish_requests(scheduler_output)
+    runner.finish_requests(scheduler_output)
 
     assert calls == [(runner, scheduler_output)]
     assert speculator._current_proposal_lifecycle is not None
+    assert speculator._published_proposal_request_ids == (proposal_inputs.request_ids[1],)
+    assert speculator._terminal_proposal_lifecycle is not None
+    assert speculator._terminal_proposal_lifecycle.request_ids == (proposal_inputs.request_ids[0],)
