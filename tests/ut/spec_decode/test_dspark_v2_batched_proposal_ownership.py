@@ -20,6 +20,30 @@ REQUEST_IDS = ("request-1", "request-2", "request-3", "request-4")
 REQUEST_STATE_INDICES = torch.tensor([3, 0, 2, 1], dtype=torch.int32)
 VERIFICATION_ORDER = ("request-4", "request-3", "request-1", "request-2")
 NEW_PREFILL_REQUEST_ID = "request-5-prefill"
+SYNTHETIC_TOKEN_FLOOR = 10
+
+
+def _bounded_candidate_tokens(
+    num_reqs: int,
+    num_speculative_tokens: int,
+    shared_vocab_size: int,
+) -> torch.Tensor:
+    usable_vocab_size = shared_vocab_size - SYNTHETIC_TOKEN_FLOOR
+    assert usable_vocab_size > 0
+    candidates = (
+        torch.arange(num_reqs, dtype=torch.int64)[:, None] * num_speculative_tokens
+        + torch.arange(
+            1,
+            num_speculative_tokens + 1,
+            dtype=torch.int64,
+        )[None, :]
+    ) % usable_vocab_size + SYNTHETIC_TOKEN_FLOOR
+    assert candidates.shape == (num_reqs, num_speculative_tokens)
+    assert bool((candidates >= 0).all())
+    assert bool((candidates < shared_vocab_size).all())
+    assert torch.unique(candidates, dim=0).shape[0] == num_reqs
+    assert torch.unique(candidates[:, 0]).shape[0] == num_reqs
+    return candidates
 
 
 def _publish_batched_proposal(
@@ -38,8 +62,10 @@ def _publish_batched_proposal(
         if num_reqs <= len(REQUEST_STATE_INDICES)
         else torch.arange(num_reqs, dtype=torch.int32)
     )
-    candidates = (
-        torch.arange(num_reqs, dtype=torch.int64)[:, None] * 20 + torch.arange(1, 6, dtype=torch.int64)[None, :] + 10
+    candidates = _bounded_candidate_tokens(
+        num_reqs,
+        result.num_speculative_tokens,
+        result.vocab_size,
     )
     proposal_inputs = replace(
         proposal_inputs,
@@ -58,6 +84,26 @@ def _publish_batched_proposal(
     speculator._markov_result = result
     proposal = speculator._build_core_proposal(proposal_inputs, result)
     return speculator, proposal_inputs, proposal
+
+
+@pytest.mark.parametrize("num_reqs", [55, 64])
+def test_large_batch_proposal_fixture_stays_within_shared_vocabulary(
+    num_reqs: int,
+) -> None:
+    num_speculative_tokens = 5
+    shared_vocab_size = 256
+
+    candidates = _bounded_candidate_tokens(
+        num_reqs,
+        num_speculative_tokens,
+        shared_vocab_size,
+    )
+
+    assert candidates.shape == (num_reqs, num_speculative_tokens)
+    assert int(candidates.min()) >= 0
+    assert int(candidates.max()) < shared_vocab_size
+    assert torch.unique(candidates, dim=0).shape[0] == num_reqs
+    assert torch.unique(candidates[:, 0]).shape[0] == num_reqs
 
 
 def _candidate_rows_by_request(
