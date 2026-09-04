@@ -32,12 +32,15 @@ def test_disposition_tracks_real_lengths_without_mutating_input_batch() -> None:
         )
     ]
 
-    assert "len(scheduled_spec_decode_tokens[request_id])" in reconcile
+    assert "scheduled_lengths_by_request" in reconcile
     assert 'disposition = "INSTALLED"' in reconcile
     assert 'else "TRUNCATED"' in reconcile
     assert 'reason="scheduled_without_proposal"' in reconcile
     assert 'reason="preempted"' in reconcile
-    assert 'reason="request_missing"' in reconcile
+    assert "unresolved_owners" in reconcile
+    assert "delayed_owners" in reconcile
+    assert "_defer_published_proposal_rows(delayed_owners)" in reconcile
+    assert "conflicting proposal owner dispositions" in reconcile
     assert "num_draft_tokens_per_req" not in reconcile
     assert "input_batch" not in reconcile
 
@@ -72,9 +75,10 @@ def test_scheduler_spec_tokens_are_the_proposal_installation_truth() -> None:
 
     assert "scheduled_spec_decode_tokens=(scheduler_output.scheduled_spec_decode_tokens)" in finish
     assert "set(scheduler_output.num_scheduled_tokens)" in finish
-    assert "scheduled_owners = owners.intersection(scheduled_spec_decode_tokens)" in reconcile
-    assert "set(scheduled_spec_decode_tokens).difference(owners)" in reconcile
-    assert "len(scheduled_spec_decode_tokens[request_id])" in reconcile
+    assert "scheduled_spec_owners = set(scheduled_spec_decode_tokens)" in reconcile
+    assert "scheduled_owners = owners.intersection(scheduled_spec_owners)" in reconcile
+    assert "scheduled_spec_owners.difference(owners)" in reconcile
+    assert "scheduled_lengths_by_request" in reconcile
 
 
 def test_lifecycle_and_diagnostic_expose_terminal_disposition_fields() -> None:

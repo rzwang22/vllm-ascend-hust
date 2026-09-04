@@ -33,7 +33,11 @@ def _publish_batched_proposal(
         hidden_states,
     )
     num_reqs = len(request_ids)
-    request_state_indices = REQUEST_STATE_INDICES[:num_reqs].clone()
+    request_state_indices = (
+        REQUEST_STATE_INDICES[:num_reqs].clone()
+        if num_reqs <= len(REQUEST_STATE_INDICES)
+        else torch.arange(num_reqs, dtype=torch.int32)
+    )
     candidates = (
         torch.arange(num_reqs, dtype=torch.int64)[:, None] * 20 + torch.arange(1, 6, dtype=torch.int64)[None, :] + 10
     )
@@ -294,6 +298,46 @@ def test_mixed_prefill_is_not_treated_as_installed_proposal_owner() -> None:
     assert speculator._proposal_consumption_count == 1
 
 
+def test_mixed_terminal_verification_permutation_and_new_prefill() -> None:
+    speculator, proposal_inputs, proposal = _publish_batched_proposal()
+    terminal_request_id = "request-2"
+    verification_order = tuple(request_id for request_id in VERIFICATION_ORDER if request_id != terminal_request_id)
+    mixed_request_order = (*verification_order, NEW_PREFILL_REQUEST_ID)
+    lengths_by_request = dict.fromkeys(verification_order, 5)
+
+    assert (
+        speculator.reconcile_scheduler_proposal(
+            scheduled_spec_decode_tokens=dict.fromkeys(
+                verification_order,
+                [-1] * 5,
+            ),
+            scheduled_request_ids=set(mixed_request_order),
+            finished_request_ids={terminal_request_id},
+            preempted_request_ids=set(),
+            known_request_ids={*REQUEST_IDS, NEW_PREFILL_REQUEST_ID},
+        )
+        == "INSTALLED"
+    )
+    batch = _consumer_batch(
+        proposal_inputs,
+        proposal,
+        mixed_request_order,
+        lengths_by_request,
+        prefill_lengths_by_request={NEW_PREFILL_REQUEST_ID: 61},
+    )
+
+    _consume(speculator, batch)
+
+    consumed = speculator._last_consumed_proposal_lifecycle
+    assert consumed is not None
+    assert consumed.request_ids == tuple(request_id for request_id in REQUEST_IDS if request_id != terminal_request_id)
+    assert terminal_request_id not in consumed.request_ids
+    assert NEW_PREFILL_REQUEST_ID not in consumed.request_ids
+    assert speculator._terminal_proposal_lifecycle is not None
+    assert speculator._terminal_proposal_lifecycle.request_ids == (terminal_request_id,)
+    assert speculator._proposal_consumption_count == 1
+
+
 def test_runner_reconciles_mixed_admission_from_spec_token_keys_only(
     monkeypatch,
 ) -> None:
@@ -331,6 +375,204 @@ def test_runner_reconciles_mixed_admission_from_spec_token_keys_only(
     assert lifecycle.scheduled_lengths == (5, 5, 5, 5)
     assert lifecycle.installed is True
     assert NEW_PREFILL_REQUEST_ID not in lifecycle.request_ids
+
+
+def test_terminal_subset_of_fifty_five_owner_publication_is_reconciled() -> None:
+    published_request_ids = tuple(f"request-{index}" for index in range(1, 56))
+    terminal_request_ids = {"request-23", "request-42"}
+    scheduled_request_ids = tuple(
+        request_id for request_id in reversed(published_request_ids) if request_id not in terminal_request_ids
+    )
+    speculator, proposal_inputs, proposal = _publish_batched_proposal(
+        published_request_ids,
+    )
+    lengths_by_request = dict.fromkeys(scheduled_request_ids, 5)
+
+    assert (
+        speculator.reconcile_scheduler_proposal(
+            scheduled_spec_decode_tokens=dict.fromkeys(
+                scheduled_request_ids,
+                [-1] * 5,
+            ),
+            scheduled_request_ids=set(scheduled_request_ids),
+            finished_request_ids=terminal_request_ids,
+            preempted_request_ids=set(),
+            known_request_ids=set(published_request_ids),
+        )
+        == "INSTALLED"
+    )
+
+    expected_installed_ids = tuple(
+        request_id for request_id in published_request_ids if request_id not in terminal_request_ids
+    )
+    assert speculator._published_proposal_request_ids == expected_installed_ids
+    assert speculator._deferred_published_proposal is None
+    assert speculator._terminal_proposal_lifecycle is not None
+    assert speculator._terminal_proposal_lifecycle.request_ids == (
+        "request-23",
+        "request-42",
+    )
+    batch = _consumer_batch(
+        proposal_inputs,
+        proposal,
+        scheduled_request_ids,
+        lengths_by_request,
+    )
+
+    _consume(speculator, batch)
+
+    consumed = speculator._last_consumed_proposal_lifecycle
+    assert consumed is not None
+    assert consumed.request_ids == expected_installed_ids
+    assert consumed.consumed is True
+    assert speculator._proposal_consumption_count == 1
+    assert speculator._markov_result is None
+
+
+def test_terminal_scheduled_and_delayed_subsets_preserve_row_ownership() -> None:
+    published_request_ids = tuple(f"request-{index}" for index in range(1, 65))
+    terminal_request_ids = {"request-23", "request-42"}
+    delayed_request_ids = {
+        "request-7",
+        "request-8",
+        "request-16",
+        "request-19",
+        "request-36",
+        "request-39",
+        "request-48",
+        "request-55",
+        "request-64",
+    }
+    scheduled_request_ids = tuple(
+        request_id
+        for request_id in reversed(published_request_ids)
+        if request_id not in terminal_request_ids | delayed_request_ids
+    )
+    speculator, proposal_inputs, proposal = _publish_batched_proposal(
+        published_request_ids,
+    )
+    lengths_by_request = dict.fromkeys(scheduled_request_ids, 5)
+
+    assert (
+        speculator.reconcile_scheduler_proposal(
+            scheduled_spec_decode_tokens=dict.fromkeys(
+                scheduled_request_ids,
+                [-1] * 5,
+            ),
+            scheduled_request_ids=set(scheduled_request_ids),
+            finished_request_ids=terminal_request_ids,
+            preempted_request_ids=set(),
+            known_request_ids=set(published_request_ids),
+        )
+        == "INSTALLED"
+    )
+    deferred = speculator._deferred_published_proposal
+    assert deferred is not None
+    assert deferred.request_ids == tuple(
+        request_id for request_id in published_request_ids if request_id in delayed_request_ids
+    )
+    expected_deferred_rows = torch.tensor(
+        [published_request_ids.index(request_id) for request_id in deferred.request_ids],
+        dtype=torch.int64,
+    )
+    assert torch.equal(
+        deferred.candidate_tokens,
+        proposal.index_select(0, expected_deferred_rows),
+    )
+    batch = _consumer_batch(
+        proposal_inputs,
+        proposal,
+        scheduled_request_ids,
+        lengths_by_request,
+    )
+
+    result = speculator.propose(
+        input_batch=batch,
+        attn_metadata={},
+        slot_mappings={},
+        last_hidden_states=torch.empty(0),
+        aux_hidden_states=None,
+        num_sampled=torch.ones(batch.num_reqs, dtype=torch.int32),
+        num_rejected=torch.full(
+            (batch.num_reqs,),
+            5,
+            dtype=torch.int32,
+        ),
+        last_sampled=torch.empty(0),
+        next_prefill_tokens=torch.empty(0),
+        temperature=torch.zeros(len(published_request_ids), dtype=torch.float32),
+        seeds=torch.empty(0),
+    )
+
+    assert result is None
+    assert speculator._proposal_consumption_count == 1
+    assert speculator._published_proposal_request_ids == deferred.request_ids
+    assert torch.equal(
+        speculator._published_candidate_tokens,
+        deferred.candidate_tokens,
+    )
+    assert speculator._deferred_published_proposal is None
+
+    delayed_order = tuple(reversed(deferred.request_ids))
+    delayed_lengths = dict.fromkeys(delayed_order, 5)
+    assert (
+        speculator.reconcile_scheduler_proposal(
+            scheduled_spec_decode_tokens=dict.fromkeys(
+                delayed_order,
+                [-1] * 5,
+            ),
+            scheduled_request_ids=set(delayed_order),
+            finished_request_ids=set(),
+            preempted_request_ids=set(),
+            known_request_ids=set(delayed_request_ids),
+        )
+        == "INSTALLED"
+    )
+    delayed_batch = _consumer_batch(
+        proposal_inputs,
+        proposal,
+        delayed_order,
+        delayed_lengths,
+    )
+
+    _consume(speculator, delayed_batch)
+
+    assert speculator._last_consumed_proposal_lifecycle is not None
+    assert speculator._last_consumed_proposal_lifecycle.request_ids == deferred.request_ids
+    assert speculator._proposal_generated_count == 1
+    assert speculator._proposal_installed_count == 2
+    assert speculator._proposal_consumption_count == 2
+    speculator._release_consumed_proposal()
+    assert speculator._published_candidate_tokens is None
+    assert speculator._published_proposal_request_ids is None
+    assert speculator._current_proposal_lifecycle is None
+    assert speculator._markov_result is None
+
+
+def test_terminal_active_subset_restores_existing_delayed_owners() -> None:
+    speculator, _proposal_inputs, _proposal = _publish_batched_proposal()
+    installed_request_id = REQUEST_IDS[0]
+    delayed_request_ids = set(REQUEST_IDS[1:])
+
+    assert (
+        speculator.reconcile_scheduler_proposal(
+            scheduled_spec_decode_tokens={installed_request_id: [-1] * 5},
+            scheduled_request_ids={installed_request_id},
+            finished_request_ids=set(),
+            preempted_request_ids=set(),
+            known_request_ids=set(REQUEST_IDS),
+        )
+        == "INSTALLED"
+    )
+    assert speculator._deferred_published_proposal is not None
+
+    assert speculator.discard_terminal_proposal({installed_request_id})
+
+    assert speculator._deferred_published_proposal is None
+    assert speculator._published_proposal_request_ids == REQUEST_IDS[1:]
+    assert set(speculator._published_proposal_request_ids) == delayed_request_ids
+    assert speculator._current_proposal_lifecycle is not None
+    assert speculator._current_proposal_lifecycle.disposition == "GENERATED"
 
 
 def test_mixed_prefill_can_join_only_the_next_proposal_epoch(
@@ -420,6 +662,49 @@ def test_unpublished_prefill_with_scheduled_proposal_tokens_fails_closed() -> No
     assert speculator._published_proposal_consumed is False
 
 
+@pytest.mark.parametrize("retired_field", ["finished_request_ids", "preempted_request_ids"])
+def test_scheduled_and_retired_owner_conflict_fails_closed(
+    retired_field: str,
+) -> None:
+    speculator, _proposal_inputs, proposal = _publish_batched_proposal()
+    conflicted_request_id = REQUEST_IDS[0]
+    kwargs = {
+        "finished_request_ids": set(),
+        "preempted_request_ids": set(),
+    }
+    kwargs[retired_field] = {conflicted_request_id}
+
+    with pytest.raises(RuntimeError, match="conflicting proposal owner dispositions"):
+        speculator.reconcile_scheduler_proposal(
+            scheduled_spec_decode_tokens={conflicted_request_id: [-1] * 5},
+            scheduled_request_ids={conflicted_request_id},
+            known_request_ids=set(REQUEST_IDS),
+            **kwargs,
+        )
+
+    assert speculator._published_candidate_tokens is proposal
+    assert speculator._published_proposal_request_ids == REQUEST_IDS
+    assert speculator._proposal_consumption_count == 0
+
+
+def test_spec_tokens_for_unscheduled_owner_fail_closed() -> None:
+    speculator, _proposal_inputs, proposal = _publish_batched_proposal()
+    request_id = REQUEST_IDS[0]
+
+    with pytest.raises(RuntimeError, match="conflicting proposal owner dispositions"):
+        speculator.reconcile_scheduler_proposal(
+            scheduled_spec_decode_tokens={request_id: [-1] * 5},
+            scheduled_request_ids=set(),
+            finished_request_ids=set(),
+            preempted_request_ids=set(),
+            known_request_ids=set(REQUEST_IDS),
+        )
+
+    assert speculator._published_candidate_tokens is proposal
+    assert speculator._published_proposal_request_ids == REQUEST_IDS
+    assert speculator._proposal_consumption_count == 0
+
+
 @pytest.mark.parametrize(
     "verification_request_ids",
     [
@@ -480,7 +765,7 @@ def test_scheduler_extra_and_unexplained_missing_owners_fail_closed() -> None:
             preempted_request_ids=set(),
             known_request_ids=set(scheduled_tokens),
         )
-    with pytest.raises(RuntimeError, match="only partially present"):
+    with pytest.raises(RuntimeError, match="no scheduled, finished, preempted, or delayed disposition"):
         speculator.reconcile_scheduler_proposal(
             scheduled_spec_decode_tokens={},
             scheduled_request_ids=set(),

@@ -250,10 +250,9 @@ def test_chunked_prefill_drops_uninstalled_proposal_before_next_target() -> None
     [
         ("terminal", "terminal", True),
         ("preempted", "preempted", False),
-        ("missing", "request_missing", False),
     ],
 )
-def test_terminal_preemption_and_missing_request_retire_ownership(
+def test_terminal_and_preemption_retire_ownership(
     kind: str,
     expected_reason: str,
     terminal: bool,
@@ -271,7 +270,7 @@ def test_terminal_preemption_and_missing_request_retire_ownership(
             scheduled_request_ids=set(),
             finished_request_ids=owners if kind == "terminal" else set(),
             preempted_request_ids=owners if kind == "preempted" else set(),
-            known_request_ids=set() if kind == "missing" else owners,
+            known_request_ids=owners,
         )
         == "DROPPED"
     )
@@ -281,6 +280,27 @@ def test_terminal_preemption_and_missing_request_retire_ownership(
     assert dropped.drop_reason == expected_reason
     assert dropped.discarded_terminal is terminal
     assert speculator._published_candidate_tokens is None
+
+
+def test_missing_request_without_authoritative_disposition_fails_closed() -> None:
+    speculator, proposal_inputs, _result, proposal = _publish_proposal(
+        continue_after_verification=True,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="no scheduled, finished, preempted, or delayed disposition",
+    ):
+        _reconcile(
+            speculator,
+            proposal_inputs.request_ids,
+            lengths=None,
+            scheduled_request_ids=set(),
+            known_request_ids=set(),
+        )
+
+    assert speculator._published_candidate_tokens is proposal
+    assert speculator._proposal_dropped_count == 0
 
 
 def test_delayed_owner_is_not_inferred_as_dropped() -> None:
@@ -348,19 +368,25 @@ def test_repeated_disposition_is_idempotent_but_cannot_change_length() -> None:
         )
 
 
-def test_partial_owner_batch_fails_closed() -> None:
-    speculator, proposal_inputs, _result, proposal = _publish_proposal(
+def test_scheduled_without_proposal_row_drops_while_known_owners_delay() -> None:
+    speculator, proposal_inputs, _result, _proposal = _publish_proposal(
         continue_after_verification=True,
     )
+    scheduled_request_id = proposal_inputs.request_ids[0]
 
-    with pytest.raises(RuntimeError, match="partially execute"):
+    assert (
         _reconcile(
             speculator,
             proposal_inputs.request_ids,
             lengths=None,
-            scheduled_request_ids={proposal_inputs.request_ids[0]},
+            scheduled_request_ids={scheduled_request_id},
         )
-    assert speculator._published_candidate_tokens is proposal
+        == "DELAYED"
+    )
+    assert speculator._dropped_proposal_lifecycle is not None
+    assert speculator._dropped_proposal_lifecycle.request_ids == (scheduled_request_id,)
+    assert speculator._dropped_proposal_lifecycle.drop_reason == ("scheduled_without_proposal")
+    assert speculator._published_proposal_request_ids == (proposal_inputs.request_ids[1],)
 
 
 def test_ten_dropped_cases_leave_no_active_proposal_state() -> None:

@@ -5,7 +5,7 @@
 import json
 import logging
 from collections.abc import Mapping
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from itertools import product
 from types import MappingProxyType
 from typing import Any, cast
@@ -62,6 +62,7 @@ _DSPARK_PROFILE_PRESERVED_STATE = (
     "_published_proposal_request_ids",
     "_published_proposal_request_state_indices",
     "_published_candidate_tokens",
+    "_deferred_published_proposal",
     "_proposal_consumer_step_epoch",
     "_published_proposal_consumed",
     "_next_proposal_skipped",
@@ -80,6 +81,17 @@ _DSPARK_PROFILE_PRESERVED_STATE = (
 )
 
 logger = init_logger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class _DeferredPublishedProposal:
+    """Published owner rows withheld by one authoritative scheduler step."""
+
+    step_epoch: int
+    request_ids: tuple[str, ...]
+    request_state_indices: torch.Tensor
+    candidate_tokens: torch.Tensor
+    lifecycle: AscendDSparkProposalLifecycle
 
 
 def _assert_markov_tensor_contract(predicate: torch.Tensor, message: str) -> None:
@@ -271,6 +283,7 @@ class AscendDSparkSpeculator(BaseSpeculator):
         self._published_proposal_request_ids: tuple[str, ...] | None = None
         self._published_proposal_request_state_indices: torch.Tensor | None = None
         self._published_candidate_tokens: torch.Tensor | None = None
+        self._deferred_published_proposal: _DeferredPublishedProposal | None = None
         self._proposal_consumer_step_epoch: int | None = None
         self._published_proposal_consumed = False
         self._next_proposal_skipped = False
@@ -1791,6 +1804,7 @@ class AscendDSparkSpeculator(BaseSpeculator):
         self._published_proposal_request_ids = None
         self._published_proposal_request_state_indices = None
         self._published_candidate_tokens = None
+        self._deferred_published_proposal = None
         self._published_proposal_consumed = False
         self._current_proposal_lifecycle = None
         self._prepared_step_epoch = None
@@ -1828,7 +1842,12 @@ class AscendDSparkSpeculator(BaseSpeculator):
             self._terminal_proposal_lifecycle = dropped
             self._terminal_proposal_discard_count += 1
         self._log_proposal_disposition(dropped)
+        deferred = self._deferred_published_proposal
+        self._deferred_published_proposal = None
         self._clear_published_proposal_state()
+        if deferred is not None:
+            self._deferred_published_proposal = deferred
+            self._restore_deferred_published_proposal()
         return True
 
     def _drop_published_proposal_rows(
@@ -1901,12 +1920,108 @@ class AscendDSparkSpeculator(BaseSpeculator):
         self._published_proposal_request_state_indices = kept_request_state_indices
         self._published_candidate_tokens = kept_candidate_tokens
         self._current_proposal_lifecycle = kept
+        self._markov_step_epoch = None
+        self._markov_result = None
         self._dropped_proposal_lifecycle = dropped
         self._proposal_dropped_count += 1
         if terminal:
             self._terminal_proposal_lifecycle = dropped
             self._terminal_proposal_discard_count += 1
         self._log_proposal_disposition(dropped)
+        return True
+
+    def _defer_published_proposal_rows(
+        self,
+        request_ids_to_defer: set[str],
+    ) -> None:
+        """Atomically separate delayed owners from this step's verification."""
+        lifecycle = self._current_proposal_lifecycle
+        step_epoch = self._published_proposal_step_epoch
+        request_ids = self._published_proposal_request_ids
+        candidate_tokens = self._published_candidate_tokens
+        request_state_indices = self._published_proposal_request_state_indices
+        if (
+            lifecycle is None
+            or step_epoch is None
+            or request_ids is None
+            or candidate_tokens is None
+            or request_state_indices is None
+        ):
+            raise RuntimeError("Ascend DSpark cannot defer incomplete published proposal state.")
+        if self._deferred_published_proposal is not None:
+            raise RuntimeError("Ascend DSpark cannot overlap delayed proposal batches.")
+
+        deferred_rows = tuple(row for row, request_id in enumerate(request_ids) if request_id in request_ids_to_defer)
+        if not deferred_rows or len(deferred_rows) == len(request_ids):
+            raise RuntimeError("Ascend DSpark delayed proposal partition must preserve an installed owner subset.")
+        installed_rows = tuple(row for row in range(len(request_ids)) if row not in deferred_rows)
+
+        installed_row_indices = torch.tensor(
+            installed_rows,
+            dtype=torch.int64,
+            device=candidate_tokens.device,
+        )
+        deferred_row_indices = torch.tensor(
+            deferred_rows,
+            dtype=torch.int64,
+            device=candidate_tokens.device,
+        )
+        installed_candidate_tokens = candidate_tokens.index_select(
+            0,
+            installed_row_indices,
+        )
+        deferred_candidate_tokens = candidate_tokens.index_select(
+            0,
+            deferred_row_indices,
+        )
+        installed_state_indices = request_state_indices.index_select(
+            0,
+            installed_row_indices.to(request_state_indices.device),
+        )
+        deferred_state_indices = request_state_indices.index_select(
+            0,
+            deferred_row_indices.to(request_state_indices.device),
+        )
+        installed_request_ids = tuple(request_ids[row] for row in installed_rows)
+        deferred_request_ids = tuple(request_ids[row] for row in deferred_rows)
+        installed_lifecycle = replace(
+            lifecycle,
+            request_ids=installed_request_ids,
+            scheduled_lengths=(),
+        )
+        deferred_lifecycle = replace(
+            lifecycle,
+            request_ids=deferred_request_ids,
+            scheduled_lengths=(),
+        )
+        deferred = _DeferredPublishedProposal(
+            step_epoch=step_epoch,
+            request_ids=deferred_request_ids,
+            request_state_indices=deferred_state_indices,
+            candidate_tokens=deferred_candidate_tokens,
+            lifecycle=deferred_lifecycle,
+        )
+
+        # Publish both slices together only after every device gather succeeds.
+        self._deferred_published_proposal = deferred
+        self._published_proposal_request_ids = installed_request_ids
+        self._published_proposal_request_state_indices = installed_state_indices
+        self._published_candidate_tokens = installed_candidate_tokens
+        self._current_proposal_lifecycle = installed_lifecycle
+
+    def _restore_deferred_published_proposal(self) -> bool:
+        deferred = self._deferred_published_proposal
+        if deferred is None:
+            return False
+        if self._published_candidate_tokens is not None:
+            raise RuntimeError("Ascend DSpark cannot restore delayed owners over active proposal state.")
+        self._published_proposal_step_epoch = deferred.step_epoch
+        self._published_proposal_request_ids = deferred.request_ids
+        self._published_proposal_request_state_indices = deferred.request_state_indices
+        self._published_candidate_tokens = deferred.candidate_tokens
+        self._published_proposal_consumed = False
+        self._current_proposal_lifecycle = deferred.lifecycle
+        self._deferred_published_proposal = None
         return True
 
     @staticmethod
@@ -1950,10 +2065,12 @@ class AscendDSparkSpeculator(BaseSpeculator):
     ) -> str | None:
         """Reconcile scheduler truth before executing its target batch.
 
-        A known owner omitted from the current batch remains delayed. Once an
-        owner is scheduled, however, the presence and length of its entry in
-        ``scheduled_spec_decode_tokens`` unambiguously determine whether the
-        proposal was installed, truncated, or dropped.
+        A known owner omitted from the current batch remains delayed. Explicit
+        finished/preempted edges retire only their rows, while the presence and
+        length of an entry in ``scheduled_spec_decode_tokens`` are the sole
+        installation truth. When installed and delayed rows coexist, only the
+        installed slice becomes verification state; delayed ownership is
+        restored after consumption before another proposal can be published.
         """
         request_ids = self._published_proposal_request_ids
         candidate_tokens = self._published_candidate_tokens
@@ -1970,6 +2087,36 @@ class AscendDSparkSpeculator(BaseSpeculator):
             return None
 
         owners = set(request_ids)
+        if len(owners) != len(request_ids):
+            raise RuntimeError("Ascend DSpark published proposal contains duplicate request ownership.")
+        scheduled_spec_owners = set(scheduled_spec_decode_tokens)
+        unexpected_scheduled_owners = scheduled_spec_owners.difference(owners)
+        if unexpected_scheduled_owners:
+            raise RuntimeError(
+                "Ascend DSpark scheduler installed proposal tokens for requests "
+                f"outside published ownership {sorted(unexpected_scheduled_owners)!r}."
+            )
+        retired_owners = owners.intersection(finished_request_ids | preempted_request_ids)
+        duplicate_retirement = owners.intersection(finished_request_ids).intersection(preempted_request_ids)
+        scheduled_retired_owners = retired_owners.intersection(scheduled_request_ids | scheduled_spec_owners)
+        unscheduled_spec_owners = scheduled_spec_owners.difference(scheduled_request_ids)
+        if duplicate_retirement or scheduled_retired_owners or unscheduled_spec_owners:
+            raise RuntimeError("Ascend DSpark scheduler returned conflicting proposal owner dispositions.")
+        unresolved_owners = owners.difference(known_request_ids | retired_owners)
+        if unresolved_owners:
+            raise RuntimeError(
+                "Ascend DSpark published proposal owners have no scheduled, "
+                "finished, preempted, or delayed disposition: "
+                f"{sorted(unresolved_owners)!r}."
+            )
+
+        published_length = candidate_tokens.shape[1]
+        scheduled_lengths_by_request = {
+            request_id: len(tokens) for request_id, tokens in scheduled_spec_decode_tokens.items()
+        }
+        if any(length <= 0 or length > published_length for length in scheduled_lengths_by_request.values()):
+            raise RuntimeError("Ascend DSpark scheduler returned an invalid installed proposal length.")
+
         terminal_owners = owners.intersection(finished_request_ids)
         if terminal_owners:
             self._drop_published_proposal_rows(
@@ -1998,49 +2145,44 @@ class AscendDSparkSpeculator(BaseSpeculator):
                 return "DROPPED"
             owners = set(request_ids)
 
-        missing_owners = owners.difference(known_request_ids)
-        if missing_owners:
-            if missing_owners != owners:
-                raise RuntimeError(
-                    "Ascend DSpark proposal ownership is only partially present in runner request state."
-                )
-            self._drop_published_proposal(
-                reason="request_missing",
-                terminal=False,
-            )
-            return "DROPPED"
-
         active_owners = owners.intersection(scheduled_request_ids)
-        if not active_owners:
-            return "DELAYED"
-        if active_owners != owners:
-            raise RuntimeError("Ascend DSpark scheduler cannot partially execute a published proposal batch.")
-
-        scheduled_owners = owners.intersection(scheduled_spec_decode_tokens)
-        unexpected_scheduled_owners = set(scheduled_spec_decode_tokens).difference(owners)
-        if unexpected_scheduled_owners:
-            raise RuntimeError(
-                "Ascend DSpark scheduler installed proposal tokens for requests "
-                f"outside published ownership {sorted(unexpected_scheduled_owners)!r}."
-            )
-        if not scheduled_owners:
-            self._drop_published_proposal(
+        scheduled_owners = owners.intersection(scheduled_spec_owners)
+        scheduled_without_proposal = active_owners.difference(scheduled_owners)
+        if scheduled_without_proposal:
+            self._drop_published_proposal_rows(
+                scheduled_without_proposal,
                 reason="scheduled_without_proposal",
                 terminal=False,
             )
-            return "DROPPED"
-        if scheduled_owners != owners:
-            raise RuntimeError("Ascend DSpark scheduler installed proposal tokens for only part of the owner batch.")
+            request_ids = self._published_proposal_request_ids
+            candidate_tokens = self._published_candidate_tokens
+            lifecycle = self._current_proposal_lifecycle
+            if request_ids is None or candidate_tokens is None or lifecycle is None:
+                return "DROPPED"
+            owners = set(request_ids)
+            scheduled_owners = owners.intersection(scheduled_spec_owners)
 
-        published_length = candidate_tokens.shape[1]
+        if not scheduled_owners:
+            return "DELAYED"
+
+        delayed_owners = owners.difference(scheduled_request_ids)
+        if delayed_owners:
+            self._defer_published_proposal_rows(delayed_owners)
+            request_ids = self._published_proposal_request_ids
+            candidate_tokens = self._published_candidate_tokens
+            lifecycle = self._current_proposal_lifecycle
+            if request_ids is None or candidate_tokens is None or lifecycle is None:
+                raise RuntimeError("Ascend DSpark lost the installed proposal subset during reconciliation.")
+            owners = set(request_ids)
+        if owners != scheduled_owners:
+            raise RuntimeError("Ascend DSpark scheduler left an unresolved published proposal owner.")
+
         # In the padded async core path these lists may initially be filled
         # with -1 placeholders and are updated request-by-request. The
         # SchedulerOutput remains authoritative for presence and length. The
         # exact device-token prefix is validated below from the InputBatch
         # built by the core runner without adding a host sync.
-        scheduled_lengths = tuple(len(scheduled_spec_decode_tokens[request_id]) for request_id in request_ids)
-        if any(length <= 0 or length > published_length for length in scheduled_lengths):
-            raise RuntimeError("Ascend DSpark scheduler returned an invalid installed proposal length.")
+        scheduled_lengths = tuple(scheduled_lengths_by_request[request_id] for request_id in request_ids)
         disposition = "INSTALLED" if all(length == published_length for length in scheduled_lengths) else "TRUNCATED"
         if lifecycle.disposition in {"INSTALLED", "TRUNCATED"}:
             if lifecycle.disposition != disposition or lifecycle.scheduled_lengths != scheduled_lengths:
@@ -2318,6 +2460,7 @@ class AscendDSparkSpeculator(BaseSpeculator):
         self._published_candidate_tokens = None
         self._published_proposal_consumed = False
         self._current_proposal_lifecycle = None
+        self._restore_deferred_published_proposal()
 
     def discard_terminal_proposal(self, finished_request_ids: set[str]) -> bool:
         """Invalidate an optimistic proposal rejected by request completion.
@@ -2691,6 +2834,11 @@ class AscendDSparkSpeculator(BaseSpeculator):
         if self._next_proposal_skipped:
             dspark_runtime_not_wired("M2.4B multi-round DSpark lifecycle")
         if self._published_candidate_tokens is not None:
+            if input_batch.num_draft_tokens == 0:
+                # A previous publication may contain only scheduler-proven
+                # delayed owners. Do not consume it from an unrelated target
+                # batch or overwrite its request-owned candidate rows.
+                return None
             if not self.continue_after_verification:
                 return self._skip_next_proposal_after_verification(
                     input_batch,
@@ -2705,6 +2853,11 @@ class AscendDSparkSpeculator(BaseSpeculator):
                 temperature,
             )
             self._release_consumed_proposal()
+            if self._published_candidate_tokens is not None:
+                # Delayed rows from the same publication remain owned by core.
+                # Pause new publication until scheduler truth installs or
+                # explicitly retires them, preserving one proposal epoch.
+                return None
         proposal_inputs = self.prepare_proposal_inputs(
             input_batch=input_batch,
             attn_metadata=attn_metadata,
