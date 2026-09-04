@@ -119,8 +119,62 @@ def _validate_result(result: Mapping[str, Any], expected_mode: str) -> None:
         raise ValueError("Benchmark result has no requested/effective engine configuration.")
     if effective != result.get("effective_config"):
         raise ValueError("Effective engine configuration aliases are inconsistent.")
-    if requested.get("block_size") != effective.get("block_size"):
-        raise ValueError("Requested and effective block sizes differ in a completed benchmark result.")
+    resolved_kv_blocks = result.get("resolved_kv_block_config")
+    if resolved_kv_blocks is None:
+        # Compatibility with results produced before hybrid-KV identities were
+        # reported. Such results could only prove a uniform block-size match.
+        if requested.get("block_size") != effective.get("block_size"):
+            raise ValueError("Legacy requested and effective block sizes differ.")
+    else:
+        if not isinstance(resolved_kv_blocks, Mapping):
+            raise TypeError("Resolved KV block configuration must be a mapping.")
+        if resolved_kv_blocks != effective.get("resolved_kv_block_config"):
+            raise ValueError("Resolved KV block configuration aliases are inconsistent.")
+        group_block_sizes = resolved_kv_blocks.get("group_block_sizes")
+        group_metadata = resolved_kv_blocks.get("group_metadata")
+        if (
+            not isinstance(group_block_sizes, list)
+            or not group_block_sizes
+            or any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in group_block_sizes)
+        ):
+            raise ValueError("Resolved KV group block sizes are invalid.")
+        if not isinstance(group_metadata, list) or any(not isinstance(group, Mapping) for group in group_metadata):
+            raise ValueError("Resolved KV group metadata entries are invalid.")
+        if [group.get("block_size") for group in group_metadata] != group_block_sizes:
+            raise ValueError("Resolved KV group metadata does not match its block-size identity.")
+        if requested.get("block_size") != resolved_kv_blocks.get("requested_base_block_size"):
+            raise ValueError("Requested KV base block-size identities are inconsistent.")
+        if effective.get("block_size") != resolved_kv_blocks.get("frontend_ready_block_size"):
+            raise ValueError("Frontend ready-response block-size identities are inconsistent.")
+        if effective.get("block_size_semantics") != "frontend_ready_block_size_legacy_alias":
+            raise ValueError("Effective block-size compatibility alias has ambiguous semantics.")
+        if effective.get("block_size") != min(group_block_sizes):
+            raise ValueError("Frontend ready-response block size is not the KV group minimum.")
+        dcp = resolved_kv_blocks.get("decode_context_parallel_size")
+        pcp = resolved_kv_blocks.get("prefill_context_parallel_size")
+        if any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in (dcp, pcp)):
+            raise ValueError("Resolved context-parallel sizes are invalid.")
+        platform_base = resolved_kv_blocks.get("platform_normalized_base_block_size")
+        saved_scheduler_block_size = resolved_kv_blocks.get("scheduler_block_size")
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value <= 0
+            for value in (platform_base, saved_scheduler_block_size)
+        ):
+            raise ValueError("Resolved platform and scheduler block sizes are invalid.")
+        scheduler_block_size = (
+            group_block_sizes[0] * dcp * pcp
+            if len(group_block_sizes) == 1
+            else math.lcm(*group_block_sizes) * dcp * pcp
+        )
+        if scheduler_block_size != saved_scheduler_block_size:
+            raise ValueError("Resolved scheduler block size is inconsistent with KV groups.")
+        if scheduler_block_size != platform_base * dcp * pcp:
+            raise ValueError("Resolved scheduler block size is inconsistent with the platform base.")
+        if resolved_kv_blocks.get("validation") not in {
+            "uniform_kv_exact",
+            "deepseek_v4_hybrid_mapping",
+        }:
+            raise ValueError("Resolved KV block configuration was not validated.")
     if requested.get("enable_prefix_caching") != effective.get("enable_prefix_caching"):
         raise ValueError("Requested and effective prefix-cache settings differ in a completed benchmark result.")
     comparison_effective = comparison.get("effective_engine")
@@ -295,6 +349,7 @@ def summarize_results(
         "benchmark": "dspark_pr_style_batch_throughput_summary",
         "runner": benchmark.RUNNER,
         "comparison_config_fingerprint": fingerprints.pop(),
+        "resolved_kv_block_config": all_results[0].get("resolved_kv_block_config"),
         "independent_process_runs": {
             "target_only": len(target_results),
             "dspark": len(dspark_results),
@@ -329,6 +384,11 @@ def _write_run_csv(path: Path, results: Sequence[Mapping[str, Any]]) -> None:
         "mode",
         "run_id",
         "source_path",
+        "comparison_config_fingerprint",
+        "requested_base_block_size",
+        "frontend_ready_block_size",
+        "scheduler_block_size",
+        "group_block_sizes",
         "measured_requests",
         "total_output_tokens",
         "elapsed_seconds",
@@ -344,11 +404,17 @@ def _write_run_csv(path: Path, results: Sequence[Mapping[str, Any]]) -> None:
         writer = csv.DictWriter(stream, fieldnames=fields)
         writer.writeheader()
         for result in results:
+            resolved_kv_blocks = result.get("resolved_kv_block_config") or {}
             writer.writerow(
                 {
                     "mode": result["mode"],
                     "run_id": result["run_id"],
                     "source_path": result.get("_source_path"),
+                    "comparison_config_fingerprint": result["comparison_config_fingerprint"],
+                    "requested_base_block_size": resolved_kv_blocks.get("requested_base_block_size"),
+                    "frontend_ready_block_size": resolved_kv_blocks.get("frontend_ready_block_size"),
+                    "scheduler_block_size": resolved_kv_blocks.get("scheduler_block_size"),
+                    "group_block_sizes": json.dumps(resolved_kv_blocks.get("group_block_sizes")),
                     "measured_requests": result["measured_request_count"],
                     "total_output_tokens": result["throughput"]["total_output_tokens"],
                     "elapsed_seconds": result["timing"]["elapsed_seconds"],

@@ -469,13 +469,191 @@ def _sampling_params(args: argparse.Namespace) -> Any:
     )
 
 
-def _effective_engine_config(engine: Any, args: argparse.Namespace) -> dict[str, Any]:
+def _runtime_dsv4_block_sizes() -> Mapping[int, Sequence[Sequence[int]]]:
+    """Load the active Ascend DeepSeek-V4 block mapping after platform init."""
+    from vllm_ascend.models.layer.attention.layer import get_dsv4_block_sizes
+
+    return get_dsv4_block_sizes()
+
+
+def _engine_core_kv_group_metadata(engine: Any) -> list[dict[str, Any]]:
+    """Read scheduler-owned KV group metadata through the current core utility."""
+    llm_engine = getattr(engine, "llm_engine", None)
+    engine_core = getattr(llm_engine, "engine_core", None)
+    call_utility = getattr(engine_core, "call_utility", None)
+    if not callable(call_utility):
+        raise RuntimeError(
+            "The public LLM does not expose the current EngineCore KV-group "
+            "metadata utility; hybrid KV configuration cannot be validated."
+        )
+
+    raw_metadata = call_utility("get_kv_cache_group_metadata")
+    if not isinstance(raw_metadata, list) or not raw_metadata:
+        raise RuntimeError("EngineCore returned no scheduler KV cache group metadata.")
+
+    metadata: list[dict[str, Any]] = []
+    for expected_index, raw_group in enumerate(raw_metadata):
+        if not isinstance(raw_group, Mapping):
+            raise TypeError("EngineCore KV cache group metadata entries must be mappings.")
+        group_index = raw_group.get("group_idx")
+        block_size = raw_group.get("block_size")
+        kind = raw_group.get("kind")
+        if isinstance(group_index, bool) or not isinstance(group_index, int) or group_index != expected_index:
+            raise RuntimeError("EngineCore KV cache group indexes are incomplete or out of order.")
+        if isinstance(block_size, bool) or not isinstance(block_size, int) or block_size <= 0:
+            raise RuntimeError("EngineCore reported an invalid KV cache group block size.")
+        if not isinstance(kind, str) or not kind:
+            raise RuntimeError("EngineCore reported an invalid KV cache group kind.")
+        metadata.append(
+            {
+                "group_idx": group_index,
+                "kind": kind,
+                "block_size": block_size,
+                "sliding_window": raw_group.get("sliding_window"),
+            }
+        )
+    return metadata
+
+
+def _scheduler_block_size_from_groups(group_block_sizes: Sequence[int], dcp: int, pcp: int) -> int:
+    if not group_block_sizes:
+        raise ValueError("At least one KV cache group block size is required.")
+    if any(
+        isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in (*group_block_sizes, dcp, pcp)
+    ):
+        raise ValueError("KV group block sizes and context-parallel sizes must be positive integers.")
+    if len(group_block_sizes) == 1:
+        return group_block_sizes[0] * dcp * pcp
+    return math.lcm(*group_block_sizes) * dcp * pcp
+
+
+def _resolved_kv_block_config(
+    engine: Any,
+    args: argparse.Namespace,
+    *,
+    model_type: str,
+    frontend_ready_block_size: int,
+    dcp: int,
+    pcp: int,
+) -> dict[str, Any]:
+    group_metadata = _engine_core_kv_group_metadata(engine)
+    group_block_sizes = [group["block_size"] for group in group_metadata]
+    expected_frontend_ready = min(group_block_sizes)
+    if frontend_ready_block_size != expected_frontend_ready:
+        raise RuntimeError(
+            "The frontend ready-response KV block size does not match the "
+            "EngineCore group minimum: "
+            f"frontend_ready_block_size={frontend_ready_block_size}, "
+            f"group_block_sizes={group_block_sizes}."
+        )
+
+    requested_base = args.block_size
+    platform_normalized_base = requested_base
+    model_block_size_mapping: dict[str, int] | None = None
+    validation_mode = "uniform_kv_exact"
+    if model_type == "deepseek_v4":
+        block_sizes = _runtime_dsv4_block_sizes()
+        active_mapping = block_sizes.get(requested_base)
+        if (
+            not isinstance(active_mapping, Sequence)
+            or len(active_mapping) < 1
+            or not isinstance(active_mapping[0], Sequence)
+            or len(active_mapping[0]) != 4
+        ):
+            raise RuntimeError(
+                "The requested DeepSeek-V4 base block size has no active Ascend mapping: "
+                f"requested_base_block_size={requested_base}."
+            )
+        mapped_sizes = list(active_mapping[0])
+        if any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in mapped_sizes):
+            raise RuntimeError("The active Ascend DeepSeek-V4 block-size mapping is invalid.")
+        platform_normalized_base = mapped_sizes[0]
+        model_block_size_mapping = {
+            "mla": mapped_sizes[0],
+            "indexer": mapped_sizes[0],
+            "sliding_window_mla": mapped_sizes[1],
+            "c4_compressor_state": mapped_sizes[2],
+            "c128_compressor_state": mapped_sizes[3],
+        }
+        missing = {
+            size: mapped_sizes.count(size) - group_block_sizes.count(size)
+            for size in set(mapped_sizes)
+            if group_block_sizes.count(size) < mapped_sizes.count(size)
+        }
+        unexpected = sorted(set(group_block_sizes).difference(mapped_sizes))
+        if platform_normalized_base != requested_base or missing or unexpected:
+            raise RuntimeError(
+                "The EngineCore DeepSeek-V4 KV groups do not match the active "
+                "Ascend block-size mapping: "
+                f"requested_base_block_size={requested_base}, "
+                f"platform_normalized_base_block_size={platform_normalized_base}, "
+                f"mapped_block_sizes={mapped_sizes}, group_block_sizes={group_block_sizes}, "
+                f"missing={missing}, unexpected={unexpected}."
+            )
+        validation_mode = "deepseek_v4_hybrid_mapping"
+    elif any(block_size != requested_base for block_size in group_block_sizes):
+        raise RuntimeError(
+            "The public LLM resolved different KV group block sizes for a model "
+            "without the DeepSeek-V4 hybrid mapping: "
+            f"model_type={model_type!r}, requested_base_block_size={requested_base}, "
+            f"group_block_sizes={group_block_sizes}."
+        )
+
+    scheduler_block_size = _scheduler_block_size_from_groups(group_block_sizes, dcp, pcp)
+    expected_scheduler_block_size = platform_normalized_base * dcp * pcp
+    if scheduler_block_size != expected_scheduler_block_size:
+        raise RuntimeError(
+            "The scheduler KV alignment does not match the platform-normalized "
+            "base block size: "
+            f"scheduler_block_size={scheduler_block_size}, "
+            f"expected_scheduler_block_size={expected_scheduler_block_size}, "
+            f"group_block_sizes={group_block_sizes}, dcp={dcp}, pcp={pcp}."
+        )
+
+    return {
+        "model_type": model_type,
+        "requested_base_block_size": requested_base,
+        "platform_normalized_base_block_size": platform_normalized_base,
+        "frontend_ready_block_size": frontend_ready_block_size,
+        "scheduler_block_size": scheduler_block_size,
+        "decode_context_parallel_size": dcp,
+        "prefill_context_parallel_size": pcp,
+        "group_block_sizes": group_block_sizes,
+        "group_metadata": group_metadata,
+        "model_block_size_mapping": model_block_size_mapping,
+        "validation": validation_mode,
+        "source": {
+            "frontend_ready_block_size": "EngineCoreReadyResponse.block_size via SyncMPClient",
+            "group_metadata": "EngineCore.get_kv_cache_group_metadata",
+            "scheduler_block_size": "derived from current resolve_kv_cache_block_sizes contract",
+            "platform_mapping": (
+                "vllm_ascend.models.layer.attention.layer.get_dsv4_block_sizes" if model_type == "deepseek_v4" else None
+            ),
+        },
+    }
+
+
+def _effective_engine_config(
+    engine: Any,
+    args: argparse.Namespace,
+    *,
+    expected_model_type: str | None = None,
+) -> dict[str, Any]:
     config = engine.llm_engine.vllm_config
     model = config.model_config
     parallel = config.parallel_config
     scheduler = config.scheduler_config
     cache = config.cache_config
     speculative = config.speculative_config
+    hf_config = getattr(model, "hf_config", None)
+    model_type = getattr(hf_config, "model_type", None)
+    if not isinstance(model_type, str) or not model_type:
+        raise RuntimeError("The public LLM did not expose a model_type for KV configuration validation.")
+    if expected_model_type is not None and model_type != expected_model_type:
+        raise RuntimeError(
+            "The public LLM resolved a different model type: "
+            f"expected={expected_model_type!r}, effective={model_type!r}."
+        )
     if config.use_v2_model_runner is not True:
         raise RuntimeError("The public LLM did not resolve VLLM_USE_V2_MODEL_RUNNER=1 to MRV2.")
     if parallel.tensor_parallel_size != args.tensor_parallel_size or parallel.pipeline_parallel_size != 1:
@@ -492,17 +670,22 @@ def _effective_engine_config(engine: Any, args: argparse.Namespace) -> dict[str,
         raise RuntimeError("The public LLM resolved an unexpected maximum sequence count.")
     if scheduler.max_num_batched_tokens != args.max_num_batched_tokens:
         raise RuntimeError("The public LLM resolved an unexpected batched-token limit.")
-    if cache.block_size != args.block_size:
-        raise RuntimeError(
-            "The public LLM resolved a different KV block size: "
-            f"requested block_size={args.block_size}, effective block_size={cache.block_size}."
-        )
     if cache.enable_prefix_caching is not False:
         raise RuntimeError(
             "The public LLM resolved a different prefix-cache setting: "
             "requested enable_prefix_caching=False, "
             f"effective enable_prefix_caching={cache.enable_prefix_caching}."
         )
+    dcp = getattr(parallel, "decode_context_parallel_size", 1)
+    pcp = getattr(parallel, "prefill_context_parallel_size", 1)
+    resolved_kv_blocks = _resolved_kv_block_config(
+        engine,
+        args,
+        model_type=model_type,
+        frontend_ready_block_size=cache.block_size,
+        dcp=dcp,
+        pcp=pcp,
+    )
     if args.mode == "target_only":
         if speculative is not None:
             raise RuntimeError("target_only unexpectedly constructed a speculative decoder.")
@@ -528,7 +711,10 @@ def _effective_engine_config(engine: Any, args: argparse.Namespace) -> dict[str,
         "max_model_len": model.max_model_len,
         "max_num_seqs": scheduler.max_num_seqs,
         "max_num_batched_tokens": scheduler.max_num_batched_tokens,
+        "model_type": model_type,
         "block_size": cache.block_size,
+        "block_size_semantics": "frontend_ready_block_size_legacy_alias",
+        "resolved_kv_block_config": resolved_kv_blocks,
         "enable_prefix_caching": cache.enable_prefix_caching,
         "dtype": str(model.dtype),
         "quantization": model.quantization,
@@ -662,7 +848,11 @@ def run_benchmark(
     engine = engine_factory(engine_kwargs)
     cleanup = _BenchmarkEngineCleanup(engine)
     try:
-        effective = _effective_engine_config(engine, args)
+        effective = _effective_engine_config(
+            engine,
+            args,
+            expected_model_type=model_descriptor["model_type"],
+        )
         prompts, prompt_identities, prompt_set_sha256 = tokenize_prompt_sources(sources, engine.get_tokenizer())
         sampling_params = sampling_factory(args)
         if args.warmup_prompts > len(prompts):
@@ -723,6 +913,7 @@ def run_benchmark(
             "requested_engine_config": _requested_engine_config(args),
             "effective_engine_config": effective,
             "effective_config": effective,
+            "resolved_kv_block_config": effective["resolved_kv_block_config"],
             "dataset": dataset_descriptor,
             "prompt_set_sha256": prompt_set_sha256,
             "prompt_identities": prompt_identities,
@@ -779,11 +970,16 @@ def run_benchmark(
 def _print_summary(result: Mapping[str, Any]) -> None:
     throughput = result["throughput"]
     acceptance = result["acceptance"]
+    resolved_kv_blocks = result["resolved_kv_block_config"]
     print("-" * 60)
     print(f"runner: {result['runner']}")
     print(f"mode: {result['mode']}")
     print(f"total_requests: {result['measured_request_count']}")
     print(f"total_output_tokens: {throughput['total_output_tokens']}")
+    print(f"requested base KV block size: {resolved_kv_blocks['requested_base_block_size']}")
+    print(f"frontend ready-response KV block size: {resolved_kv_blocks['frontend_ready_block_size']}")
+    print(f"scheduler KV block size: {resolved_kv_blocks['scheduler_block_size']}")
+    print(f"KV group block sizes: {resolved_kv_blocks['group_block_sizes']}")
     print(f"num_drafts: {acceptance['num_drafts']}")
     print(f"num_draft_tokens: {acceptance['num_draft_tokens']}")
     print(f"num_accepted_tokens: {acceptance['num_accepted_candidate_tokens']}")

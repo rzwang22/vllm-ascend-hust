@@ -63,6 +63,25 @@ class _Tokenizer:
         return [0, len(prompt), 1]
 
 
+class _FakeEngineCore:
+    def __init__(self, block_sizes: list[int]):
+        self.block_sizes = block_sizes
+        self.utility_calls: list[str] = []
+
+    def call_utility(self, method: str) -> list[dict[str, Any]]:
+        self.utility_calls.append(method)
+        assert method == "get_kv_cache_group_metadata"
+        return [
+            {
+                "group_idx": index,
+                "kind": "full_attention",
+                "block_size": block_size,
+                "sliding_window": None,
+            }
+            for index, block_size in enumerate(self.block_sizes)
+        ]
+
+
 class _FakeEngine:
     def __init__(self, args: argparse.Namespace):
         speculative = (
@@ -78,11 +97,14 @@ class _FakeEngine:
                     max_model_len=args.max_model_len,
                     dtype="torch.bfloat16",
                     quantization=args.quantization,
+                    hf_config=SimpleNamespace(model_type="uniform_test"),
                 ),
                 parallel_config=SimpleNamespace(
                     tensor_parallel_size=args.tensor_parallel_size,
                     pipeline_parallel_size=1,
                     enable_expert_parallel=args.enable_expert_parallel,
+                    decode_context_parallel_size=1,
+                    prefill_context_parallel_size=1,
                 ),
                 scheduler_config=SimpleNamespace(
                     async_scheduling=args.async_scheduling,
@@ -92,6 +114,7 @@ class _FakeEngine:
                 cache_config=SimpleNamespace(block_size=args.block_size, enable_prefix_caching=False),
                 speculative_config=speculative,
             ),
+            engine_core=_FakeEngineCore([args.block_size]),
             model_executor=None,
             shutdown=self._shutdown,
         )
@@ -128,11 +151,18 @@ def _model_dir(tmp_path: Path) -> Path:
     model = tmp_path / "model"
     model.mkdir(parents=True)
     (model / "config.json").write_text(
-        json.dumps({"model_type": "deepseek_v4", "architectures": ["DeepseekV4ForCausalLM"]}),
+        json.dumps({"model_type": "uniform_test", "architectures": ["UniformTestForCausalLM"]}),
         encoding="utf-8",
     )
     (model / "quant_model_description.json").write_text("{}\n", encoding="utf-8")
     return model
+
+
+def _set_model_type(model_dir: Path, model_type: str, architecture: str) -> None:
+    (model_dir / "config.json").write_text(
+        json.dumps({"model_type": model_type, "architectures": [architecture]}),
+        encoding="utf-8",
+    )
 
 
 def _dataset(tmp_path: Path, count: int = 2) -> Path:
@@ -178,6 +208,32 @@ def _run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str) -> tuple[di
         core_root=tmp_path,
     )
     return result, engine
+
+
+_DSV4_BLOCK_SIZES = {
+    32: [[32, 32, 2, 8], [4160, 32768]],
+    64: [[64, 64, 4, 16], [8320, 65536]],
+    128: [[128, 128, 8, 32], [16640, 131072]],
+}
+
+
+def _configure_dsv4(
+    monkeypatch: pytest.MonkeyPatch,
+    engine: _FakeEngine,
+    args: argparse.Namespace,
+    *,
+    group_block_sizes: list[int] | None = None,
+    frontend_ready_block_size: int | None = None,
+) -> list[int]:
+    mapped = list(_DSV4_BLOCK_SIZES[args.block_size][0])
+    groups = mapped if group_block_sizes is None else group_block_sizes
+    engine.llm_engine.vllm_config.model_config.hf_config.model_type = "deepseek_v4"
+    engine.llm_engine.vllm_config.cache_config.block_size = (
+        min(groups) if frontend_ready_block_size is None else frontend_ready_block_size
+    )
+    engine.llm_engine.engine_core.block_sizes = groups
+    monkeypatch.setattr(benchmark, "_runtime_dsv4_block_sizes", lambda: _DSV4_BLOCK_SIZES)
+    return mapped
 
 
 def test_cli_defaults_force_pr_style_mrv2_contract(tmp_path: Path) -> None:
@@ -390,16 +446,152 @@ def test_effective_config_rejects_non_mrv2_engine(tmp_path: Path) -> None:
         benchmark._effective_engine_config(engine, args)
 
 
-def test_effective_config_reports_requested_and_effective_block_size(tmp_path: Path) -> None:
+def test_uniform_kv_groups_require_requested_frontend_and_scheduler_size(tmp_path: Path) -> None:
     args = _args(tmp_path)
-    args.block_size = 128
     engine = _FakeEngine(args)
-    engine.llm_engine.vllm_config.cache_config.block_size = 32
+    engine.llm_engine.engine_core.block_sizes = [32, 32]
+
+    effective = benchmark._effective_engine_config(engine, args)
+
+    resolved = effective["resolved_kv_block_config"]
+    assert effective["block_size"] == 32
+    assert resolved["frontend_ready_block_size"] == 32
+    assert resolved["scheduler_block_size"] == 32
+    assert resolved["group_block_sizes"] == [32, 32]
+    assert resolved["validation"] == "uniform_kv_exact"
+
+
+@pytest.mark.parametrize(
+    ("requested", "mapped"),
+    [
+        (32, [32, 32, 2, 8]),
+        (64, [64, 64, 4, 16]),
+        (128, [128, 128, 8, 32]),
+    ],
+)
+def test_deepseek_v4_hybrid_kv_block_identity_is_validated(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    requested: int,
+    mapped: list[int],
+) -> None:
+    args = _args(tmp_path)
+    args.block_size = requested
+    engine = _FakeEngine(args)
+    assert _configure_dsv4(monkeypatch, engine, args) == mapped
+
+    effective = benchmark._effective_engine_config(
+        engine,
+        args,
+        expected_model_type="deepseek_v4",
+    )
+
+    resolved = effective["resolved_kv_block_config"]
+    assert effective["block_size"] == min(mapped)
+    assert effective["block_size_semantics"] == "frontend_ready_block_size_legacy_alias"
+    assert resolved["requested_base_block_size"] == requested
+    assert resolved["platform_normalized_base_block_size"] == requested
+    assert resolved["frontend_ready_block_size"] == min(mapped)
+    assert resolved["scheduler_block_size"] == requested
+    assert resolved["decode_context_parallel_size"] == 1
+    assert resolved["prefill_context_parallel_size"] == 1
+    assert resolved["group_block_sizes"] == mapped
+    assert resolved["model_block_size_mapping"] == {
+        "mla": mapped[0],
+        "indexer": mapped[0],
+        "sliding_window_mla": mapped[1],
+        "c4_compressor_state": mapped[2],
+        "c128_compressor_state": mapped[3],
+    }
+    assert resolved["validation"] == "deepseek_v4_hybrid_mapping"
+    assert engine.llm_engine.engine_core.utility_calls == ["get_kv_cache_group_metadata"]
+
+
+def test_deepseek_v4_resolved_kv_identity_is_serialized_and_shared_across_modes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    results: list[dict[str, Any]] = []
+    for mode in ("target_only", "dspark"):
+        mode_root = tmp_path / mode
+        mode_root.mkdir()
+        args = _args(mode_root, mode)
+        _set_model_type(Path(args.model_dir), "deepseek_v4", "DeepseekV4ForCausalLM")
+        engine = _FakeEngine(args)
+        _configure_dsv4(monkeypatch, engine, args)
+        monkeypatch.setattr(benchmark, "_git_head", lambda _path: "a" * 40)
+        result = benchmark.run_benchmark(
+            args,
+            engine_factory=lambda _kwargs, engine=engine: engine,
+            sampling_factory=lambda _args: object(),
+            clock=iter((10.0, 12.0)).__next__,
+            plugin_root=mode_root,
+            core_root=mode_root,
+        )
+        results.append(result)
+
+    target, dspark = results
+    for result in results:
+        resolved = result["resolved_kv_block_config"]
+        assert result["requested_engine_config"]["block_size"] == 32
+        assert result["effective_engine_config"]["block_size"] == 2
+        assert resolved == result["effective_engine_config"]["resolved_kv_block_config"]
+        assert resolved["group_block_sizes"] == [32, 32, 2, 8]
+        assert resolved["scheduler_block_size"] == 32
+        assert resolved["frontend_ready_block_size"] == 2
+        json.dumps(result)
+    assert target["comparison_config"]["effective_engine"] == dspark["comparison_config"]["effective_engine"]
+
+
+def test_deepseek_v4_rejects_unexplained_frontend_aggregate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    args = _args(tmp_path)
+    engine = _FakeEngine(args)
+    _configure_dsv4(monkeypatch, engine, args, frontend_ready_block_size=4)
 
     with pytest.raises(
         RuntimeError,
-        match=r"requested block_size=128, effective block_size=32",
+        match=r"frontend_ready_block_size=4, group_block_sizes=\[32, 32, 2, 8\]",
     ):
+        benchmark._effective_engine_config(engine, args)
+
+
+def test_deepseek_v4_rejects_group_outside_active_mapping(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    args = _args(tmp_path)
+    engine = _FakeEngine(args)
+    _configure_dsv4(monkeypatch, engine, args, group_block_sizes=[32, 32, 2, 8, 16])
+
+    with pytest.raises(RuntimeError, match=r"unexpected=\[16\]"):
+        benchmark._effective_engine_config(engine, args)
+
+
+def test_scheduler_alignment_mismatch_fails_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    args = _args(tmp_path)
+    engine = _FakeEngine(args)
+    _configure_dsv4(monkeypatch, engine, args)
+    monkeypatch.setattr(benchmark, "_scheduler_block_size_from_groups", lambda *_args: 16)
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"scheduler_block_size=16, expected_scheduler_block_size=32",
+    ):
+        benchmark._effective_engine_config(engine, args)
+
+
+def test_non_deepseek_model_cannot_use_hybrid_mapping_exception(tmp_path: Path) -> None:
+    args = _args(tmp_path)
+    engine = _FakeEngine(args)
+    engine.llm_engine.vllm_config.cache_config.block_size = 2
+    engine.llm_engine.engine_core.block_sizes = [32, 32, 2, 8]
+
+    with pytest.raises(RuntimeError, match="without the DeepSeek-V4 hybrid mapping"):
+        benchmark._effective_engine_config(engine, args)
+
+
+def test_missing_engine_core_group_metadata_abi_fails_closed(tmp_path: Path) -> None:
+    args = _args(tmp_path)
+    engine = _FakeEngine(args)
+    del engine.llm_engine.engine_core
+
+    with pytest.raises(RuntimeError, match="KV-group metadata utility"):
         benchmark._effective_engine_config(engine, args)
 
 
@@ -429,8 +621,12 @@ def test_run_benchmark_batches_measured_prompts_and_excludes_load_warmup(
     assert result["acceptance"]["num_drafts"] == 3
     assert result["requested_engine_config"]["block_size"] == 32
     assert result["effective_engine_config"]["block_size"] == 32
+    assert result["effective_engine_config"]["block_size_semantics"] == "frontend_ready_block_size_legacy_alias"
     assert result["effective_config"] == result["effective_engine_config"]
     assert result["comparison_config"]["effective_engine"]["block_size"] == 32
+    assert result["resolved_kv_block_config"] == result["effective_engine_config"]["resolved_kv_block_config"]
+    assert result["resolved_kv_block_config"]["group_block_sizes"] == [32]
+    assert result["resolved_kv_block_config"]["scheduler_block_size"] == 32
     assert result["cleanup"]["engine_shutdown_complete"] is True
     assert engine.shutdown_called is True
     json.dumps(result)
@@ -564,7 +760,7 @@ def test_configuration_failure_still_cleans_up_engine(tmp_path: Path, monkeypatc
     engine.llm_engine.vllm_config.cache_config.block_size = 64
     monkeypatch.setattr(benchmark, "_git_head", lambda _path: "a" * 40)
 
-    with pytest.raises(RuntimeError, match="requested block_size=32, effective block_size=64"):
+    with pytest.raises(RuntimeError, match=r"frontend_ready_block_size=64, group_block_sizes=\[32\]"):
         benchmark.run_benchmark(
             args,
             engine_factory=lambda _kwargs: engine,
@@ -620,7 +816,7 @@ def test_cleanup_failure_does_not_replace_primary_failure(tmp_path: Path, monkey
     engine.llm_engine.shutdown = fail_cleanup
     monkeypatch.setattr(benchmark, "_git_head", lambda _path: "a" * 40)
 
-    with pytest.raises(RuntimeError, match="requested block_size=32, effective block_size=64") as caught:
+    with pytest.raises(RuntimeError, match=r"frontend_ready_block_size=64, group_block_sizes=\[32\]") as caught:
         benchmark.run_benchmark(
             args,
             engine_factory=lambda _kwargs: engine,
@@ -715,6 +911,9 @@ def test_run_csv_preserves_absolute_throughput_and_acceptance(tmp_path: Path, mo
     assert len(rows) == 3
     assert "output_tokens_per_second" in rows[0]
     assert "accepted_candidate_tokens_per_verification" in rows[0]
+    assert "comparison_config_fingerprint" in rows[0]
+    assert "scheduler_block_size" in rows[0]
+    assert "group_block_sizes" in rows[0]
     assert rows[1].startswith("target_only,")
     assert rows[2].startswith("dspark,")
 
@@ -733,6 +932,30 @@ def test_summary_rejects_prompt_config_mismatch_and_duplicate_runs(
     targets, dsparks = _independent_results(tmp_path / "again", monkeypatch)
     dsparks[0]["run_id"] = targets[0]["run_id"]
     with pytest.raises(ValueError, match="Duplicate"):
+        summary.summarize_results(targets, dsparks)
+
+
+def test_summary_rejects_different_resolved_kv_identity(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    targets, dsparks = _independent_results(tmp_path, monkeypatch)
+    dspark = dsparks[0]
+    for config in (dspark["effective_engine_config"], dspark["effective_config"]):
+        config["block_size"] = 64
+        config["resolved_kv_block_config"]["requested_base_block_size"] = 64
+        config["resolved_kv_block_config"]["platform_normalized_base_block_size"] = 64
+        config["resolved_kv_block_config"]["frontend_ready_block_size"] = 64
+        config["resolved_kv_block_config"]["scheduler_block_size"] = 64
+        config["resolved_kv_block_config"]["group_block_sizes"] = [64]
+        config["resolved_kv_block_config"]["group_metadata"][0]["block_size"] = 64
+    dspark["requested_engine_config"]["block_size"] = 64
+    dspark["resolved_kv_block_config"] = copy.deepcopy(dspark["effective_engine_config"]["resolved_kv_block_config"])
+    dspark["comparison_config"]["effective_engine"] = {
+        key: value for key, value in dspark["effective_engine_config"].items() if key != "speculative_config"
+    }
+    dspark["comparison_config_fingerprint"] = benchmark._sha256_bytes(
+        benchmark._canonical_json_bytes(dspark["comparison_config"])
+    )
+
+    with pytest.raises(ValueError, match="configuration differs"):
         summary.summarize_results(targets, dsparks)
 
 
