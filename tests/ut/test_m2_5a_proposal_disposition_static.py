@@ -33,13 +33,15 @@ def test_disposition_tracks_real_lengths_without_mutating_input_batch() -> None:
     ]
 
     assert "scheduled_lengths_by_request" in reconcile
-    assert 'disposition = "INSTALLED"' in reconcile
+    assert '"INSTALLED"' in reconcile
     assert 'else "TRUNCATED"' in reconcile
     assert 'reason="scheduled_without_proposal"' in reconcile
     assert 'reason="preempted"' in reconcile
     assert "unresolved_owners" in reconcile
-    assert "delayed_owners" in reconcile
-    assert "_defer_published_proposal_rows(delayed_owners)" in reconcile
+    assert "registry = self._published_proposal_owners" in reconcile
+    assert "self._clear_active_published_proposal()" in reconcile
+    assert "installed_request_ids" in reconcile
+    assert "registry.update(updated_owners)" in reconcile
     assert "conflicting proposal owner dispositions" in reconcile
     assert "num_draft_tokens_per_req" not in reconcile
     assert "input_batch" not in reconcile
@@ -79,6 +81,29 @@ def test_scheduler_spec_tokens_are_the_proposal_installation_truth() -> None:
     assert "scheduled_owners = owners.intersection(scheduled_spec_owners)" in reconcile
     assert "scheduled_spec_owners.difference(owners)" in reconcile
     assert "scheduled_lengths_by_request" in reconcile
+
+
+def test_multi_cohort_registry_preserves_request_epoch_and_tensor_rows() -> None:
+    source = SPECULATOR.read_text(encoding="utf-8")
+    publication = source[
+        source.index("    def _build_core_proposal(") : source.index("    def _log_proposal_disposition(")
+    ]
+    propose = source[source.index("    def propose(") :]
+
+    assert "class _PublishedProposalOwner:" in source
+    for field in (
+        "request_id: str",
+        "producer_epoch: int",
+        "candidate_tokens: torch.Tensor",
+        "publication_row: int",
+        "published_length: int",
+        "lifecycle: AscendDSparkProposalLifecycle",
+    ):
+        assert field in source
+    assert "self._published_proposal_owners.update(new_owners)" in publication
+    assert "conflicts with outstanding" in publication
+    assert "self._release_consumed_proposal()" in propose
+    assert "Delayed rows from the same publication remain owned" not in propose
 
 
 def test_lifecycle_and_diagnostic_expose_terminal_disposition_fields() -> None:

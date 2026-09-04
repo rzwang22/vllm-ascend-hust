@@ -39,10 +39,19 @@ def test_core_optional_proposal_abi_and_empty_publication_are_present() -> None:
 
 def test_dspark_publication_uses_exact_markov_candidate_tensor() -> None:
     method = ast.unparse(_method(SPECULATOR, "AscendDSparkSpeculator", "_build_core_proposal"))
+    row_materializer = ast.unparse(
+        _method(
+            SPECULATOR,
+            "AscendDSparkSpeculator",
+            "_owner_row_tensors",
+        )
+    )
 
     assert "result is not self._markov_result" in method
     assert "candidate_tokens = self._validate_step_tensor" in method
-    assert "self._published_candidate_tokens = candidate_tokens" in method
+    assert "candidate_tokens=candidate_tokens" in method
+    assert "self._set_active_published_proposal" in method
+    assert "return (candidate_source, state_source)" in row_materializer
     assert "return candidate_tokens" in method
     assert ".cpu(" not in method
     assert ".tolist(" not in method

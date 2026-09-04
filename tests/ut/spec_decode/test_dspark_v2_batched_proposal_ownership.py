@@ -46,7 +46,7 @@ def _bounded_candidate_tokens(
     return candidates
 
 
-def _publish_batched_proposal(
+def _build_batched_proposal(
     request_ids: tuple[str, ...] = REQUEST_IDS,
 ):
     speculator, proposal_inputs, _model, hidden_states = _ready_markov_step(
@@ -83,6 +83,15 @@ def _publish_batched_proposal(
     )
     speculator._markov_result = result
     proposal = speculator._build_core_proposal(proposal_inputs, result)
+    return speculator, proposal_inputs, result, proposal
+
+
+def _publish_batched_proposal(
+    request_ids: tuple[str, ...] = REQUEST_IDS,
+):
+    speculator, proposal_inputs, _result, proposal = _build_batched_proposal(
+        request_ids,
+    )
     return speculator, proposal_inputs, proposal
 
 
@@ -452,7 +461,7 @@ def test_terminal_subset_of_fifty_five_owner_publication_is_reconciled() -> None
         request_id for request_id in published_request_ids if request_id not in terminal_request_ids
     )
     assert speculator._published_proposal_request_ids == expected_installed_ids
-    assert speculator._deferred_published_proposal is None
+    assert set(speculator._published_proposal_owners) == set(expected_installed_ids)
     assert speculator._terminal_proposal_lifecycle is not None
     assert speculator._terminal_proposal_lifecycle.request_ids == (
         "request-23",
@@ -475,26 +484,28 @@ def test_terminal_subset_of_fifty_five_owner_publication_is_reconciled() -> None
     assert speculator._markov_result is None
 
 
-def test_terminal_scheduled_and_delayed_subsets_preserve_row_ownership() -> None:
+def test_multi_cohort_publication_preserves_delayed_row_ownership(
+    monkeypatch,
+) -> None:
     published_request_ids = tuple(f"request-{index}" for index in range(1, 65))
-    terminal_request_ids = {"request-23", "request-42"}
+    first_terminal_request_ids = {"request-61", "request-63"}
     delayed_request_ids = {
-        "request-7",
-        "request-8",
-        "request-16",
-        "request-19",
-        "request-36",
-        "request-39",
-        "request-48",
-        "request-55",
+        "request-10",
+        "request-18",
+        "request-23",
+        "request-37",
+        "request-42",
+        "request-43",
+        "request-44",
+        "request-46",
         "request-64",
     }
     scheduled_request_ids = tuple(
         request_id
         for request_id in reversed(published_request_ids)
-        if request_id not in terminal_request_ids | delayed_request_ids
+        if request_id not in first_terminal_request_ids | delayed_request_ids
     )
-    speculator, proposal_inputs, proposal = _publish_batched_proposal(
+    speculator, proposal_inputs, result, proposal = _build_batched_proposal(
         published_request_ids,
     )
     lengths_by_request = dict.fromkeys(scheduled_request_ids, 5)
@@ -506,25 +517,24 @@ def test_terminal_scheduled_and_delayed_subsets_preserve_row_ownership() -> None
                 [-1] * 5,
             ),
             scheduled_request_ids=set(scheduled_request_ids),
-            finished_request_ids=terminal_request_ids,
+            finished_request_ids=first_terminal_request_ids,
             preempted_request_ids=set(),
             known_request_ids=set(published_request_ids),
         )
         == "INSTALLED"
     )
-    deferred = speculator._deferred_published_proposal
-    assert deferred is not None
-    assert deferred.request_ids == tuple(
+    deferred_request_ids = tuple(
         request_id for request_id in published_request_ids if request_id in delayed_request_ids
     )
-    expected_deferred_rows = torch.tensor(
-        [published_request_ids.index(request_id) for request_id in deferred.request_ids],
-        dtype=torch.int64,
-    )
-    assert torch.equal(
-        deferred.candidate_tokens,
-        proposal.index_select(0, expected_deferred_rows),
-    )
+    for request_id in deferred_request_ids:
+        owner = speculator._published_proposal_owners[request_id]
+        expected_row = published_request_ids.index(request_id)
+        assert owner.candidate_tokens is proposal
+        assert owner.publication_row == expected_row
+        assert torch.equal(
+            owner.candidate_tokens[owner.publication_row],
+            proposal[expected_row],
+        )
     batch = _consumer_batch(
         proposal_inputs,
         proposal,
@@ -532,7 +542,46 @@ def test_terminal_scheduled_and_delayed_subsets_preserve_row_ownership() -> None
         lengths_by_request,
     )
 
-    result = speculator.propose(
+    next_epoch = proposal_inputs.step_epoch + 1
+    next_state_indices = batch.idx_mapping.clone()
+    next_candidates = _bounded_candidate_tokens(
+        len(scheduled_request_ids),
+        result.num_speculative_tokens,
+        result.vocab_size,
+    ).roll(1, dims=1)
+    next_inputs = replace(
+        proposal_inputs,
+        step_epoch=next_epoch,
+        request_ids=scheduled_request_ids,
+        request_state_indices=next_state_indices,
+        num_reqs=len(scheduled_request_ids),
+    )
+    next_result = replace(
+        result,
+        step_epoch=next_epoch,
+        request_ids=scheduled_request_ids,
+        request_state_indices=next_state_indices,
+        num_reqs=len(scheduled_request_ids),
+        candidate_tokens=next_candidates,
+        logical_candidate_shape=tuple(next_candidates.shape),
+    )
+
+    def prepare_next(**kwargs):
+        assert kwargs["input_batch"] is batch
+        assert speculator._published_candidate_tokens is None
+        assert set(speculator._published_proposal_owners) == delayed_request_ids
+        speculator._proposal_step_epoch = next_epoch
+        return next_inputs
+
+    def execute_next(inputs):
+        assert inputs is next_inputs
+        speculator._markov_result = next_result
+        return speculator._build_core_proposal(next_inputs, next_result)
+
+    monkeypatch.setattr(speculator, "prepare_proposal_inputs", prepare_next)
+    monkeypatch.setattr(speculator, "_execute_draft", execute_next)
+
+    next_proposal = speculator.propose(
         input_batch=batch,
         attn_metadata={},
         slot_mappings={},
@@ -550,52 +599,151 @@ def test_terminal_scheduled_and_delayed_subsets_preserve_row_ownership() -> None
         seeds=torch.empty(0),
     )
 
-    assert result is None
+    assert next_proposal is next_candidates
     assert speculator._proposal_consumption_count == 1
-    assert speculator._published_proposal_request_ids == deferred.request_ids
-    assert torch.equal(
-        speculator._published_candidate_tokens,
-        deferred.candidate_tokens,
-    )
-    assert speculator._deferred_published_proposal is None
+    assert speculator._published_proposal_request_ids == scheduled_request_ids
+    assert speculator._published_candidate_tokens is next_candidates
+    assert set(speculator._published_proposal_owners) == (delayed_request_ids | set(scheduled_request_ids))
+    for request_id in scheduled_request_ids:
+        owner = speculator._published_proposal_owners[request_id]
+        assert owner.producer_epoch == next_epoch
+        assert owner.candidate_tokens is next_candidates
+        assert owner.published_length == result.num_speculative_tokens
+        assert torch.equal(
+            owner.candidate_tokens[owner.publication_row],
+            next_candidates[scheduled_request_ids.index(request_id)],
+        )
 
-    delayed_order = tuple(reversed(deferred.request_ids))
-    delayed_lengths = dict.fromkeys(delayed_order, 5)
+    # Reproduce the server's next async SchedulerOutput: 29 next-epoch owners
+    # are installed, 24 current owners plus the two already retired IDs appear
+    # in the edge-triggered finished set, and nine old-epoch owners stay delayed.
+    next_scheduled_owner_numbers = (
+        1,
+        4,
+        5,
+        7,
+        11,
+        12,
+        14,
+        15,
+        17,
+        21,
+        22,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        35,
+        41,
+        49,
+        50,
+        53,
+        54,
+        56,
+        57,
+        59,
+    )
+    next_scheduled_ids = tuple(f"request-{number}" for number in next_scheduled_owner_numbers)
+    next_scheduled_owner_set = set(next_scheduled_ids)
+    next_installed_publication_order = tuple(
+        request_id for request_id in scheduled_request_ids if request_id in next_scheduled_owner_set
+    )
+    newly_terminal_ids = set(scheduled_request_ids).difference(next_installed_publication_order)
+    finished_event_ids = newly_terminal_ids | first_terminal_request_ids
+    assert len(newly_terminal_ids) == 24
+    assert len(finished_event_ids) == 26
+    next_lengths = dict.fromkeys(next_scheduled_ids, 5)
     assert (
         speculator.reconcile_scheduler_proposal(
             scheduled_spec_decode_tokens=dict.fromkeys(
-                delayed_order,
+                next_scheduled_ids,
                 [-1] * 5,
             ),
-            scheduled_request_ids=set(delayed_order),
-            finished_request_ids=set(),
+            scheduled_request_ids=set(next_scheduled_ids),
+            finished_request_ids=finished_event_ids,
             preempted_request_ids=set(),
-            known_request_ids=set(delayed_request_ids),
+            known_request_ids=(set(next_scheduled_ids) | delayed_request_ids),
         )
         == "INSTALLED"
     )
-    delayed_batch = _consumer_batch(
-        proposal_inputs,
-        proposal,
-        delayed_order,
-        delayed_lengths,
+    assert speculator._published_proposal_request_ids == next_installed_publication_order
+    assert speculator._published_proposal_owner_epochs == (next_epoch,) * 29
+    assert set(speculator._published_proposal_owners) == (delayed_request_ids | set(next_installed_publication_order))
+    for request_id in delayed_request_ids:
+        owner = speculator._published_proposal_owners[request_id]
+        assert owner.producer_epoch == proposal_inputs.step_epoch
+        assert owner.published_length == result.num_speculative_tokens
+        expected_row = published_request_ids.index(request_id)
+        assert torch.equal(
+            owner.candidate_tokens[owner.publication_row],
+            proposal[expected_row],
+        )
+    for request_id in next_installed_publication_order:
+        owner = speculator._published_proposal_owners[request_id]
+        assert owner.producer_epoch == next_epoch
+        assert owner.candidate_tokens is next_candidates
+        assert owner.published_length == result.num_speculative_tokens
+
+    next_batch = _consumer_batch(
+        next_inputs,
+        next_candidates,
+        next_scheduled_ids,
+        next_lengths,
     )
 
-    _consume(speculator, delayed_batch)
+    _consume(speculator, next_batch)
 
     assert speculator._last_consumed_proposal_lifecycle is not None
-    assert speculator._last_consumed_proposal_lifecycle.request_ids == deferred.request_ids
-    assert speculator._proposal_generated_count == 1
+    assert speculator._last_consumed_proposal_lifecycle.request_ids == next_installed_publication_order
+    assert speculator._proposal_generated_count == 2
     assert speculator._proposal_installed_count == 2
     assert speculator._proposal_consumption_count == 2
     speculator._release_consumed_proposal()
     assert speculator._published_candidate_tokens is None
     assert speculator._published_proposal_request_ids is None
     assert speculator._current_proposal_lifecycle is None
+    assert set(speculator._published_proposal_owners) == delayed_request_ids
     assert speculator._markov_result is None
 
 
-def test_terminal_active_subset_restores_existing_delayed_owners() -> None:
+def test_duplicate_request_publication_cannot_overwrite_delayed_epoch() -> None:
+    speculator, proposal_inputs, result, proposal = _build_batched_proposal()
+    assert (
+        speculator.reconcile_scheduler_proposal(
+            scheduled_spec_decode_tokens={},
+            scheduled_request_ids=set(),
+            finished_request_ids=set(),
+            preempted_request_ids=set(),
+            known_request_ids=set(REQUEST_IDS),
+        )
+        == "DELAYED"
+    )
+    registry_before = dict(speculator._published_proposal_owners)
+    next_epoch = proposal_inputs.step_epoch + 1
+    next_inputs = replace(proposal_inputs, step_epoch=next_epoch)
+    next_result = replace(result, step_epoch=next_epoch)
+    speculator._proposal_step_epoch = next_epoch
+    speculator._markov_result = next_result
+
+    with pytest.raises(RuntimeError, match="conflicts with outstanding"):
+        speculator._build_core_proposal(next_inputs, next_result)
+
+    assert speculator._published_candidate_tokens is None
+    assert speculator._published_proposal_request_ids is None
+    assert set(speculator._published_proposal_owners) == set(registry_before)
+    assert all(
+        speculator._published_proposal_owners[request_id] is registry_before[request_id]
+        for request_id in registry_before
+    )
+    assert all(owner.candidate_tokens is proposal for owner in speculator._published_proposal_owners.values())
+
+
+def test_terminal_active_subset_preserves_existing_delayed_owners() -> None:
     speculator, _proposal_inputs, _proposal = _publish_batched_proposal()
     installed_request_id = REQUEST_IDS[0]
     delayed_request_ids = set(REQUEST_IDS[1:])
@@ -610,15 +758,12 @@ def test_terminal_active_subset_restores_existing_delayed_owners() -> None:
         )
         == "INSTALLED"
     )
-    assert speculator._deferred_published_proposal is not None
-
     assert speculator.discard_terminal_proposal({installed_request_id})
 
-    assert speculator._deferred_published_proposal is None
-    assert speculator._published_proposal_request_ids == REQUEST_IDS[1:]
-    assert set(speculator._published_proposal_request_ids) == delayed_request_ids
-    assert speculator._current_proposal_lifecycle is not None
-    assert speculator._current_proposal_lifecycle.disposition == "GENERATED"
+    assert speculator._published_proposal_request_ids is None
+    assert speculator._published_candidate_tokens is None
+    assert speculator._current_proposal_lifecycle is None
+    assert set(speculator._published_proposal_owners) == delayed_request_ids
 
 
 def test_mixed_prefill_can_join_only_the_next_proposal_epoch(

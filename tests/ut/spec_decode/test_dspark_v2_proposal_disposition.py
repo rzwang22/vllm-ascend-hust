@@ -280,6 +280,7 @@ def test_terminal_and_preemption_retire_ownership(
     assert dropped.drop_reason == expected_reason
     assert dropped.discarded_terminal is terminal
     assert speculator._published_candidate_tokens is None
+    assert speculator._published_proposal_owners == {}
 
 
 def test_missing_request_without_authoritative_disposition_fails_closed() -> None:
@@ -317,8 +318,10 @@ def test_delayed_owner_is_not_inferred_as_dropped() -> None:
         )
         == "DELAYED"
     )
-    assert speculator._published_candidate_tokens is proposal
-    assert speculator._current_proposal_lifecycle is not None
+    assert speculator._published_candidate_tokens is None
+    assert speculator._current_proposal_lifecycle is None
+    assert set(speculator._published_proposal_owners) == set(proposal_inputs.request_ids)
+    assert all(owner.candidate_tokens is proposal for owner in speculator._published_proposal_owners.values())
     assert speculator._proposal_dropped_count == 0
 
 
@@ -386,7 +389,8 @@ def test_scheduled_without_proposal_row_drops_while_known_owners_delay() -> None
     assert speculator._dropped_proposal_lifecycle is not None
     assert speculator._dropped_proposal_lifecycle.request_ids == (scheduled_request_id,)
     assert speculator._dropped_proposal_lifecycle.drop_reason == ("scheduled_without_proposal")
-    assert speculator._published_proposal_request_ids == (proposal_inputs.request_ids[1],)
+    assert speculator._published_proposal_request_ids is None
+    assert set(speculator._published_proposal_owners) == {proposal_inputs.request_ids[1]}
 
 
 def test_ten_dropped_cases_leave_no_active_proposal_state() -> None:
@@ -408,6 +412,7 @@ def test_ten_dropped_cases_leave_no_active_proposal_state() -> None:
         assert speculator._published_proposal_request_ids is None
         assert speculator._published_proposal_request_state_indices is None
         assert speculator._current_proposal_lifecycle is None
+        assert speculator._published_proposal_owners == {}
         assert speculator._prepared_step_epoch is None
         assert speculator._context_kv_step_epoch is None
         assert speculator._draft_forward_step_epoch is None
