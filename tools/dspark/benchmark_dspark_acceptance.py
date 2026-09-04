@@ -29,6 +29,11 @@ from typing import Any
 SCHEMA_VERSION = 1
 RUNNER = "mrv2"
 MODES = ("target_only", "dspark")
+TARGET_EXECUTION_MODES = ("eager", "full_decode_only")
+_CUDAGRAPH_MODE_NONE = "NONE"
+_CUDAGRAPH_MODE_FULL = "FULL"
+_CUDAGRAPH_MODE_PIECEWISE = "PIECEWISE"
+_CUDAGRAPH_MODE_FULL_DECODE_ONLY = "FULL_DECODE_ONLY"
 SPEC_METRIC_NAMES = (
     "vllm:spec_decode_num_drafts",
     "vllm:spec_decode_num_draft_tokens",
@@ -53,6 +58,76 @@ class PromptSource:
     source_index: int
     value: str | list[int]
     source_record_sha256: str
+
+
+class _CUDAGraphRuntimeCollector:
+    """Collect host-side scheduler graph dispatch records for one run phase."""
+
+    def __init__(self) -> None:
+        self._records: list[dict[str, Any]] = []
+
+    def record(
+        self,
+        scheduler_stats: Any,
+        _iteration_stats: Any,
+        mm_cache_stats: Any = None,
+        engine_idx: int = 0,
+    ) -> None:
+        del mm_cache_stats
+        graph_stats = getattr(scheduler_stats, "cudagraph_stats", None)
+        if graph_stats is None:
+            return
+        runtime_mode = _cudagraph_mode_name(getattr(graph_stats, "runtime_mode", None))
+        if runtime_mode not in {
+            _CUDAGRAPH_MODE_NONE,
+            _CUDAGRAPH_MODE_FULL,
+            _CUDAGRAPH_MODE_PIECEWISE,
+        }:
+            raise RuntimeError(f"Unknown runtime CUDAGraph mode {runtime_mode!r}.")
+        record = {"engine_idx": engine_idx, "runtime_mode": runtime_mode}
+        for field in ("num_unpadded_tokens", "num_padded_tokens", "num_paddings"):
+            value = getattr(graph_stats, field, None)
+            if isinstance(value, bool) or not isinstance(value, Integral) or value < 0:
+                raise RuntimeError(f"CUDAGraph runtime metric {field!r} is invalid: {value!r}.")
+            record[field] = int(value)
+        if record["num_padded_tokens"] < record["num_unpadded_tokens"]:
+            raise RuntimeError("CUDAGraph runtime metrics report fewer padded than unpadded tokens.")
+        if record["num_paddings"] != record["num_padded_tokens"] - record["num_unpadded_tokens"]:
+            raise RuntimeError("CUDAGraph runtime padding metrics are inconsistent.")
+        self._records.append(record)
+
+    def log_engine_initialized(self) -> None:
+        return None
+
+    def log(self) -> None:
+        return None
+
+    def record_sleep_state(self, _is_awake: int, _level: int) -> None:
+        return None
+
+    def reset(self) -> None:
+        self._records.clear()
+
+    def snapshot(self) -> dict[str, Any]:
+        records = [dict(record) for record in self._records]
+        replay_count = sum(
+            record["runtime_mode"] in {_CUDAGRAPH_MODE_FULL, _CUDAGRAPH_MODE_PIECEWISE} for record in records
+        )
+        fallback_count = sum(record["runtime_mode"] == _CUDAGRAPH_MODE_NONE for record in records)
+        return {
+            "record_count": len(records),
+            "graph_replay_count": replay_count,
+            "eager_fallback_count": fallback_count,
+            "runtime_mode_counts": {
+                mode: sum(record["runtime_mode"] == mode for record in records)
+                for mode in (
+                    _CUDAGRAPH_MODE_NONE,
+                    _CUDAGRAPH_MODE_FULL,
+                    _CUDAGRAPH_MODE_PIECEWISE,
+                )
+            },
+            "records": records,
+        }
 
 
 def _canonical_json_bytes(value: Any) -> bytes:
@@ -396,12 +471,188 @@ def _require_mrv2_environment(environ: dict[str, str] | os._Environ[str] = os.en
     environ["VLLM_USE_V2_MODEL_RUNNER"] = "1"
 
 
+def _cudagraph_mode_name(value: Any) -> str | None:
+    if value is None:
+        return None
+    name = getattr(value, "name", None)
+    if isinstance(name, str):
+        return name
+    text = str(value)
+    return text.rsplit(".", 1)[-1]
+
+
+def _requested_cudagraph_mode(args: argparse.Namespace) -> str:
+    if args.target_execution_mode == "eager":
+        return _CUDAGRAPH_MODE_NONE
+    return _CUDAGRAPH_MODE_FULL_DECODE_ONLY
+
+
+def _validate_target_execution_environment(
+    args: argparse.Namespace,
+    environ: Mapping[str, str] = os.environ,
+) -> None:
+    if args.target_execution_mode == "full_decode_only" and environ.get("ASCEND_LAUNCH_BLOCKING") == "1":
+        raise RuntimeError("FULL_DECODE_ONLY ACLGraph rejects ASCEND_LAUNCH_BLOCKING=1.")
+
+
+def _worker_graph_runtime_snapshot(worker: Any) -> dict[str, Any]:
+    """Return JSON-safe target/draft graph state from one real worker."""
+    runner = getattr(worker, "model_runner", None)
+    if runner is None:
+        raise RuntimeError("Worker does not expose its MRV2 model runner.")
+    compilation_config = getattr(runner, "compilation_config", None)
+    graph_manager = getattr(runner, "cudagraph_manager", None)
+    graphs = getattr(graph_manager, "graphs", None)
+    if not isinstance(graphs, dict):
+        raise RuntimeError("MRV2 model runner does not expose captured graph descriptors.")
+    descriptors = list(graphs)
+    observed_capture_sizes = sorted(
+        {
+            int(num_tokens)
+            for descriptor in descriptors
+            if isinstance((num_tokens := getattr(descriptor, "num_tokens", None)), Integral)
+            and not isinstance(num_tokens, bool)
+            and num_tokens > 0
+        }
+    )
+    configured_capture_sizes = getattr(compilation_config, "cudagraph_capture_sizes", None)
+    if not isinstance(configured_capture_sizes, list) or any(
+        isinstance(value, bool) or not isinstance(value, Integral) or value <= 0 for value in configured_capture_sizes
+    ):
+        raise RuntimeError("MRV2 model runner exposes invalid configured capture sizes.")
+    ascend_config = getattr(runner, "ascend_config", None)
+    ascend_compilation = getattr(ascend_config, "ascend_compilation_config", None)
+    speculator = getattr(runner, "speculator", None)
+    return {
+        "rank": getattr(worker, "rank", None),
+        "target_cudagraph_mode": _cudagraph_mode_name(getattr(compilation_config, "cudagraph_mode", None)),
+        "configured_capture_sizes": [int(value) for value in configured_capture_sizes],
+        "observed_capture_sizes": observed_capture_sizes,
+        "graph_capture_count": len(descriptors),
+        "npugraph_ex_enabled": getattr(ascend_compilation, "enable_npugraph_ex", None),
+        "static_kernel_enabled": getattr(ascend_compilation, "enable_static_kernel", None),
+        "dspark_requested_cudagraph_mode": _cudagraph_mode_name(getattr(speculator, "requested_cudagraph_mode", None)),
+        "dspark_cudagraph_mode": _cudagraph_mode_name(getattr(speculator, "cudagraph_mode", None)),
+    }
+
+
+def _collect_worker_graph_runtime(engine: Any, args: argparse.Namespace) -> dict[str, Any]:
+    collective_rpc = getattr(engine, "collective_rpc", None)
+    if not callable(collective_rpc):
+        raise RuntimeError("Public LLM does not expose collective_rpc for graph capture evidence.")
+    states = collective_rpc(_worker_graph_runtime_snapshot)
+    if not isinstance(states, list) or len(states) != args.tensor_parallel_size:
+        raise RuntimeError(
+            "Graph capture evidence does not cover every tensor-parallel rank: "
+            f"expected={args.tensor_parallel_size}, observed={len(states) if isinstance(states, list) else None}."
+        )
+    if any(not isinstance(state, Mapping) for state in states):
+        raise RuntimeError("Graph capture evidence contains a non-mapping worker result.")
+    identity_fields = (
+        "target_cudagraph_mode",
+        "configured_capture_sizes",
+        "observed_capture_sizes",
+        "graph_capture_count",
+        "npugraph_ex_enabled",
+        "static_kernel_enabled",
+        "dspark_requested_cudagraph_mode",
+        "dspark_cudagraph_mode",
+    )
+    first = states[0]
+    for state in states[1:]:
+        if any(state.get(field) != first.get(field) for field in identity_fields):
+            raise RuntimeError("Target/draft graph capture evidence differs across tensor-parallel ranks.")
+    if first.get("target_cudagraph_mode") != _CUDAGRAPH_MODE_FULL_DECODE_ONLY:
+        raise RuntimeError("Workers did not retain the target FULL_DECODE_ONLY graph mode.")
+    if first.get("npugraph_ex_enabled") is not True:
+        raise RuntimeError("FULL_DECODE_ONLY workers did not enable npugraph_ex.")
+    if isinstance(first.get("static_kernel_enabled"), bool) is False:
+        raise RuntimeError("Workers did not expose the Ascend static-kernel setting.")
+    if not first.get("observed_capture_sizes") or first.get("graph_capture_count", 0) <= 0:
+        raise RuntimeError("FULL_DECODE_ONLY initialized without captured target graph descriptors.")
+    if args.mode == "dspark":
+        if first.get("dspark_requested_cudagraph_mode") != _CUDAGRAPH_MODE_FULL_DECODE_ONLY:
+            raise RuntimeError("DSpark did not observe the target graph-mode request.")
+        if first.get("dspark_cudagraph_mode") != _CUDAGRAPH_MODE_NONE:
+            raise RuntimeError("DSpark drafter must remain eager while target ACLGraph is enabled.")
+    elif first.get("dspark_cudagraph_mode") is not None:
+        raise RuntimeError("target_only unexpectedly constructed a draft graph runtime.")
+    return {
+        "configured_capture_sizes": list(first["configured_capture_sizes"]),
+        "observed_capture_sizes": list(first["observed_capture_sizes"]),
+        "graph_capture_count": int(first["graph_capture_count"]),
+        "npugraph_ex_enabled": first["npugraph_ex_enabled"],
+        "static_kernel_enabled": first["static_kernel_enabled"],
+        "workers": [dict(state) for state in states],
+    }
+
+
+def _install_graph_runtime_collector(engine: Any) -> _CUDAGraphRuntimeCollector:
+    logger_manager = getattr(getattr(engine, "llm_engine", None), "logger_manager", None)
+    stat_loggers = getattr(logger_manager, "stat_loggers", None)
+    if not isinstance(stat_loggers, list):
+        raise RuntimeError("Public LLM does not expose scheduler stat loggers for graph replay evidence.")
+    collector = _CUDAGraphRuntimeCollector()
+    stat_loggers.append(collector)
+    return collector
+
+
+def _graph_execution_result(
+    args: argparse.Namespace,
+    effective: Mapping[str, Any],
+    worker_runtime: Mapping[str, Any] | None,
+    warmup_runtime: Mapping[str, Any] | None,
+    measured_runtime: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if args.target_execution_mode == "eager":
+        return {
+            "configured_capture_sizes": list(effective["frontend_configured_capture_sizes"]),
+            "observed_capture_sizes": [],
+            "graph_capture_count": 0,
+            "graph_replay_count": 0,
+            "graph_fallback_count": 0,
+            "measured_graph_replay_count": 0,
+            "measured_eager_fallback_count": 0,
+            "warmup_runtime": None,
+            "measured_runtime": None,
+            "worker_capture": None,
+        }
+    if worker_runtime is None or warmup_runtime is None or measured_runtime is None:
+        raise RuntimeError("FULL_DECODE_ONLY graph capture/replay evidence is unavailable.")
+    if (
+        worker_runtime.get("npugraph_ex_enabled") is not effective["npugraph_ex_enabled"]
+        or worker_runtime.get("static_kernel_enabled") is not effective["static_kernel_enabled"]
+    ):
+        raise RuntimeError("Frontend and worker target graph configuration evidence differs.")
+    if measured_runtime.get("record_count", 0) <= 0:
+        raise RuntimeError("FULL_DECODE_ONLY measured interval published no graph runtime metrics.")
+    if measured_runtime.get("runtime_mode_counts", {}).get(_CUDAGRAPH_MODE_PIECEWISE, 0):
+        raise RuntimeError("FULL_DECODE_ONLY unexpectedly dispatched a PIECEWISE graph.")
+    measured_replay_count = measured_runtime.get("graph_replay_count", 0)
+    if measured_replay_count <= 0:
+        raise RuntimeError("FULL_DECODE_ONLY measured decode performed no target graph replay.")
+    return {
+        "configured_capture_sizes": list(worker_runtime["configured_capture_sizes"]),
+        "observed_capture_sizes": list(worker_runtime["observed_capture_sizes"]),
+        "graph_capture_count": worker_runtime["graph_capture_count"],
+        "graph_replay_count": warmup_runtime["graph_replay_count"] + measured_replay_count,
+        "graph_fallback_count": warmup_runtime["eager_fallback_count"] + measured_runtime["eager_fallback_count"],
+        "measured_graph_replay_count": measured_replay_count,
+        "measured_eager_fallback_count": measured_runtime["eager_fallback_count"],
+        "warmup_runtime": dict(warmup_runtime),
+        "measured_runtime": dict(measured_runtime),
+        "worker_capture": dict(worker_runtime),
+    }
+
+
 def build_engine_kwargs(args: argparse.Namespace) -> dict[str, Any]:
+    _validate_target_execution_environment(args)
     speculative_config = None
     if args.mode == "dspark":
         speculative_config = {
             "method": "dspark",
             "num_speculative_tokens": args.num_spec_tokens,
+            "enforce_eager": True,
         }
     kwargs: dict[str, Any] = {
         "model": str(Path(args.model_dir).expanduser().resolve()),
@@ -412,7 +663,6 @@ def build_engine_kwargs(args: argparse.Namespace) -> dict[str, Any]:
         "tensor_parallel_size": args.tensor_parallel_size,
         "pipeline_parallel_size": 1,
         "enable_expert_parallel": args.enable_expert_parallel,
-        "enforce_eager": args.enforce_eager,
         "async_scheduling": args.async_scheduling,
         "max_model_len": args.max_model_len,
         "max_num_seqs": args.max_num_seqs,
@@ -424,6 +674,16 @@ def build_engine_kwargs(args: argparse.Namespace) -> dict[str, Any]:
         "disable_log_stats": False,
         "speculative_config": speculative_config,
     }
+    if args.target_execution_mode == "eager":
+        kwargs["enforce_eager"] = True
+    else:
+        compilation_config: dict[str, Any] = {
+            "cudagraph_mode": _CUDAGRAPH_MODE_FULL_DECODE_ONLY,
+        }
+        if args.cudagraph_capture_sizes is not None:
+            compilation_config["cudagraph_capture_sizes"] = list(args.cudagraph_capture_sizes)
+        kwargs["compilation_config"] = compilation_config
+        kwargs["cudagraph_metrics"] = True
     if args.revision:
         kwargs["revision"] = args.revision
     if args.kv_cache_memory_bytes is not None:
@@ -438,6 +698,9 @@ def _requested_engine_config(args: argparse.Namespace) -> dict[str, Any]:
         "pipeline_parallel_size": 1,
         "enable_expert_parallel": args.enable_expert_parallel,
         "enforce_eager": args.enforce_eager,
+        "target_execution_mode": args.target_execution_mode,
+        "cudagraph_mode": _requested_cudagraph_mode(args),
+        "cudagraph_capture_sizes": args.cudagraph_capture_sizes,
         "async_scheduling": args.async_scheduling,
         "max_model_len": args.max_model_len,
         "max_num_seqs": args.max_num_seqs,
@@ -645,6 +908,16 @@ def _effective_engine_config(
     scheduler = config.scheduler_config
     cache = config.cache_config
     speculative = config.speculative_config
+    compilation = config.compilation_config
+    observability = config.observability_config
+    additional = getattr(config, "additional_config", None)
+    ascend_compilation = additional.get("ascend_compilation_config") if isinstance(additional, Mapping) else None
+    if not isinstance(ascend_compilation, Mapping):
+        raise RuntimeError("The public LLM did not expose its resolved Ascend compilation configuration.")
+    npugraph_ex_enabled = ascend_compilation.get("enable_npugraph_ex")
+    static_kernel_enabled = ascend_compilation.get("enable_static_kernel")
+    if not isinstance(npugraph_ex_enabled, bool) or not isinstance(static_kernel_enabled, bool):
+        raise RuntimeError("The public LLM exposed invalid npugraph/static-kernel settings.")
     hf_config = getattr(model, "hf_config", None)
     model_type = getattr(hf_config, "model_type", None)
     if not isinstance(model_type, str) or not model_type:
@@ -660,8 +933,28 @@ def _effective_engine_config(
         raise RuntimeError("The public LLM resolved an unexpected TP/PP topology.")
     if parallel.enable_expert_parallel is not args.enable_expert_parallel:
         raise RuntimeError("The public LLM resolved an unexpected expert-parallel setting.")
-    if model.enforce_eager is not args.enforce_eager:
-        raise RuntimeError("The public LLM resolved an unexpected eager setting.")
+    cudagraph_mode = _cudagraph_mode_name(getattr(compilation, "cudagraph_mode", None))
+    configured_capture_sizes = getattr(compilation, "cudagraph_capture_sizes", None)
+    if not isinstance(configured_capture_sizes, list) or any(
+        isinstance(value, bool) or not isinstance(value, Integral) or value <= 0 for value in configured_capture_sizes
+    ):
+        raise RuntimeError("The public LLM resolved invalid CUDAGraph capture sizes.")
+    if args.target_execution_mode == "eager":
+        if model.enforce_eager is not True or cudagraph_mode != _CUDAGRAPH_MODE_NONE:
+            raise RuntimeError(
+                "The public LLM did not preserve eager target execution: "
+                f"target_enforce_eager={model.enforce_eager!r}, cudagraph_mode={cudagraph_mode!r}."
+            )
+        target_execution_mode = "eager"
+    else:
+        if model.enforce_eager is not False or cudagraph_mode != _CUDAGRAPH_MODE_FULL_DECODE_ONLY:
+            raise RuntimeError(
+                "The public LLM did not resolve target FULL_DECODE_ONLY execution: "
+                f"target_enforce_eager={model.enforce_eager!r}, cudagraph_mode={cudagraph_mode!r}."
+            )
+        if getattr(observability, "cudagraph_metrics", None) is not True:
+            raise RuntimeError("FULL_DECODE_ONLY did not enable CUDAGraph runtime metrics.")
+        target_execution_mode = "full_decode_only"
     if scheduler.async_scheduling is not args.async_scheduling:
         raise RuntimeError("The public LLM resolved an unexpected async-scheduling setting.")
     if model.max_model_len != args.max_model_len:
@@ -695,11 +988,13 @@ def _effective_engine_config(
             speculative is None
             or speculative.method != "dspark"
             or speculative.num_speculative_tokens != args.num_spec_tokens
+            or speculative.enforce_eager is not True
         ):
-            raise RuntimeError("DSpark did not resolve method='dspark' with the requested K.")
+            raise RuntimeError("DSpark did not resolve method='dspark', the requested K, and eager draft execution.")
         speculative_value = {
             "method": speculative.method,
             "num_speculative_tokens": speculative.num_speculative_tokens,
+            "enforce_eager": speculative.enforce_eager,
         }
     return {
         "use_v2_model_runner": True,
@@ -707,6 +1002,12 @@ def _effective_engine_config(
         "pipeline_parallel_size": parallel.pipeline_parallel_size,
         "enable_expert_parallel": parallel.enable_expert_parallel,
         "enforce_eager": model.enforce_eager,
+        "target_execution_mode": target_execution_mode,
+        "cudagraph_mode": cudagraph_mode,
+        "cudagraph_metrics": getattr(observability, "cudagraph_metrics", None),
+        "frontend_configured_capture_sizes": [int(value) for value in configured_capture_sizes],
+        "npugraph_ex_enabled": npugraph_ex_enabled,
+        "static_kernel_enabled": static_kernel_enabled,
         "async_scheduling": scheduler.async_scheduling,
         "max_model_len": model.max_model_len,
         "max_num_seqs": scheduler.max_num_seqs,
@@ -853,6 +1154,11 @@ def run_benchmark(
             args,
             expected_model_type=model_descriptor["model_type"],
         )
+        graph_worker_runtime: dict[str, Any] | None = None
+        graph_collector: _CUDAGraphRuntimeCollector | None = None
+        if args.target_execution_mode == "full_decode_only":
+            graph_worker_runtime = _collect_worker_graph_runtime(engine, args)
+            graph_collector = _install_graph_runtime_collector(engine)
         prompts, prompt_identities, prompt_set_sha256 = tokenize_prompt_sources(sources, engine.get_tokenizer())
         sampling_params = sampling_factory(args)
         if args.warmup_prompts > len(prompts):
@@ -860,10 +1166,14 @@ def run_benchmark(
         warmup_count = args.warmup_prompts
         if warmup_count:
             engine.generate(prompts[:warmup_count], sampling_params, use_tqdm=False)
+        warmup_graph_runtime = graph_collector.snapshot() if graph_collector is not None else None
+        if graph_collector is not None:
+            graph_collector.reset()
         metrics_start = capture_spec_metrics(engine.get_metrics())
         measured_started_at = clock()
         outputs = engine.generate(prompts, sampling_params, use_tqdm=False)
         measured_finished_at = clock()
+        measured_graph_runtime = graph_collector.snapshot() if graph_collector is not None else None
         metrics_end = capture_spec_metrics(engine.get_metrics())
         elapsed_seconds = measured_finished_at - measured_started_at
         if not math.isfinite(elapsed_seconds) or elapsed_seconds <= 0:
@@ -879,6 +1189,13 @@ def run_benchmark(
         else:
             metric_delta = None
             acceptance = _not_applicable_acceptance(args.num_spec_tokens)
+        graph_execution = _graph_execution_result(
+            args,
+            effective,
+            graph_worker_runtime,
+            warmup_graph_runtime,
+            measured_graph_runtime,
+        )
         sampling = {
             "temperature": args.temperature,
             "top_p": args.top_p,
@@ -914,6 +1231,26 @@ def run_benchmark(
             "effective_engine_config": effective,
             "effective_config": effective,
             "resolved_kv_block_config": effective["resolved_kv_block_config"],
+            "target_execution_mode_requested": args.target_execution_mode,
+            "target_execution_mode_effective": effective["target_execution_mode"],
+            "target_enforce_eager": effective["enforce_eager"],
+            "dspark_enforce_eager": (
+                effective["speculative_config"]["enforce_eager"]
+                if effective["speculative_config"] is not None
+                else None
+            ),
+            "cudagraph_mode_requested": _requested_cudagraph_mode(args),
+            "cudagraph_mode_effective": effective["cudagraph_mode"],
+            "npugraph_ex_enabled": effective["npugraph_ex_enabled"],
+            "static_kernel_enabled": effective["static_kernel_enabled"],
+            "configured_capture_sizes": graph_execution["configured_capture_sizes"],
+            "observed_capture_sizes": graph_execution["observed_capture_sizes"],
+            "graph_capture_count": graph_execution["graph_capture_count"],
+            "graph_replay_count": graph_execution["graph_replay_count"],
+            "graph_fallback_count": graph_execution["graph_fallback_count"],
+            "measured_graph_replay_count": graph_execution["measured_graph_replay_count"],
+            "measured_eager_fallback_count": graph_execution["measured_eager_fallback_count"],
+            "graph_execution": graph_execution,
             "dataset": dataset_descriptor,
             "prompt_set_sha256": prompt_set_sha256,
             "prompt_identities": prompt_identities,
@@ -926,6 +1263,8 @@ def run_benchmark(
                 "dataset_load_included": False,
                 "prompt_tokenization_included": False,
                 "warmup_included": False,
+                "graph_capture_included": False,
+                "graph_warmup_included": False,
                 "explicit_device_synchronization": False,
                 "elapsed_seconds": elapsed_seconds,
             },
@@ -974,6 +1313,10 @@ def _print_summary(result: Mapping[str, Any]) -> None:
     print("-" * 60)
     print(f"runner: {result['runner']}")
     print(f"mode: {result['mode']}")
+    print(f"target execution mode: {result['target_execution_mode_effective']}")
+    print(f"target CUDAGraph mode: {result['cudagraph_mode_effective']}")
+    print(f"measured target graph replays: {result['measured_graph_replay_count']}")
+    print(f"measured eager fallbacks: {result['measured_eager_fallback_count']}")
     print(f"total_requests: {result['measured_request_count']}")
     print(f"total_output_tokens: {throughput['total_output_tokens']}")
     print(f"requested base KV block size: {resolved_kv_blocks['requested_base_block_size']}")
@@ -1022,7 +1365,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--quantization", default="ascend")
     parser.add_argument("--tokenizer-mode", default="deepseek_v4")
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--enforce-eager", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--target-execution-mode", choices=TARGET_EXECUTION_MODES, default="eager")
+    parser.add_argument("--cudagraph-capture-sizes", nargs="+", type=int)
+    parser.add_argument("--enforce-eager", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--enable-expert-parallel", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--async-scheduling", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--ignore-eos", action=argparse.BooleanOptionalAction, default=False)
@@ -1033,6 +1378,21 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         minimum = 0 if name == "warmup_prompts" else 1
         if value < minimum:
             parser.error(f"--{name.replace('_', '-')} must be >= {minimum}")
+    if args.target_execution_mode == "eager":
+        if args.enforce_eager is False:
+            parser.error("--no-enforce-eager conflicts with --target-execution-mode eager")
+        if args.cudagraph_capture_sizes is not None:
+            parser.error("--cudagraph-capture-sizes requires --target-execution-mode full_decode_only")
+        args.enforce_eager = True
+    else:
+        if args.enforce_eager is True:
+            parser.error("--enforce-eager conflicts with --target-execution-mode full_decode_only")
+        args.enforce_eager = False
+        if args.cudagraph_capture_sizes is not None and (
+            any(value <= 0 for value in args.cudagraph_capture_sizes)
+            or len(set(args.cudagraph_capture_sizes)) != len(args.cudagraph_capture_sizes)
+        ):
+            parser.error("--cudagraph-capture-sizes must contain unique positive integers")
     return args
 
 

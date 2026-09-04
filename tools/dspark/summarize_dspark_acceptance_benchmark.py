@@ -42,6 +42,117 @@ def _finite_positive(value: Any, field: str) -> float:
     return result
 
 
+_GRAPH_RESULT_FIELDS = (
+    "target_execution_mode_requested",
+    "target_execution_mode_effective",
+    "target_enforce_eager",
+    "dspark_enforce_eager",
+    "cudagraph_mode_requested",
+    "cudagraph_mode_effective",
+    "npugraph_ex_enabled",
+    "static_kernel_enabled",
+    "configured_capture_sizes",
+    "observed_capture_sizes",
+    "graph_capture_count",
+    "graph_replay_count",
+    "graph_fallback_count",
+    "measured_graph_replay_count",
+    "measured_eager_fallback_count",
+)
+
+
+def _validate_graph_execution(result: Mapping[str, Any], expected_mode: str) -> None:
+    present = [field in result for field in _GRAPH_RESULT_FIELDS]
+    if not any(present):
+        # Results before M2.5A-P08 were eager-only and carried no graph ABI.
+        return
+    if not all(present):
+        missing = [field for field, is_present in zip(_GRAPH_RESULT_FIELDS, present) if not is_present]
+        raise ValueError(f"Benchmark result has incomplete target graph evidence: {missing}.")
+    requested_mode = result["target_execution_mode_requested"]
+    effective_mode = result["target_execution_mode_effective"]
+    requested_cg = result["cudagraph_mode_requested"]
+    effective_cg = result["cudagraph_mode_effective"]
+    target_eager = result["target_enforce_eager"]
+    dspark_eager = result["dspark_enforce_eager"]
+    expected_dspark_eager = True if expected_mode == "dspark" else None
+    if requested_mode != effective_mode or dspark_eager is not expected_dspark_eager:
+        raise ValueError("Target/draft execution-mode identities are inconsistent.")
+    requested = result["requested_engine_config"]
+    effective = result["effective_engine_config"]
+    if (
+        requested.get("target_execution_mode") != requested_mode
+        or requested.get("cudagraph_mode") != requested_cg
+        or effective.get("target_execution_mode") != effective_mode
+        or effective.get("cudagraph_mode") != effective_cg
+        or effective.get("enforce_eager") is not target_eager
+        or effective.get("npugraph_ex_enabled") is not result["npugraph_ex_enabled"]
+        or effective.get("static_kernel_enabled") is not result["static_kernel_enabled"]
+    ):
+        raise ValueError("Target graph result aliases differ from requested/effective engine configuration.")
+    for field in (
+        "graph_capture_count",
+        "graph_replay_count",
+        "graph_fallback_count",
+        "measured_graph_replay_count",
+        "measured_eager_fallback_count",
+    ):
+        value = result[field]
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"Target graph counter {field!r} is invalid.")
+    for field in ("configured_capture_sizes", "observed_capture_sizes"):
+        values = result[field]
+        if not isinstance(values, list) or any(
+            isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in values
+        ):
+            raise ValueError(f"Target graph size field {field!r} is invalid.")
+    graph_execution = result.get("graph_execution")
+    if not isinstance(graph_execution, Mapping) or any(
+        graph_execution.get(field) != result[field]
+        for field in (
+            "configured_capture_sizes",
+            "observed_capture_sizes",
+            "graph_capture_count",
+            "graph_replay_count",
+            "graph_fallback_count",
+            "measured_graph_replay_count",
+            "measured_eager_fallback_count",
+        )
+    ):
+        raise ValueError("Target graph evidence aliases are incomplete or inconsistent.")
+    if requested_mode == "eager":
+        if target_eager is not True or requested_cg != "NONE" or effective_cg != "NONE":
+            raise ValueError("Eager benchmark result has an active target graph mode.")
+        if (
+            any(
+                result[field] != 0
+                for field in (
+                    "graph_capture_count",
+                    "graph_replay_count",
+                    "graph_fallback_count",
+                    "measured_graph_replay_count",
+                    "measured_eager_fallback_count",
+                )
+            )
+            or result["observed_capture_sizes"]
+        ):
+            raise ValueError("Eager benchmark result claims target graph activity.")
+    elif requested_mode == "full_decode_only":
+        if (
+            target_eager is not False
+            or requested_cg != "FULL_DECODE_ONLY"
+            or effective_cg != "FULL_DECODE_ONLY"
+            or result["npugraph_ex_enabled"] is not True
+        ):
+            raise ValueError("FULL_DECODE_ONLY benchmark result did not preserve its target graph configuration.")
+        if result["graph_capture_count"] <= 0 or not result["observed_capture_sizes"]:
+            raise ValueError("FULL_DECODE_ONLY benchmark result has no target graph capture evidence.")
+        if result["measured_graph_replay_count"] <= 0:
+            raise ValueError("FULL_DECODE_ONLY benchmark result has no measured target graph replay.")
+    else:
+        raise ValueError(f"Unknown target execution mode {requested_mode!r}.")
+
+
 def _validate_result(result: Mapping[str, Any], expected_mode: str) -> None:
     if result.get("schema_version") != benchmark.SCHEMA_VERSION:
         raise ValueError("Unsupported benchmark result schema.")
@@ -119,6 +230,7 @@ def _validate_result(result: Mapping[str, Any], expected_mode: str) -> None:
         raise ValueError("Benchmark result has no requested/effective engine configuration.")
     if effective != result.get("effective_config"):
         raise ValueError("Effective engine configuration aliases are inconsistent.")
+    _validate_graph_execution(result, expected_mode)
     resolved_kv_blocks = result.get("resolved_kv_block_config")
     if resolved_kv_blocks is None:
         # Compatibility with results produced before hybrid-KV identities were
@@ -254,6 +366,33 @@ def _mode_statistics(results: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _target_execution_summary(results: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    first = results[0]
+    if "target_execution_mode_requested" not in first:
+        return {
+            "mode": "eager",
+            "legacy_eager_result": True,
+            "graph_evidence_available": False,
+        }
+    return {
+        "mode": first["target_execution_mode_effective"],
+        "legacy_eager_result": False,
+        "graph_evidence_available": True,
+        "cudagraph_mode": first["cudagraph_mode_effective"],
+        "configured_capture_sizes": first["configured_capture_sizes"],
+        "observed_capture_sizes": first["observed_capture_sizes"],
+        "graph_capture_count": _statistics([float(result["graph_capture_count"]) for result in results]),
+        "graph_replay_count": _statistics([float(result["graph_replay_count"]) for result in results]),
+        "graph_fallback_count": _statistics([float(result["graph_fallback_count"]) for result in results]),
+        "measured_graph_replay_count": _statistics(
+            [float(result["measured_graph_replay_count"]) for result in results]
+        ),
+        "measured_eager_fallback_count": _statistics(
+            [float(result["measured_eager_fallback_count"]) for result in results]
+        ),
+    }
+
+
 def _functional_signature(result: Mapping[str, Any]) -> list[dict[str, Any]]:
     return [
         {
@@ -356,6 +495,10 @@ def summarize_results(
         },
         "target_only": target_stats,
         "dspark": dspark_stats,
+        "target_execution": {
+            "target_only": _target_execution_summary(target_results),
+            "dspark": _target_execution_summary(dspark_results),
+        },
         "dspark_over_target_output_throughput_speedup": dspark_median / target_median,
         "dspark_acceptance": {
             "acceptance_per_position_median": acceptance_at_position,
@@ -389,6 +532,13 @@ def _write_run_csv(path: Path, results: Sequence[Mapping[str, Any]]) -> None:
         "frontend_ready_block_size",
         "scheduler_block_size",
         "group_block_sizes",
+        "target_execution_mode",
+        "cudagraph_mode",
+        "target_enforce_eager",
+        "dspark_enforce_eager",
+        "graph_capture_count",
+        "measured_graph_replay_count",
+        "measured_eager_fallback_count",
         "measured_requests",
         "total_output_tokens",
         "elapsed_seconds",
@@ -415,6 +565,13 @@ def _write_run_csv(path: Path, results: Sequence[Mapping[str, Any]]) -> None:
                     "frontend_ready_block_size": resolved_kv_blocks.get("frontend_ready_block_size"),
                     "scheduler_block_size": resolved_kv_blocks.get("scheduler_block_size"),
                     "group_block_sizes": json.dumps(resolved_kv_blocks.get("group_block_sizes")),
+                    "target_execution_mode": result.get("target_execution_mode_effective", "eager"),
+                    "cudagraph_mode": result.get("cudagraph_mode_effective", "NONE"),
+                    "target_enforce_eager": result.get("target_enforce_eager", True),
+                    "dspark_enforce_eager": result.get("dspark_enforce_eager"),
+                    "graph_capture_count": result.get("graph_capture_count"),
+                    "measured_graph_replay_count": result.get("measured_graph_replay_count"),
+                    "measured_eager_fallback_count": result.get("measured_eager_fallback_count"),
                     "measured_requests": result["measured_request_count"],
                     "total_output_tokens": result["throughput"]["total_output_tokens"],
                     "elapsed_seconds": result["timing"]["elapsed_seconds"],
@@ -454,6 +611,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     _write_run_csv(args.output_csv.expanduser().resolve(), [*target_results, *dspark_results])
     print("-" * 60)
     print(f"runner: {summary['runner']}")
+    print(f"target execution mode: {summary['target_execution']['target_only']['mode']}")
     print(
         "target-only output throughput median: "
         f"{summary['target_only']['output_tokens_per_second']['median']:.6f} tok/s"

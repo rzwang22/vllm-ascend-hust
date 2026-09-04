@@ -84,8 +84,14 @@ class _FakeEngineCore:
 
 class _FakeEngine:
     def __init__(self, args: argparse.Namespace):
+        graph_enabled = args.target_execution_mode == "full_decode_only"
+        configured_capture_sizes = args.cudagraph_capture_sizes or ([6, 24] if graph_enabled else [1])
         speculative = (
-            SimpleNamespace(method="dspark", num_speculative_tokens=args.num_spec_tokens)
+            SimpleNamespace(
+                method="dspark",
+                num_speculative_tokens=args.num_spec_tokens,
+                enforce_eager=True,
+            )
             if args.mode == "dspark"
             else None
         )
@@ -113,9 +119,21 @@ class _FakeEngine:
                 ),
                 cache_config=SimpleNamespace(block_size=args.block_size, enable_prefix_caching=False),
                 speculative_config=speculative,
+                compilation_config=SimpleNamespace(
+                    cudagraph_mode="FULL_DECODE_ONLY" if graph_enabled else "NONE",
+                    cudagraph_capture_sizes=configured_capture_sizes,
+                ),
+                observability_config=SimpleNamespace(cudagraph_metrics=graph_enabled),
+                additional_config={
+                    "ascend_compilation_config": {
+                        "enable_npugraph_ex": graph_enabled,
+                        "enable_static_kernel": False,
+                    }
+                },
             ),
             engine_core=_FakeEngineCore([args.block_size]),
             model_executor=None,
+            logger_manager=SimpleNamespace(stat_loggers=[]),
             shutdown=self._shutdown,
         )
         self.tokenizer = _Tokenizer()
@@ -123,6 +141,13 @@ class _FakeEngine:
         self.shutdown_called = False
         self.metric_call = 0
         self.mode = args.mode
+        self.tensor_parallel_size = args.tensor_parallel_size
+        self.graph_enabled = graph_enabled
+        self.graph_runtime_mode = "FULL"
+        self.emit_graph_metrics = True
+        self.graph_capture_count = len(configured_capture_sizes) if graph_enabled else 0
+        self.configured_capture_sizes = list(configured_capture_sizes)
+        self.observed_capture_sizes = list(configured_capture_sizes) if graph_enabled else []
 
     def get_tokenizer(self) -> _Tokenizer:
         return self.tokenizer
@@ -130,6 +155,16 @@ class _FakeEngine:
     def generate(self, prompts: list[dict[str, list[int]]], _params: object, *, use_tqdm: bool) -> list[_Output]:
         assert use_tqdm is False
         self.generate_calls.append(copy.deepcopy(prompts))
+        if self.graph_enabled and self.emit_graph_metrics:
+            graph_stats = SimpleNamespace(
+                runtime_mode=self.graph_runtime_mode,
+                num_unpadded_tokens=len(prompts) * (6 if self.mode == "dspark" else 1),
+                num_padded_tokens=len(prompts) * (6 if self.mode == "dspark" else 1),
+                num_paddings=0,
+            )
+            scheduler_stats = SimpleNamespace(cudagraph_stats=graph_stats)
+            for stat_logger in self.llm_engine.logger_manager.stat_loggers:
+                stat_logger.record(scheduler_stats, None)
         return [
             _Output(prompt["prompt_token_ids"], [request_index + 10] * 4)
             for request_index, prompt in enumerate(prompts)
@@ -145,6 +180,24 @@ class _FakeEngine:
 
     def _shutdown(self) -> None:
         self.shutdown_called = True
+
+    def collective_rpc(self, _method: object) -> list[dict[str, Any]]:
+        speculator_requested = "FULL_DECODE_ONLY" if self.mode == "dspark" else None
+        speculator_effective = "NONE" if self.mode == "dspark" else None
+        return [
+            {
+                "rank": rank,
+                "target_cudagraph_mode": (self.llm_engine.vllm_config.compilation_config.cudagraph_mode),
+                "configured_capture_sizes": list(self.configured_capture_sizes),
+                "observed_capture_sizes": list(self.observed_capture_sizes),
+                "graph_capture_count": self.graph_capture_count,
+                "npugraph_ex_enabled": self.graph_enabled,
+                "static_kernel_enabled": False,
+                "dspark_requested_cudagraph_mode": speculator_requested,
+                "dspark_cudagraph_mode": speculator_effective,
+            }
+            for rank in range(self.tensor_parallel_size)
+        ]
 
 
 def _model_dir(tmp_path: Path) -> Path:
@@ -175,23 +228,29 @@ def _dataset(tmp_path: Path, count: int = 2) -> Path:
     return path
 
 
+def _argv(tmp_path: Path, mode: str = "dspark", count: int = 2) -> list[str]:
+    return [
+        "--model-dir",
+        str(_model_dir(tmp_path)),
+        "--mode",
+        mode,
+        "--dataset-name",
+        "jsonl",
+        "--dataset-path",
+        str(_dataset(tmp_path, count)),
+        "--num-prompts",
+        str(count),
+        "--result-json",
+        str(tmp_path / f"{mode}.json"),
+    ]
+
+
 def _args(tmp_path: Path, mode: str = "dspark", count: int = 2) -> argparse.Namespace:
-    return benchmark.parse_args(
-        [
-            "--model-dir",
-            str(_model_dir(tmp_path)),
-            "--mode",
-            mode,
-            "--dataset-name",
-            "jsonl",
-            "--dataset-path",
-            str(_dataset(tmp_path, count)),
-            "--num-prompts",
-            str(count),
-            "--result-json",
-            str(tmp_path / f"{mode}.json"),
-        ]
-    )
+    return benchmark.parse_args(_argv(tmp_path, mode, count))
+
+
+def _graph_args(tmp_path: Path, mode: str = "dspark", count: int = 2) -> argparse.Namespace:
+    return benchmark.parse_args([*_argv(tmp_path, mode, count), "--target-execution-mode", "full_decode_only"])
 
 
 def _run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str) -> tuple[dict[str, Any], _FakeEngine]:
@@ -204,6 +263,28 @@ def _run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str) -> tuple[di
         engine_factory=lambda _kwargs: engine,
         sampling_factory=lambda _args: object(),
         clock=lambda: next(times),
+        plugin_root=tmp_path,
+        core_root=tmp_path,
+    )
+    return result, engine
+
+
+def _run_graph(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    configure: Any = None,
+) -> tuple[dict[str, Any], _FakeEngine]:
+    args = _graph_args(tmp_path, mode)
+    engine = _FakeEngine(args)
+    if configure is not None:
+        configure(engine)
+    monkeypatch.setattr(benchmark, "_git_head", lambda _path: "a" * 40)
+    result = benchmark.run_benchmark(
+        args,
+        engine_factory=lambda _kwargs: engine,
+        sampling_factory=lambda _args: object(),
+        clock=iter((10.0, 12.0)).__next__,
         plugin_root=tmp_path,
         core_root=tmp_path,
     )
@@ -247,6 +328,7 @@ def test_cli_defaults_force_pr_style_mrv2_contract(tmp_path: Path) -> None:
     assert args.tensor_parallel_size == 8
     assert args.max_model_len == 8192
     assert args.block_size == 32
+    assert args.target_execution_mode == "eager"
     assert args.enforce_eager is True
     assert args.enable_expert_parallel is True
     assert args.async_scheduling is True
@@ -259,11 +341,118 @@ def test_engine_kwargs_select_target_only_or_exact_dspark_config(tmp_path: Path)
     dspark = benchmark.build_engine_kwargs(_args(dspark_tmp, "dspark"))
 
     assert target["speculative_config"] is None
-    assert dspark["speculative_config"] == {"method": "dspark", "num_speculative_tokens": 5}
+    assert dspark["speculative_config"] == {
+        "method": "dspark",
+        "num_speculative_tokens": 5,
+        "enforce_eager": True,
+    }
+    assert target["enforce_eager"] is True
+    assert "compilation_config" not in target
     assert dspark["tensor_parallel_size"] == 8
     assert dspark["enable_expert_parallel"] is True
     assert dspark["async_scheduling"] is True
     assert dspark["disable_log_stats"] is False
+
+
+@pytest.mark.parametrize("mode", ["target_only", "dspark"])
+def test_full_decode_only_configures_target_graph_and_eager_draft(tmp_path: Path, mode: str) -> None:
+    args = _graph_args(tmp_path, mode)
+
+    kwargs = benchmark.build_engine_kwargs(args)
+
+    assert args.enforce_eager is False
+    assert "enforce_eager" not in kwargs
+    assert kwargs["compilation_config"] == {"cudagraph_mode": "FULL_DECODE_ONLY"}
+    assert kwargs["cudagraph_metrics"] is True
+    if mode == "target_only":
+        assert kwargs["speculative_config"] is None
+    else:
+        assert kwargs["speculative_config"] == {
+            "method": "dspark",
+            "num_speculative_tokens": 5,
+            "enforce_eager": True,
+        }
+
+
+def test_explicit_graph_capture_sizes_are_target_only_configuration(tmp_path: Path) -> None:
+    args = benchmark.parse_args(
+        [
+            *_argv(tmp_path),
+            "--target-execution-mode",
+            "full_decode_only",
+            "--cudagraph-capture-sizes",
+            "6",
+            "24",
+        ]
+    )
+
+    kwargs = benchmark.build_engine_kwargs(args)
+
+    assert kwargs["compilation_config"] == {
+        "cudagraph_mode": "FULL_DECODE_ONLY",
+        "cudagraph_capture_sizes": [6, 24],
+    }
+
+
+@pytest.mark.parametrize(
+    "extra_args",
+    [
+        ["--target-execution-mode", "eager", "--no-enforce-eager"],
+        ["--target-execution-mode", "full_decode_only", "--enforce-eager"],
+        ["--target-execution-mode", "eager", "--cudagraph-capture-sizes", "1"],
+    ],
+)
+def test_target_execution_options_reject_conflicts(tmp_path: Path, extra_args: list[str]) -> None:
+    with pytest.raises(SystemExit):
+        benchmark.parse_args([*_argv(tmp_path), *extra_args])
+
+
+def test_full_decode_only_rejects_launch_blocking(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    args = _graph_args(tmp_path)
+    monkeypatch.setenv("ASCEND_LAUNCH_BLOCKING", "1")
+
+    with pytest.raises(RuntimeError, match="rejects ASCEND_LAUNCH_BLOCKING=1"):
+        benchmark.build_engine_kwargs(args)
+
+
+def test_worker_graph_snapshot_reads_current_mrv2_target_and_draft_abi() -> None:
+    class Descriptor:
+        def __init__(self, num_tokens: int):
+            self.num_tokens = num_tokens
+
+    runner = SimpleNamespace(
+        compilation_config=SimpleNamespace(
+            cudagraph_mode="FULL_DECODE_ONLY",
+            cudagraph_capture_sizes=[6, 24],
+        ),
+        cudagraph_manager=SimpleNamespace(
+            graphs={Descriptor(6): object(), Descriptor(24): object()},
+        ),
+        ascend_config=SimpleNamespace(
+            ascend_compilation_config=SimpleNamespace(
+                enable_npugraph_ex=True,
+                enable_static_kernel=False,
+            )
+        ),
+        speculator=SimpleNamespace(
+            requested_cudagraph_mode="FULL_DECODE_ONLY",
+            cudagraph_mode="NONE",
+        ),
+    )
+
+    snapshot = benchmark._worker_graph_runtime_snapshot(SimpleNamespace(rank=3, model_runner=runner))
+
+    assert snapshot == {
+        "rank": 3,
+        "target_cudagraph_mode": "FULL_DECODE_ONLY",
+        "configured_capture_sizes": [6, 24],
+        "observed_capture_sizes": [6, 24],
+        "graph_capture_count": 2,
+        "npugraph_ex_enabled": True,
+        "static_kernel_enabled": False,
+        "dspark_requested_cudagraph_mode": "FULL_DECODE_ONLY",
+        "dspark_cudagraph_mode": "NONE",
+    }
 
 
 def test_mrv2_environment_is_set_before_dynamic_vllm_import(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -632,6 +821,84 @@ def test_run_benchmark_batches_measured_prompts_and_excludes_load_warmup(
     json.dumps(result)
 
 
+@pytest.mark.parametrize("mode", ["target_only", "dspark"])
+def test_graph_run_records_capture_replay_and_eager_draft(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+) -> None:
+    result, engine = _run_graph(tmp_path, monkeypatch, mode)
+
+    assert result["target_execution_mode_requested"] == "full_decode_only"
+    assert result["target_execution_mode_effective"] == "full_decode_only"
+    assert result["target_enforce_eager"] is False
+    assert result["dspark_enforce_eager"] is (True if mode == "dspark" else None)
+    assert result["cudagraph_mode_requested"] == "FULL_DECODE_ONLY"
+    assert result["cudagraph_mode_effective"] == "FULL_DECODE_ONLY"
+    assert result["npugraph_ex_enabled"] is True
+    assert result["static_kernel_enabled"] is False
+    assert result["configured_capture_sizes"] == [6, 24]
+    assert result["observed_capture_sizes"] == [6, 24]
+    assert result["graph_capture_count"] == 2
+    assert result["graph_replay_count"] == 2
+    assert result["graph_fallback_count"] == 0
+    assert result["measured_graph_replay_count"] == 1
+    assert result["measured_eager_fallback_count"] == 0
+    assert result["graph_execution"]["warmup_runtime"]["record_count"] == 1
+    assert result["graph_execution"]["measured_runtime"]["record_count"] == 1
+    assert result["timing"]["graph_capture_included"] is False
+    assert result["timing"]["graph_warmup_included"] is False
+    assert [len(call) for call in engine.generate_calls] == [1, 2]
+    json.dumps(result)
+
+
+@pytest.mark.parametrize(
+    ("configure", "match"),
+    [
+        (lambda engine: setattr(engine, "emit_graph_metrics", False), "published no graph runtime metrics"),
+        (lambda engine: setattr(engine, "graph_runtime_mode", "NONE"), "performed no target graph replay"),
+        (
+            lambda engine: (
+                setattr(engine, "graph_capture_count", 0),
+                setattr(engine, "observed_capture_sizes", []),
+            ),
+            "without captured target graph descriptors",
+        ),
+    ],
+)
+def test_graph_run_fails_closed_without_runtime_proof(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    configure: Any,
+    match: str,
+) -> None:
+    args = _graph_args(tmp_path)
+    engine = _FakeEngine(args)
+    configure(engine)
+    monkeypatch.setattr(benchmark, "_git_head", lambda _path: "a" * 40)
+
+    with pytest.raises(RuntimeError, match=match):
+        benchmark.run_benchmark(
+            args,
+            engine_factory=lambda _kwargs: engine,
+            sampling_factory=lambda _args: object(),
+            clock=iter((10.0, 12.0)).__next__,
+            plugin_root=tmp_path,
+            core_root=tmp_path,
+        )
+
+    assert engine.shutdown_called is True
+
+
+def test_graph_run_rejects_non_eager_dspark_config(tmp_path: Path) -> None:
+    args = _graph_args(tmp_path)
+    engine = _FakeEngine(args)
+    engine.llm_engine.vllm_config.speculative_config.enforce_eager = False
+
+    with pytest.raises(RuntimeError, match="eager draft execution"):
+        benchmark._effective_engine_config(engine, args)
+
+
 def test_target_only_records_speculative_metrics_as_not_applicable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -851,7 +1118,10 @@ def test_successful_run_fails_if_cleanup_fails(tmp_path: Path, monkeypatch: pyte
 
 
 def _independent_results(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    graph: bool = False,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     targets: list[dict[str, Any]] = []
     dsparks: list[dict[str, Any]] = []
@@ -860,8 +1130,9 @@ def _independent_results(
         dspark_root = tmp_path / f"dspark-{index}"
         target_root.mkdir(parents=True)
         dspark_root.mkdir(parents=True)
-        target, _ = _run(target_root, monkeypatch, "target_only")
-        dspark, _ = _run(dspark_root, monkeypatch, "dspark")
+        runner = _run_graph if graph else _run
+        target, _ = runner(target_root, monkeypatch, "target_only")
+        dspark, _ = runner(dspark_root, monkeypatch, "dspark")
         # Normalize source paths so only the output throughput differs.
         dspark["comparison_config"] = copy.deepcopy(target["comparison_config"])
         dspark["comparison_config_fingerprint"] = target["comparison_config_fingerprint"]
@@ -901,6 +1172,19 @@ def test_three_run_summary_uses_independent_median_cv_and_nonblocking_token_diff
     assert result["exact_token_comparison"]["mismatched_request_pair_count"] > 0
 
 
+def test_graph_summary_preserves_target_replay_evidence_across_modes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    targets, dsparks = _independent_results(tmp_path, monkeypatch, graph=True)
+
+    result = summary.summarize_results(targets, dsparks)
+
+    assert result["target_execution"]["target_only"]["mode"] == "full_decode_only"
+    assert result["target_execution"]["dspark"]["mode"] == "full_decode_only"
+    assert result["target_execution"]["target_only"]["measured_graph_replay_count"]["minimum"] == 1
+    assert result["target_execution"]["dspark"]["measured_graph_replay_count"]["minimum"] == 1
+
+
 def test_run_csv_preserves_absolute_throughput_and_acceptance(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     targets, dsparks = _independent_results(tmp_path, monkeypatch)
     path = tmp_path / "runs.csv"
@@ -914,8 +1198,30 @@ def test_run_csv_preserves_absolute_throughput_and_acceptance(tmp_path: Path, mo
     assert "comparison_config_fingerprint" in rows[0]
     assert "scheduler_block_size" in rows[0]
     assert "group_block_sizes" in rows[0]
+    assert "target_execution_mode" in rows[0]
+    assert "measured_graph_replay_count" in rows[0]
     assert rows[1].startswith("target_only,")
     assert rows[2].startswith("dspark,")
+
+
+def test_summary_accepts_legacy_eager_result_without_graph_fields(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result, _engine = _run(tmp_path, monkeypatch, "target_only")
+    for field in summary._GRAPH_RESULT_FIELDS:
+        result.pop(field)
+    result.pop("graph_execution")
+
+    summary._validate_result(result, "target_only")
+
+
+def test_summary_rejects_graph_result_without_measured_replay(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    result, _engine = _run_graph(tmp_path, monkeypatch, "dspark")
+    result["measured_graph_replay_count"] = 0
+    result["graph_execution"]["measured_graph_replay_count"] = 0
+
+    with pytest.raises(ValueError, match="no measured target graph replay"):
+        summary._validate_result(result, "dspark")
 
 
 def test_summary_rejects_prompt_config_mismatch_and_duplicate_runs(
