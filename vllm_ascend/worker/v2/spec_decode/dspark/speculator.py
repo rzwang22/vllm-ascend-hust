@@ -2077,25 +2077,38 @@ class AscendDSparkSpeculator(BaseSpeculator):
             raise RuntimeError("Ascend DSpark proposal was already consumed.")
         if producer_epoch != self._proposal_step_epoch:
             raise RuntimeError("Ascend DSpark verification belongs to a stale proposal epoch.")
-        verification_request_ids = tuple(input_batch.req_ids)
-        if input_batch.num_reqs != len(verification_request_ids):
+        input_request_ids = tuple(input_batch.req_ids)
+        if input_batch.num_reqs != len(input_request_ids):
             raise RuntimeError("Ascend DSpark verification InputBatch request count is inconsistent.")
+        if len(set(input_request_ids)) != len(input_request_ids):
+            raise RuntimeError("Ascend DSpark target InputBatch contains duplicate request ownership.")
+        if input_batch.num_draft_tokens_per_req is None:
+            raise RuntimeError("Ascend DSpark verification is missing scheduled proposal lengths.")
+        input_scheduled_lengths = tuple(int(length) for length in input_batch.num_draft_tokens_per_req)
+        published_length = candidate_tokens.shape[1]
+        if len(input_scheduled_lengths) != input_batch.num_reqs:
+            raise RuntimeError(
+                "Ascend DSpark verification request ownership does not match its scheduled proposal lengths."
+            )
+        if any(length < 0 or length > published_length for length in input_scheduled_lengths):
+            raise RuntimeError("Ascend DSpark verification received an invalid scheduled proposal length.")
+
+        # A target batch may mix proposal verification rows with newly admitted
+        # prefill rows. Core's ``num_draft_tokens_per_req`` is derived solely
+        # from SchedulerOutput.scheduled_spec_decode_tokens, so a positive
+        # length is the authoritative verification-row identity. A zero-length
+        # prefill row must neither index nor consume the previous publication.
+        verification_batch_rows = tuple(row for row, length in enumerate(input_scheduled_lengths) if length > 0)
+        verification_request_ids = tuple(input_request_ids[row] for row in verification_batch_rows)
+        verification_scheduled_lengths = tuple(input_scheduled_lengths[row] for row in verification_batch_rows)
         # Core may permute equal-length requests between proposal production
-        # and verification. Resolve every current tensor row back to its
+        # and verification. Resolve every verification tensor row back to its
         # published owner instead of treating either dictionary order as ABI.
         verification_to_published = self._verification_to_published_rows(
             request_ids,
             verification_request_ids,
         )
-        if input_batch.num_draft_tokens_per_req is None:
-            raise RuntimeError("Ascend DSpark verification is missing scheduled proposal lengths.")
-        verification_scheduled_lengths = tuple(int(length) for length in input_batch.num_draft_tokens_per_req)
-        published_length = candidate_tokens.shape[1]
-        if len(verification_scheduled_lengths) != input_batch.num_reqs or any(
-            length <= 0 or length > published_length for length in verification_scheduled_lengths
-        ):
-            raise RuntimeError("Ascend DSpark verification received an invalid scheduled proposal length.")
-        published_scheduled_lengths = [0] * input_batch.num_reqs
+        published_scheduled_lengths = [0] * len(request_ids)
         for verification_row, published_row in enumerate(verification_to_published):
             published_scheduled_lengths[published_row] = verification_scheduled_lengths[verification_row]
         scheduled_lengths = tuple(published_scheduled_lengths)
@@ -2119,10 +2132,10 @@ class AscendDSparkSpeculator(BaseSpeculator):
             self._log_proposal_disposition(lifecycle)
         elif lifecycle.disposition != disposition or lifecycle.scheduled_lengths != scheduled_lengths:
             raise RuntimeError("Ascend DSpark verification lengths differ from the reconciled scheduler disposition.")
-        if input_batch.num_draft_tokens != sum(scheduled_lengths):
+        if input_batch.num_draft_tokens != sum(verification_scheduled_lengths):
             raise RuntimeError("Ascend DSpark verification draft-token count is inconsistent.")
 
-        identity_rows = tuple(range(input_batch.num_reqs))
+        identity_rows = tuple(range(len(request_ids)))
         if verification_to_published == identity_rows:
             verification_candidate_tokens = candidate_tokens
             expected_request_state_indices = request_state_indices
@@ -2142,13 +2155,22 @@ class AscendDSparkSpeculator(BaseSpeculator):
                 state_row_indices,
             )
 
-        active_request_indices = self._validate_step_tensor(
+        input_request_indices = self._validate_step_tensor(
             "verification request-state indices",
             input_batch.idx_mapping,
             ndim=1,
             dtypes=(torch.int32,),
             min_size=input_batch.num_reqs,
         )[: input_batch.num_reqs]
+        verification_batch_row_indices = torch.tensor(
+            verification_batch_rows,
+            dtype=torch.int64,
+            device=input_request_indices.device,
+        )
+        active_request_indices = input_request_indices.index_select(
+            0,
+            verification_batch_row_indices,
+        )
         _assert_markov_tensor_contract(
             (active_request_indices == expected_request_state_indices).all(),
             "Ascend DSpark verification request-state mapping changed after publication.",
@@ -2160,6 +2182,15 @@ class AscendDSparkSpeculator(BaseSpeculator):
             dtypes=(torch.int32,),
             min_size=input_batch.num_reqs + 1,
         )[: input_batch.num_reqs + 1]
+        query_row_indices = verification_batch_row_indices.to(query_start_loc.device)
+        verification_query_starts = query_start_loc.index_select(
+            0,
+            query_row_indices,
+        )
+        verification_query_ends = query_start_loc.index_select(
+            0,
+            query_row_indices + 1,
+        )
         scheduled_lengths_tensor = torch.tensor(
             verification_scheduled_lengths,
             dtype=query_start_loc.dtype,
@@ -2167,7 +2198,7 @@ class AscendDSparkSpeculator(BaseSpeculator):
         )
         expected_query_lengths = scheduled_lengths_tensor + 1
         _assert_markov_tensor_contract(
-            (query_start_loc[1:] - query_start_loc[:-1] == expected_query_lengths).all(),
+            (verification_query_ends - verification_query_starts == expected_query_lengths).all(),
             "Ascend DSpark verification input must contain one anchor and every scheduled candidate per request.",
         )
         target_input_ids = self._validate_step_tensor(
@@ -2175,7 +2206,7 @@ class AscendDSparkSpeculator(BaseSpeculator):
             input_batch.input_ids,
             ndim=1,
             dtypes=(torch.int32,),
-            min_size=input_batch.num_reqs + sum(scheduled_lengths),
+            min_size=input_batch.num_tokens,
         )
         max_scheduled_length = max(scheduled_lengths)
         candidate_offsets = torch.arange(
@@ -2185,7 +2216,7 @@ class AscendDSparkSpeculator(BaseSpeculator):
             device=query_start_loc.device,
         )
         scheduled_mask = candidate_offsets[None, :] <= scheduled_lengths_tensor[:, None]
-        candidate_indices = (query_start_loc[:-1, None] + candidate_offsets[None, :])[scheduled_mask]
+        candidate_indices = (verification_query_starts[:, None] + candidate_offsets[None, :])[scheduled_mask]
         consumed_candidates = target_input_ids[candidate_indices.to(torch.int64)]
         expected_candidates = verification_candidate_tokens[:, :max_scheduled_length][scheduled_mask]
         _assert_markov_tensor_contract(
@@ -2193,20 +2224,26 @@ class AscendDSparkSpeculator(BaseSpeculator):
             "Ascend DSpark verification inputs do not contain the published candidate set prefix scheduled by core.",
         )
 
-        num_sampled = self._validate_step_tensor(
+        input_num_sampled = self._validate_step_tensor(
             "verification sampled-token counts",
             num_sampled,
             ndim=1,
             dtypes=(torch.int32,),
             min_size=input_batch.num_reqs,
         )[: input_batch.num_reqs]
-        num_rejected = self._validate_step_tensor(
+        input_num_rejected = self._validate_step_tensor(
             "verification rejected-token counts",
             num_rejected,
             ndim=1,
             dtypes=(torch.int32,),
             min_size=input_batch.num_reqs,
         )[: input_batch.num_reqs]
+        sampling_row_indices = verification_batch_row_indices.to(input_num_sampled.device)
+        num_sampled = input_num_sampled.index_select(0, sampling_row_indices)
+        num_rejected = input_num_rejected.index_select(
+            0,
+            sampling_row_indices.to(input_num_rejected.device),
+        )
         _assert_markov_tensor_contract(
             ((num_sampled >= 1) & (num_sampled <= expected_query_lengths)).all(),
             "Ascend DSpark verification returned an invalid sampled-token count.",

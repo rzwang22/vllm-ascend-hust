@@ -50,11 +50,31 @@ def test_verification_compares_only_the_scheduled_candidate_prefix() -> None:
         )
     ]
 
-    assert "candidate_tokens[:, :max_scheduled_length][scheduled_mask]" in consume
-    assert "sum(scheduled_lengths)" in consume
+    assert "if length > 0" in consume
+    assert "verification_batch_rows" in consume
+    assert "input_request_ids[row]" in consume
+    assert "verification_candidate_tokens[:, :max_scheduled_length][scheduled_mask]" in consume
+    assert "sum(verification_scheduled_lengths)" in consume
     assert "expected_query_lengths = scheduled_lengths_tensor + 1" in consume
     assert "published candidate set prefix scheduled by core" in consume
     assert "self.num_speculative_steps" not in consume
+
+
+def test_scheduler_spec_tokens_are_the_proposal_installation_truth() -> None:
+    runner = RUNNER.read_text(encoding="utf-8")
+    speculator = SPECULATOR.read_text(encoding="utf-8")
+    finish = runner[runner.index("    def finish_requests(") : runner.index("    def get_kv_cache_spec(")]
+    reconcile = speculator[
+        speculator.index("    def reconcile_scheduler_proposal(") : speculator.index(
+            "    def _consume_published_proposal_after_verification("
+        )
+    ]
+
+    assert "scheduled_spec_decode_tokens=(scheduler_output.scheduled_spec_decode_tokens)" in finish
+    assert "set(scheduler_output.num_scheduled_tokens)" in finish
+    assert "scheduled_owners = owners.intersection(scheduled_spec_decode_tokens)" in reconcile
+    assert "set(scheduled_spec_decode_tokens).difference(owners)" in reconcile
+    assert "len(scheduled_spec_decode_tokens[request_id])" in reconcile
 
 
 def test_lifecycle_and_diagnostic_expose_terminal_disposition_fields() -> None:

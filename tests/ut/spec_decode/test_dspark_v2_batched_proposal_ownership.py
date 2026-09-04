@@ -2,19 +2,24 @@
 # Copyright (c) 2026 Huawei Technologies Co., Ltd. All Rights Reserved.
 
 from dataclasses import replace
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 import torch
+from vllm.v1.core.sched.output import SchedulerOutput
+from vllm.v1.worker.gpu.model_runner import GPUModelRunner
 
 from tests.ut.spec_decode.test_dspark_v2_markov_sampling import (
     _ready_markov_step,
 )
 from tests.ut.spec_decode.test_dspark_v2_proposal_inputs import _step_kwargs
+from vllm_ascend.worker.v2.model_runner import NPUModelRunner
 
 REQUEST_IDS = ("request-1", "request-2", "request-3", "request-4")
 REQUEST_STATE_INDICES = torch.tensor([3, 0, 2, 1], dtype=torch.int32)
 VERIFICATION_ORDER = ("request-4", "request-3", "request-1", "request-2")
+NEW_PREFILL_REQUEST_ID = "request-5-prefill"
 
 
 def _publish_batched_proposal(
@@ -70,6 +75,8 @@ def _consumer_batch(
     proposal: torch.Tensor,
     request_order: tuple[str, ...],
     lengths_by_request: dict[str, int],
+    *,
+    prefill_lengths_by_request: dict[str, int] | None = None,
 ):
     batch = _step_kwargs()[0]["input_batch"]
     candidates_by_request = _candidate_rows_by_request(
@@ -77,20 +84,38 @@ def _consumer_batch(
         proposal,
     )
     state_indices_by_request = _state_index_by_request(proposal_inputs)
+    prefill_lengths_by_request = prefill_lengths_by_request or {}
+    next_state_index = max(state_indices_by_request.values(), default=-1) + 1
     rows = []
     query_lengths = []
-    for verification_row, request_id in enumerate(request_order):
-        scheduled_length = lengths_by_request[request_id]
-        anchor = torch.tensor([100 + verification_row], dtype=torch.int32)
-        rows.append(
-            torch.cat(
-                (
-                    anchor,
-                    candidates_by_request[request_id][:scheduled_length].to(torch.int32),
+    scheduled_lengths = []
+    for batch_row, request_id in enumerate(request_order):
+        if request_id in candidates_by_request:
+            scheduled_length = lengths_by_request[request_id]
+            anchor = torch.tensor([100 + batch_row], dtype=torch.int32)
+            rows.append(
+                torch.cat(
+                    (
+                        anchor,
+                        candidates_by_request[request_id][:scheduled_length].to(torch.int32),
+                    )
                 )
             )
-        )
-        query_lengths.append(scheduled_length + 1)
+            query_lengths.append(scheduled_length + 1)
+            scheduled_lengths.append(scheduled_length)
+        else:
+            prefill_length = prefill_lengths_by_request[request_id]
+            rows.append(
+                torch.arange(
+                    1000 + batch_row * prefill_length,
+                    1000 + (batch_row + 1) * prefill_length,
+                    dtype=torch.int32,
+                )
+            )
+            query_lengths.append(prefill_length)
+            scheduled_lengths.append(0)
+            state_indices_by_request[request_id] = next_state_index
+            next_state_index += 1
 
     query_start_loc = torch.tensor(
         [0, *np.cumsum(query_lengths).tolist()],
@@ -100,10 +125,7 @@ def _consumer_batch(
         [state_indices_by_request[request_id] for request_id in request_order],
         dtype=torch.int32,
     )
-    scheduled_lengths = np.asarray(
-        [lengths_by_request[request_id] for request_id in request_order],
-        dtype=np.int32,
-    )
+    scheduled_lengths = np.asarray(scheduled_lengths, dtype=np.int32)
     batch.req_ids = list(request_order)
     batch.num_reqs = len(request_order)
     batch.num_reqs_after_padding = len(request_order)
@@ -119,6 +141,10 @@ def _consumer_batch(
     batch.input_ids = torch.cat(rows)
     batch.positions = torch.arange(batch.num_tokens, dtype=torch.int64)
     batch.is_padding = torch.zeros(batch.num_tokens, dtype=torch.bool)
+    batch.is_prefilling_np = np.asarray(
+        [request_id in prefill_lengths_by_request for request_id in request_order],
+        dtype=np.bool_,
+    )
     return batch
 
 
@@ -153,7 +179,10 @@ def _consume(
         batch,
         num_sampled=torch.ones(batch.num_reqs, dtype=torch.int32),
         num_rejected=scheduled_lengths,
-        temperature=torch.zeros(4, dtype=torch.float32),
+        temperature=torch.zeros(
+            int(batch.idx_mapping_np.max()) + 1,
+            dtype=torch.float32,
+        ),
     )
 
 
@@ -221,6 +250,174 @@ def test_permutation_rejects_candidate_row_from_another_request() -> None:
 
     assert speculator._published_proposal_consumed is False
     assert speculator._proposal_consumption_count == 0
+
+
+def test_mixed_prefill_is_not_treated_as_installed_proposal_owner() -> None:
+    speculator, proposal_inputs, proposal = _publish_batched_proposal()
+    lengths_by_request = dict.fromkeys(REQUEST_IDS, 5)
+    mixed_request_order = (*VERIFICATION_ORDER, NEW_PREFILL_REQUEST_ID)
+    scheduled_tokens = {request_id: [-1] * lengths_by_request[request_id] for request_id in VERIFICATION_ORDER}
+
+    assert (
+        speculator.reconcile_scheduler_proposal(
+            scheduled_spec_decode_tokens=scheduled_tokens,
+            scheduled_request_ids=set(mixed_request_order),
+            finished_request_ids=set(),
+            preempted_request_ids=set(),
+            known_request_ids=set(mixed_request_order),
+        )
+        == "INSTALLED"
+    )
+    batch = _consumer_batch(
+        proposal_inputs,
+        proposal,
+        mixed_request_order,
+        lengths_by_request,
+        prefill_lengths_by_request={NEW_PREFILL_REQUEST_ID: 61},
+    )
+    new_request_row = mixed_request_order.index(NEW_PREFILL_REQUEST_ID)
+    new_request_start = int(batch.query_start_loc[new_request_row])
+    new_request_tokens = batch.input_ids[new_request_start : int(batch.query_start_loc[new_request_row + 1])].clone()
+
+    _consume(speculator, batch)
+
+    lifecycle = speculator._last_consumed_proposal_lifecycle
+    assert lifecycle is not None
+    assert lifecycle.request_ids == REQUEST_IDS
+    assert lifecycle.scheduled_lengths == (5, 5, 5, 5)
+    assert lifecycle.consumed is True
+    assert NEW_PREFILL_REQUEST_ID not in lifecycle.request_ids
+    assert torch.equal(
+        batch.input_ids[new_request_start : int(batch.query_start_loc[new_request_row + 1])],
+        new_request_tokens,
+    )
+    assert speculator._proposal_consumption_count == 1
+
+
+def test_runner_reconciles_mixed_admission_from_spec_token_keys_only(
+    monkeypatch,
+) -> None:
+    speculator, proposal_inputs, proposal = _publish_batched_proposal()
+    runner = object.__new__(NPUModelRunner)
+    runner.speculator = speculator
+    runner.req_states = SimpleNamespace(
+        req_id_to_index={request_id: row for row, request_id in enumerate(proposal_inputs.request_ids)}
+    )
+    base_calls = []
+    monkeypatch.setattr(
+        GPUModelRunner,
+        "finish_requests",
+        lambda self, scheduler_output: base_calls.append((self, scheduler_output)),
+    )
+    scheduler_output = SchedulerOutput.make_empty()
+    scheduler_output.scheduled_new_reqs = [SimpleNamespace(req_id=NEW_PREFILL_REQUEST_ID)]
+    scheduler_output.num_scheduled_tokens = {
+        **dict.fromkeys(REQUEST_IDS, 6),
+        NEW_PREFILL_REQUEST_ID: 61,
+    }
+    scheduler_output.scheduled_spec_decode_tokens = dict.fromkeys(
+        REQUEST_IDS,
+        [-1] * 5,
+    )
+
+    runner.finish_requests(scheduler_output)
+
+    assert base_calls == [(runner, scheduler_output)]
+    assert speculator._published_candidate_tokens is proposal
+    assert speculator._published_proposal_request_ids == REQUEST_IDS
+    lifecycle = speculator._current_proposal_lifecycle
+    assert lifecycle is not None
+    assert lifecycle.request_ids == REQUEST_IDS
+    assert lifecycle.scheduled_lengths == (5, 5, 5, 5)
+    assert lifecycle.installed is True
+    assert NEW_PREFILL_REQUEST_ID not in lifecycle.request_ids
+
+
+def test_mixed_prefill_can_join_only_the_next_proposal_epoch(
+    monkeypatch,
+) -> None:
+    speculator, proposal_inputs, proposal = _publish_batched_proposal()
+    lengths_by_request = dict.fromkeys(REQUEST_IDS, 5)
+    mixed_request_order = (*VERIFICATION_ORDER, NEW_PREFILL_REQUEST_ID)
+    batch = _consumer_batch(
+        proposal_inputs,
+        proposal,
+        mixed_request_order,
+        lengths_by_request,
+        prefill_lengths_by_request={NEW_PREFILL_REQUEST_ID: 61},
+    )
+    speculator.reconcile_scheduler_proposal(
+        scheduled_spec_decode_tokens={
+            request_id: [-1] * lengths_by_request[request_id] for request_id in VERIFICATION_ORDER
+        },
+        scheduled_request_ids=set(mixed_request_order),
+        finished_request_ids=set(),
+        preempted_request_ids=set(),
+        known_request_ids=set(mixed_request_order),
+    )
+    prepared_inputs = object()
+    next_candidates = torch.full(
+        (len(mixed_request_order), 5),
+        77,
+        dtype=torch.int64,
+    )
+    calls = []
+
+    def prepare_next(**kwargs):
+        assert kwargs["input_batch"] is batch
+        assert speculator._published_candidate_tokens is None
+        calls.append(("prepare", tuple(kwargs["input_batch"].req_ids)))
+        return prepared_inputs
+
+    def execute_next(inputs):
+        assert inputs is prepared_inputs
+        calls.append(("execute", inputs))
+        return next_candidates
+
+    monkeypatch.setattr(speculator, "prepare_proposal_inputs", prepare_next)
+    monkeypatch.setattr(speculator, "_execute_draft", execute_next)
+
+    result = speculator.propose(
+        input_batch=batch,
+        attn_metadata={},
+        slot_mappings={},
+        last_hidden_states=torch.empty(0),
+        aux_hidden_states=None,
+        num_sampled=torch.ones(batch.num_reqs, dtype=torch.int32),
+        num_rejected=torch.from_numpy(batch.num_draft_tokens_per_req.copy()),
+        last_sampled=torch.empty(0),
+        next_prefill_tokens=torch.empty(0),
+        temperature=torch.zeros(5, dtype=torch.float32),
+        seeds=torch.empty(0),
+    )
+
+    assert result is next_candidates
+    assert calls == [
+        ("prepare", mixed_request_order),
+        ("execute", prepared_inputs),
+    ]
+    assert speculator._last_consumed_proposal_lifecycle is not None
+    assert speculator._last_consumed_proposal_lifecycle.request_ids == REQUEST_IDS
+    assert speculator._last_consumed_proposal_lifecycle.consumed is True
+    assert speculator._proposal_consumption_count == 1
+
+
+def test_unpublished_prefill_with_scheduled_proposal_tokens_fails_closed() -> None:
+    speculator, _proposal_inputs, proposal = _publish_batched_proposal()
+    scheduled_tokens = {request_id: [-1] * 5 for request_id in REQUEST_IDS}
+    scheduled_tokens[NEW_PREFILL_REQUEST_ID] = [-1] * 5
+
+    with pytest.raises(RuntimeError, match="outside published ownership"):
+        speculator.reconcile_scheduler_proposal(
+            scheduled_spec_decode_tokens=scheduled_tokens,
+            scheduled_request_ids=set(scheduled_tokens),
+            finished_request_ids=set(),
+            preempted_request_ids=set(),
+            known_request_ids=set(scheduled_tokens),
+        )
+
+    assert speculator._published_candidate_tokens is proposal
+    assert speculator._published_proposal_consumed is False
 
 
 @pytest.mark.parametrize(
