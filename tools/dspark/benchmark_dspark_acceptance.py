@@ -43,6 +43,9 @@ MODEL_FINGERPRINT_FILES = (
     "model.safetensors.index.json",
     "quant_model_weights.safetensors.index.json",
 )
+_PUBLIC_LLM_TYPE = ("vllm.entrypoints.llm", "LLM")
+_MULTIPROCESS_LLM_ENGINE_TYPE = ("vllm.v1.engine.llm_engine", "LLMEngine")
+_SYNC_ENGINE_CORE_CLIENT_TYPE = ("vllm.v1.engine.core_client", "SyncMPClient")
 
 
 @dataclass(frozen=True)
@@ -428,6 +431,25 @@ def build_engine_kwargs(args: argparse.Namespace) -> dict[str, Any]:
     return kwargs
 
 
+def _requested_engine_config(args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        "use_v2_model_runner": True,
+        "tensor_parallel_size": args.tensor_parallel_size,
+        "pipeline_parallel_size": 1,
+        "enable_expert_parallel": args.enable_expert_parallel,
+        "enforce_eager": args.enforce_eager,
+        "async_scheduling": args.async_scheduling,
+        "max_model_len": args.max_model_len,
+        "max_num_seqs": args.max_num_seqs,
+        "max_num_batched_tokens": args.max_num_batched_tokens,
+        "block_size": args.block_size,
+        "enable_prefix_caching": False,
+        "dtype": args.dtype,
+        "quantization": args.quantization,
+        "speculative_config": build_engine_kwargs(args)["speculative_config"],
+    }
+
+
 def _public_engine_factory(kwargs: Mapping[str, Any]) -> Any:
     from vllm import LLM
 
@@ -470,8 +492,17 @@ def _effective_engine_config(engine: Any, args: argparse.Namespace) -> dict[str,
         raise RuntimeError("The public LLM resolved an unexpected maximum sequence count.")
     if scheduler.max_num_batched_tokens != args.max_num_batched_tokens:
         raise RuntimeError("The public LLM resolved an unexpected batched-token limit.")
-    if cache.block_size != args.block_size or cache.enable_prefix_caching is not False:
-        raise RuntimeError("The public LLM resolved an unexpected KV block or prefix-cache setting.")
+    if cache.block_size != args.block_size:
+        raise RuntimeError(
+            "The public LLM resolved a different KV block size: "
+            f"requested block_size={args.block_size}, effective block_size={cache.block_size}."
+        )
+    if cache.enable_prefix_caching is not False:
+        raise RuntimeError(
+            "The public LLM resolved a different prefix-cache setting: "
+            "requested enable_prefix_caching=False, "
+            f"effective enable_prefix_caching={cache.enable_prefix_caching}."
+        )
     if args.mode == "target_only":
         if speculative is not None:
             raise RuntimeError("target_only unexpectedly constructed a speculative decoder.")
@@ -531,16 +562,67 @@ def _output_records(outputs: Sequence[Any], prompt_identities: Sequence[Mapping[
     return records
 
 
-def _shutdown_engine(engine: Any) -> None:
-    shutdown = getattr(engine, "shutdown", None)
-    if callable(shutdown):
+def _type_identity(value: Any) -> tuple[str, str]:
+    value_type = type(value)
+    return value_type.__module__, value_type.__name__
+
+
+class _BenchmarkEngineCleanup:
+    """One-shot public-LLM cleanup with a current-core MP compatibility path."""
+
+    def __init__(self, engine: Any):
+        self._engine = engine
+        self._attempted = False
+        self._complete = False
+
+    @property
+    def complete(self) -> bool:
+        return self._complete
+
+    def shutdown(self) -> None:
+        if self._complete:
+            return
+        if self._attempted:
+            raise RuntimeError("Benchmark engine cleanup already failed; refusing to repeat partial shutdown.")
+        self._attempted = True
+
+        direct_shutdown = getattr(self._engine, "shutdown", None)
+        if callable(direct_shutdown):
+            direct_shutdown()
+            self._complete = True
+            return
+
+        llm_engine = getattr(self._engine, "llm_engine", None)
+        shutdown = getattr(llm_engine, "shutdown", None)
+        if not callable(shutdown):
+            raise RuntimeError("Public LLM exposes no engine shutdown boundary.")
+
+        if not hasattr(llm_engine, "model_executor"):
+            engine_core = getattr(llm_engine, "engine_core", None)
+            renderer = getattr(llm_engine, "renderer", None)
+            is_current_mp_client = (
+                _type_identity(self._engine) == _PUBLIC_LLM_TYPE
+                and _type_identity(llm_engine) == _MULTIPROCESS_LLM_ENGINE_TYPE
+                and _type_identity(engine_core) == _SYNC_ENGINE_CORE_CLIENT_TYPE
+                and callable(getattr(engine_core, "shutdown", None))
+                and callable(getattr(renderer, "shutdown", None))
+                and hasattr(llm_engine, "dp_group")
+                and hasattr(llm_engine, "external_launcher_dp")
+            )
+            if not is_current_mp_client:
+                raise RuntimeError(
+                    "Public LLM has no model_executor and does not match the supported "
+                    "LLM/LLMEngine/SyncMPClient cleanup layout."
+                )
+            # Multiprocess LLMEngine deliberately has no frontend model executor:
+            # the model is owned and released by EngineCore.  Supplying None lets
+            # the current core shutdown method skip only its in-process compiled-
+            # model cleanup, then retain its normal Prometheus, renderer,
+            # EngineCore-client, and DP-group shutdown sequence.
+            llm_engine.model_executor = None
+
         shutdown()
-        return
-    llm_engine = getattr(engine, "llm_engine", None)
-    shutdown = getattr(llm_engine, "shutdown", None)
-    if not callable(shutdown):
-        raise RuntimeError("Public LLM exposes no engine shutdown boundary.")
-    shutdown()
+        self._complete = True
 
 
 def _comparison_config(
@@ -578,7 +660,7 @@ def run_benchmark(
     model_descriptor = _model_descriptor(Path(args.model_dir))
     engine_kwargs = build_engine_kwargs(args)
     engine = engine_factory(engine_kwargs)
-    cleanup_complete = False
+    cleanup = _BenchmarkEngineCleanup(engine)
     try:
         effective = _effective_engine_config(engine, args)
         prompts, prompt_identities, prompt_set_sha256 = tokenize_prompt_sources(sources, engine.get_tokenizer())
@@ -638,6 +720,8 @@ def run_benchmark(
             "plugin_sha": _git_head(plugin_root),
             "core_sha": _git_head(core_root),
             "model": model_descriptor,
+            "requested_engine_config": _requested_engine_config(args),
+            "effective_engine_config": effective,
             "effective_config": effective,
             "dataset": dataset_descriptor,
             "prompt_set_sha256": prompt_set_sha256,
@@ -678,10 +762,15 @@ def run_benchmark(
             "historical_error_count_provenance": "external merged-log scan required",
             "cleanup": {"engine_shutdown_complete": False},
         }
-    finally:
-        _shutdown_engine(engine)
-        cleanup_complete = True
-    if not cleanup_complete:
+    except BaseException as primary_error:
+        try:
+            cleanup.shutdown()
+        except BaseException as cleanup_error:
+            raise primary_error from cleanup_error
+        raise
+
+    cleanup.shutdown()
+    if not cleanup.complete:
         raise RuntimeError("Engine cleanup did not complete.")
     result["cleanup"]["engine_shutdown_complete"] = True
     return result
@@ -730,7 +819,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--max-model-len", type=int, default=8192)
     parser.add_argument("--max-num-seqs", type=int, default=400)
     parser.add_argument("--max-num-batched-tokens", type=int, default=8192)
-    parser.add_argument("--block-size", type=int, default=128)
+    parser.add_argument("--block-size", type=int, default=32)
     parser.add_argument("--kv-cache-memory-bytes", type=int)
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.9)
     parser.add_argument("--dtype", default="bfloat16")

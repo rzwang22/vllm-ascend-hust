@@ -113,6 +113,21 @@ def _validate_result(result: Mapping[str, Any], expected_mode: str) -> None:
     fingerprint = benchmark._sha256_bytes(benchmark._canonical_json_bytes(comparison))
     if result.get("comparison_config_fingerprint") != fingerprint:
         raise ValueError("Comparison configuration fingerprint is invalid.")
+    requested = result.get("requested_engine_config")
+    effective = result.get("effective_engine_config")
+    if not isinstance(requested, Mapping) or not isinstance(effective, Mapping):
+        raise ValueError("Benchmark result has no requested/effective engine configuration.")
+    if effective != result.get("effective_config"):
+        raise ValueError("Effective engine configuration aliases are inconsistent.")
+    if requested.get("block_size") != effective.get("block_size"):
+        raise ValueError("Requested and effective block sizes differ in a completed benchmark result.")
+    if requested.get("enable_prefix_caching") != effective.get("enable_prefix_caching"):
+        raise ValueError("Requested and effective prefix-cache settings differ in a completed benchmark result.")
+    comparison_effective = comparison.get("effective_engine")
+    if not isinstance(comparison_effective, Mapping) or dict(comparison_effective) != {
+        key: value for key, value in effective.items() if key != "speculative_config"
+    }:
+        raise ValueError("Comparison fingerprint does not describe the effective engine configuration.")
     model = result.get("model")
     if not isinstance(model, Mapping):
         raise ValueError("Benchmark result has no model descriptor.")

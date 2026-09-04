@@ -92,6 +92,7 @@ class _FakeEngine:
                 cache_config=SimpleNamespace(block_size=args.block_size, enable_prefix_caching=False),
                 speculative_config=speculative,
             ),
+            model_executor=None,
             shutdown=self._shutdown,
         )
         self.tokenizer = _Tokenizer()
@@ -189,6 +190,7 @@ def test_cli_defaults_force_pr_style_mrv2_contract(tmp_path: Path) -> None:
     assert args.output_len == 256
     assert args.tensor_parallel_size == 8
     assert args.max_model_len == 8192
+    assert args.block_size == 32
     assert args.enforce_eager is True
     assert args.enable_expert_parallel is True
     assert args.async_scheduling is True
@@ -388,6 +390,31 @@ def test_effective_config_rejects_non_mrv2_engine(tmp_path: Path) -> None:
         benchmark._effective_engine_config(engine, args)
 
 
+def test_effective_config_reports_requested_and_effective_block_size(tmp_path: Path) -> None:
+    args = _args(tmp_path)
+    args.block_size = 128
+    engine = _FakeEngine(args)
+    engine.llm_engine.vllm_config.cache_config.block_size = 32
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"requested block_size=128, effective block_size=32",
+    ):
+        benchmark._effective_engine_config(engine, args)
+
+
+def test_effective_config_reports_prefix_cache_mismatch_separately(tmp_path: Path) -> None:
+    args = _args(tmp_path)
+    engine = _FakeEngine(args)
+    engine.llm_engine.vllm_config.cache_config.enable_prefix_caching = True
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"requested enable_prefix_caching=False, effective enable_prefix_caching=True",
+    ):
+        benchmark._effective_engine_config(engine, args)
+
+
 def test_run_benchmark_batches_measured_prompts_and_excludes_load_warmup(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -400,6 +427,10 @@ def test_run_benchmark_batches_measured_prompts_and_excludes_load_warmup(
     assert result["throughput"]["requests_per_second"] == 1
     assert result["metrics"]["delta_boundary"] == "post_warmup_snapshot_to_post_measured_snapshot"
     assert result["acceptance"]["num_drafts"] == 3
+    assert result["requested_engine_config"]["block_size"] == 32
+    assert result["effective_engine_config"]["block_size"] == 32
+    assert result["effective_config"] == result["effective_engine_config"]
+    assert result["comparison_config"]["effective_engine"]["block_size"] == 32
     assert result["cleanup"]["engine_shutdown_complete"] is True
     assert engine.shutdown_called is True
     json.dumps(result)
@@ -414,6 +445,213 @@ def test_target_only_records_speculative_metrics_as_not_applicable(
     assert result["metrics"]["measured_delta"] is None
     assert result["acceptance"]["num_drafts"] is None
     assert result["acceptance"]["acceptance_per_position"] == [None] * 5
+
+
+class _TrackedRenderer:
+    def __init__(self):
+        self.shutdown_calls = 0
+
+    def shutdown(self) -> None:
+        self.shutdown_calls += 1
+
+
+class SyncMPClient:
+    def __init__(self, *, fail_shutdown: bool = False):
+        self.shutdown_calls = 0
+        self.fail_shutdown = fail_shutdown
+
+    def shutdown(self, timeout: float | None = None) -> None:
+        assert timeout is None
+        self.shutdown_calls += 1
+        if self.fail_shutdown:
+            raise RuntimeError("EngineCore cleanup failed")
+
+
+SyncMPClient.__module__ = "vllm.v1.engine.core_client"
+
+
+class LLMEngine:
+    def __init__(self, engine_core: Any):
+        self.shutdown_calls = 0
+        self.renderer = _TrackedRenderer()
+        self.engine_core = engine_core
+        self.dp_group = None
+        self.external_launcher_dp = False
+
+    def shutdown(self, timeout: float | None = None) -> None:
+        assert timeout is None
+        self.shutdown_calls += 1
+        # Mirrors the current core's failing frontend-model probe and the
+        # renderer/EngineCore ordering that follows it.
+        getattr(self.model_executor, "driver_worker", None)
+        if self.renderer is not None:
+            self.renderer.shutdown()
+            self.renderer = None
+        if self.engine_core is not None:
+            self.engine_core.shutdown(timeout=timeout)
+            self.engine_core = None
+
+
+LLMEngine.__module__ = "vllm.v1.engine.llm_engine"
+
+
+class LLM:
+    def __init__(self, engine_core: Any | None = None):
+        self.llm_engine = LLMEngine(engine_core or SyncMPClient())
+
+
+LLM.__module__ = "vllm.entrypoints.llm"
+
+
+def test_current_public_llm_mp_layout_shutdown_is_complete_and_idempotent() -> None:
+    engine = LLM()
+    llm_engine = engine.llm_engine
+    renderer = llm_engine.renderer
+    engine_core = llm_engine.engine_core
+    cleanup = benchmark._BenchmarkEngineCleanup(engine)
+
+    assert not hasattr(engine, "shutdown")
+    assert not hasattr(llm_engine, "model_executor")
+
+    cleanup.shutdown()
+    cleanup.shutdown()
+
+    assert cleanup.complete is True
+    assert llm_engine.model_executor is None
+    assert llm_engine.shutdown_calls == 1
+    assert renderer.shutdown_calls == 1
+    assert engine_core.shutdown_calls == 1
+    assert llm_engine.renderer is None
+    assert llm_engine.engine_core is None
+
+
+def test_unknown_missing_model_executor_layout_fails_closed() -> None:
+    class UnknownEngineCore:
+        def shutdown(self, timeout: float | None = None) -> None:
+            raise AssertionError("unknown EngineCore must not be called")
+
+    engine = LLM(UnknownEngineCore())
+    cleanup = benchmark._BenchmarkEngineCleanup(engine)
+
+    with pytest.raises(RuntimeError, match="does not match the supported"):
+        cleanup.shutdown()
+    with pytest.raises(RuntimeError, match="refusing to repeat"):
+        cleanup.shutdown()
+
+    assert cleanup.complete is False
+    assert engine.llm_engine.shutdown_calls == 0
+
+
+def test_failed_engine_core_cleanup_is_not_repeated() -> None:
+    engine_core = SyncMPClient(fail_shutdown=True)
+    engine = LLM(engine_core)
+    renderer = engine.llm_engine.renderer
+    cleanup = benchmark._BenchmarkEngineCleanup(engine)
+
+    with pytest.raises(RuntimeError, match="EngineCore cleanup failed"):
+        cleanup.shutdown()
+    with pytest.raises(RuntimeError, match="refusing to repeat"):
+        cleanup.shutdown()
+
+    assert cleanup.complete is False
+    assert renderer.shutdown_calls == 1
+    assert engine_core.shutdown_calls == 1
+
+
+def test_configuration_failure_still_cleans_up_engine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    args = _args(tmp_path)
+    engine = _FakeEngine(args)
+    engine.llm_engine.vllm_config.cache_config.block_size = 64
+    monkeypatch.setattr(benchmark, "_git_head", lambda _path: "a" * 40)
+
+    with pytest.raises(RuntimeError, match="requested block_size=32, effective block_size=64"):
+        benchmark.run_benchmark(
+            args,
+            engine_factory=lambda _kwargs: engine,
+            sampling_factory=lambda _args: object(),
+            plugin_root=tmp_path,
+            core_root=tmp_path,
+        )
+
+    assert engine.shutdown_called is True
+
+
+def test_measured_generation_failure_still_cleans_up_engine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    args = _args(tmp_path)
+    engine = _FakeEngine(args)
+    original_generate = engine.generate
+    calls = 0
+
+    def fail_measured_generate(
+        prompts: list[dict[str, list[int]]],
+        params: object,
+        *,
+        use_tqdm: bool,
+    ) -> list[_Output]:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise ValueError("measured generation failed")
+        return original_generate(prompts, params, use_tqdm=use_tqdm)
+
+    engine.generate = fail_measured_generate  # type: ignore[method-assign]
+    monkeypatch.setattr(benchmark, "_git_head", lambda _path: "a" * 40)
+
+    with pytest.raises(ValueError, match="measured generation failed"):
+        benchmark.run_benchmark(
+            args,
+            engine_factory=lambda _kwargs: engine,
+            sampling_factory=lambda _args: object(),
+            plugin_root=tmp_path,
+            core_root=tmp_path,
+        )
+
+    assert engine.shutdown_called is True
+
+
+def test_cleanup_failure_does_not_replace_primary_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    args = _args(tmp_path)
+    engine = _FakeEngine(args)
+    engine.llm_engine.vllm_config.cache_config.block_size = 64
+
+    def fail_cleanup() -> None:
+        raise RuntimeError("cleanup failed")
+
+    engine.llm_engine.shutdown = fail_cleanup
+    monkeypatch.setattr(benchmark, "_git_head", lambda _path: "a" * 40)
+
+    with pytest.raises(RuntimeError, match="requested block_size=32, effective block_size=64") as caught:
+        benchmark.run_benchmark(
+            args,
+            engine_factory=lambda _kwargs: engine,
+            sampling_factory=lambda _args: object(),
+            plugin_root=tmp_path,
+            core_root=tmp_path,
+        )
+
+    assert isinstance(caught.value.__cause__, RuntimeError)
+    assert str(caught.value.__cause__) == "cleanup failed"
+
+
+def test_successful_run_fails_if_cleanup_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    args = _args(tmp_path)
+    engine = _FakeEngine(args)
+
+    def fail_cleanup() -> None:
+        raise RuntimeError("cleanup failed")
+
+    engine.llm_engine.shutdown = fail_cleanup
+    monkeypatch.setattr(benchmark, "_git_head", lambda _path: "a" * 40)
+
+    with pytest.raises(RuntimeError, match="cleanup failed"):
+        benchmark.run_benchmark(
+            args,
+            engine_factory=lambda _kwargs: engine,
+            sampling_factory=lambda _args: object(),
+            clock=iter((10.0, 12.0)).__next__,
+            plugin_root=tmp_path,
+            core_root=tmp_path,
+        )
 
 
 def _independent_results(
@@ -544,3 +782,12 @@ def test_cli_help_is_dependency_free() -> None:
     assert completed.returncode == 0
     assert "--num-spec-tokens" in completed.stdout
     assert "--async-scheduling" in completed.stdout
+
+
+def test_cleanup_has_no_process_kill_or_global_shutdown_patch() -> None:
+    source = Path(benchmark.__file__).read_text(encoding="utf-8")
+
+    assert "pkill" not in source
+    assert "killall" not in source
+    assert "os._exit" not in source
+    assert "LLMEngine.shutdown =" not in source
