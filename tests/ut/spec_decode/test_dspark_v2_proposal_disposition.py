@@ -4,6 +4,7 @@
 import io
 import json
 import logging
+from dataclasses import replace
 from types import SimpleNamespace
 
 import numpy as np
@@ -394,10 +395,35 @@ def test_scheduled_without_proposal_row_drops_while_known_owners_delay() -> None
 
 
 def test_ten_dropped_cases_leave_no_active_proposal_state() -> None:
-    for _case_index in range(10):
-        speculator, proposal_inputs, _result, _proposal = _publish_proposal(
-            continue_after_verification=True,
-        )
+    speculator, proposal_inputs, result, proposal = _publish_proposal(
+        continue_after_verification=True,
+    )
+    proposal_tensors = []
+
+    for case_index in range(10):
+        if case_index:
+            next_epoch = proposal_inputs.step_epoch + 1
+            candidate_tokens = result.candidate_tokens.clone()
+            proposal_inputs = replace(
+                proposal_inputs,
+                step_epoch=next_epoch,
+            )
+            result = replace(
+                result,
+                step_epoch=next_epoch,
+                candidate_tokens=candidate_tokens,
+            )
+            speculator._proposal_step_epoch = next_epoch
+            speculator._context_kv_step_epoch = next_epoch
+            speculator._draft_forward_step_epoch = next_epoch
+            speculator._markov_attempt_step_epoch = next_epoch
+            speculator._markov_step_epoch = next_epoch
+            speculator._markov_result = result
+            proposal = speculator._build_core_proposal(
+                proposal_inputs,
+                result,
+            )
+        proposal_tensors.append(proposal)
 
         assert (
             _reconcile(
@@ -411,12 +437,18 @@ def test_ten_dropped_cases_leave_no_active_proposal_state() -> None:
         assert speculator._published_proposal_step_epoch is None
         assert speculator._published_proposal_request_ids is None
         assert speculator._published_proposal_request_state_indices is None
+        assert speculator._published_proposal_owner_epochs == ()
+        assert speculator._active_published_proposal_owner_ids == ()
         assert speculator._current_proposal_lifecycle is None
         assert speculator._published_proposal_owners == {}
         assert speculator._prepared_step_epoch is None
         assert speculator._context_kv_step_epoch is None
         assert speculator._draft_forward_step_epoch is None
+        assert speculator._markov_attempt_step_epoch is None
+        assert speculator._markov_step_epoch is None
         assert speculator._markov_result is None
+
+    assert len({id(candidate) for candidate in proposal_tensors}) == 10
 
 
 def test_runner_reconciles_before_base_request_cleanup(monkeypatch) -> None:

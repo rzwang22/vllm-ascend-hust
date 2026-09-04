@@ -1835,6 +1835,10 @@ class AscendDSparkSpeculator(BaseSpeculator):
     def _clear_published_proposal_state(self) -> None:
         self._published_proposal_owners.clear()
         self._clear_active_published_proposal()
+        self._clear_proposal_execution_state()
+
+    def _clear_proposal_execution_state(self) -> None:
+        """Clear transient producer state after its last owner retires."""
         self._prepared_step_epoch = None
         self._context_kv_step_epoch = None
         self._draft_forward_step_epoch = None
@@ -2012,8 +2016,11 @@ class AscendDSparkSpeculator(BaseSpeculator):
             )
         else:
             self._clear_active_published_proposal()
-        self._markov_step_epoch = None
-        self._markov_result = None
+        if self._published_proposal_owners:
+            self._markov_step_epoch = None
+            self._markov_result = None
+        else:
+            self._clear_proposal_execution_state()
         return True
 
     @staticmethod

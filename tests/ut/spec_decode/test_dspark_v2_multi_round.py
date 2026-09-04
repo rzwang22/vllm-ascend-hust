@@ -257,13 +257,17 @@ def test_partial_terminal_batch_retires_only_finished_owner() -> None:
         continue_after_verification=True,
     )
     lifecycle = speculator._current_proposal_lifecycle
+    remaining_request_id = proposal_inputs.request_ids[1]
+    remaining_owner = speculator._published_proposal_owners[remaining_request_id]
+    remaining_candidate_row = remaining_owner.candidate_tokens[remaining_owner.publication_row].clone()
+    remaining_state_row = remaining_owner.request_state_indices[remaining_owner.publication_row].clone()
 
     assert speculator.discard_terminal_proposal(
         {proposal_inputs.request_ids[0]},
     )
 
     assert speculator._current_proposal_lifecycle is not lifecycle
-    assert speculator._published_proposal_request_ids == (proposal_inputs.request_ids[1],)
+    assert speculator._published_proposal_request_ids == (remaining_request_id,)
     assert torch.equal(speculator._published_candidate_tokens, proposal[1:])
     assert torch.equal(
         speculator._published_proposal_request_state_indices,
@@ -272,6 +276,18 @@ def test_partial_terminal_batch_retires_only_finished_owner() -> None:
     assert speculator._terminal_proposal_lifecycle is not None
     assert speculator._terminal_proposal_lifecycle.request_ids == (proposal_inputs.request_ids[0],)
     assert speculator._terminal_proposal_discard_count == 1
+    assert set(speculator._published_proposal_owners) == {remaining_request_id}
+    assert speculator._published_proposal_owners[remaining_request_id] is remaining_owner
+    assert remaining_owner.producer_epoch == proposal_inputs.step_epoch
+    assert remaining_owner.candidate_tokens is proposal
+    assert torch.equal(
+        remaining_owner.candidate_tokens[remaining_owner.publication_row],
+        remaining_candidate_row,
+    )
+    assert torch.equal(
+        remaining_owner.request_state_indices[remaining_owner.publication_row],
+        remaining_state_row,
+    )
 
 
 def test_next_round_failure_does_not_republish_consumed_proposal(
@@ -404,11 +420,29 @@ def test_runner_finish_keeps_base_cleanup_on_partial_terminal_discard(
     )
     scheduler_output = SchedulerOutput.make_empty()
     scheduler_output.finished_req_ids = {proposal_inputs.request_ids[0]}
+    remaining_request_id = proposal_inputs.request_ids[1]
+    remaining_owner = speculator._published_proposal_owners[remaining_request_id]
+    remaining_candidate_row = remaining_owner.candidate_tokens[remaining_owner.publication_row].clone()
+    remaining_state_row = remaining_owner.request_state_indices[remaining_owner.publication_row].clone()
 
     runner.finish_requests(scheduler_output)
 
     assert calls == [(runner, scheduler_output)]
-    assert speculator._current_proposal_lifecycle is not None
-    assert speculator._published_proposal_request_ids == (proposal_inputs.request_ids[1],)
+    assert speculator._current_proposal_lifecycle is None
+    assert speculator._published_proposal_request_ids is None
+    assert speculator._published_candidate_tokens is None
+    assert speculator._published_proposal_request_state_indices is None
+    assert set(speculator._published_proposal_owners) == {remaining_request_id}
+    assert speculator._published_proposal_owners[remaining_request_id] is remaining_owner
+    assert remaining_owner.producer_epoch == proposal_inputs.step_epoch
+    assert remaining_owner.candidate_tokens is _proposal
+    assert torch.equal(
+        remaining_owner.candidate_tokens[remaining_owner.publication_row],
+        remaining_candidate_row,
+    )
+    assert torch.equal(
+        remaining_owner.request_state_indices[remaining_owner.publication_row],
+        remaining_state_row,
+    )
     assert speculator._terminal_proposal_lifecycle is not None
     assert speculator._terminal_proposal_lifecycle.request_ids == (proposal_inputs.request_ids[0],)
