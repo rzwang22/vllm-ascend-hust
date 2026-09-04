@@ -290,10 +290,10 @@ class DeepseekV4DSparkModel(nn.Module):
         context_positions: torch.Tensor,
         context_slot_mapping: list[torch.Tensor | None] | None = None,
     ) -> None:
-        if context_states.numel() == 0 or context_slot_mapping is None:
+        if context_states.numel() == 0:
             return
         for layer_idx, layer in enumerate(self.layers.values()):
-            layer_context_slot_mapping = context_slot_mapping[layer_idx]
+            layer_context_slot_mapping = None if context_slot_mapping is None else context_slot_mapping[layer_idx]
             if context_positions.numel() == 0:
                 return
             attn = layer.self_attn

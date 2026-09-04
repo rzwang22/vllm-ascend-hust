@@ -50,6 +50,34 @@ from vllm_ascend.worker.v2.spec_decode.dspark.proposal_inputs import (
 
 _DSPARK_MARKOV_FIXED_K = 5
 _DSPARK_CONTINUE_AFTER_VERIFICATION = "dspark_continue_after_verification"
+_DSPARK_PROFILE_PRESERVED_STATE = (
+    "_proposal_step_epoch",
+    "_prepared_step_epoch",
+    "_context_kv_step_epoch",
+    "_draft_forward_step_epoch",
+    "_markov_attempt_step_epoch",
+    "_markov_step_epoch",
+    "_markov_result",
+    "_published_proposal_step_epoch",
+    "_published_proposal_request_ids",
+    "_published_proposal_request_state_indices",
+    "_published_candidate_tokens",
+    "_proposal_consumer_step_epoch",
+    "_published_proposal_consumed",
+    "_next_proposal_skipped",
+    "_proposal_publication_count",
+    "_proposal_consumption_count",
+    "_next_proposal_skip_count",
+    "_current_proposal_lifecycle",
+    "_last_consumed_proposal_lifecycle",
+    "_terminal_proposal_lifecycle",
+    "_dropped_proposal_lifecycle",
+    "_proposal_generated_count",
+    "_proposal_returned_count",
+    "_proposal_installed_count",
+    "_proposal_dropped_count",
+    "_terminal_proposal_discard_count",
+)
 
 logger = init_logger(__name__)
 
@@ -2148,11 +2176,295 @@ class AscendDSparkSpeculator(BaseSpeculator):
         """Skip proposal graph capture because Ascend DSpark is eager-only."""
         return None
 
+    def _profile_markov_heads(
+        self,
+        hidden_states: torch.Tensor,
+        anchor_token_ids: torch.Tensor,
+        num_reqs: int,
+    ) -> None:
+        """Execute the real LM/Markov heads without publishing candidates."""
+        expected_tokens = num_reqs * self.num_speculative_steps
+        self._validate_step_tensor(
+            "profile draft hidden states",
+            hidden_states,
+            ndim=2,
+        )
+        expected_hidden_shape = (
+            expected_tokens,
+            int(self.draft_model_config.hf_config.hidden_size),
+        )
+        if hidden_states.shape != expected_hidden_shape:
+            raise RuntimeError(
+                "Ascend DSpark profile draft backbone returned shape "
+                f"{tuple(hidden_states.shape)} instead of {expected_hidden_shape}."
+            )
+        if not hidden_states.dtype.is_floating_point:
+            raise TypeError("Ascend DSpark profile draft hidden states must be floating point.")
+
+        base_logits = self.model.compute_draft_logits(hidden_states)
+        if not isinstance(base_logits, torch.Tensor):
+            raise TypeError("Ascend DSpark profile LM head must return a tensor.")
+        self._validate_step_tensor("profile LM logits", base_logits, ndim=2)
+        vocab_size = int(self.draft_model_config.hf_config.vocab_size)
+        expected_logits_shape = (expected_tokens, vocab_size)
+        if base_logits.shape != expected_logits_shape:
+            raise RuntimeError(
+                "Ascend DSpark profile LM head must cover the full vocabulary: "
+                f"expected {expected_logits_shape}, got {tuple(base_logits.shape)}."
+            )
+        if not base_logits.dtype.is_floating_point:
+            raise TypeError("Ascend DSpark profile LM logits must be floating point.")
+        logical_logits = base_logits.view(
+            num_reqs,
+            self.num_speculative_steps,
+            vocab_size,
+        )
+
+        predecessor = anchor_token_ids
+        self._validate_step_tensor(
+            "profile Markov anchor token IDs",
+            predecessor,
+            ndim=1,
+            dtypes=(torch.int32, torch.int64),
+        )
+        for step_index in range(self.num_speculative_steps):
+            markov_embed = self.model.markov_embed(predecessor)
+            if not isinstance(markov_embed, torch.Tensor):
+                raise TypeError("Ascend DSpark profile Markov embedding must be a tensor.")
+            self._validate_step_tensor(
+                "profile Markov embedding",
+                markov_embed,
+                ndim=2,
+            )
+            if markov_embed.shape[0] != num_reqs or not markov_embed.dtype.is_floating_point:
+                raise RuntimeError(
+                    "Ascend DSpark profile Markov embedding must contain one floating-point row per request."
+                )
+            markov_bias = self.model.markov_bias(markov_embed)
+            if not isinstance(markov_bias, torch.Tensor):
+                raise TypeError("Ascend DSpark profile Markov head must return a tensor bias.")
+            self._validate_step_tensor(
+                "profile Markov vocabulary bias",
+                markov_bias,
+                ndim=2,
+            )
+            if markov_bias.shape != (num_reqs, vocab_size):
+                raise RuntimeError(
+                    f"Ascend DSpark profile Markov bias must cover the full vocabulary, got {tuple(markov_bias.shape)}."
+                )
+            selected = torch.argmax(
+                logical_logits[:, step_index, :] + markov_bias,
+                dim=-1,
+            )
+            mapped = self.model.map_draft_to_target(selected)
+            if mapped is not selected:
+                raise RuntimeError(
+                    "Ascend DSpark profile requires the 0731 checkpoint's identity draft-to-target vocabulary mapping."
+                )
+            self._validate_step_tensor(
+                "profile Markov selected token IDs",
+                mapped,
+                ndim=1,
+                dtypes=(torch.int64,),
+            )
+            predecessor = mapped
+
+    @torch.inference_mode()
+    def _profile_draft_execution(
+        self,
+        input_batch: InputBatch,
+        last_hidden_states: torch.Tensor,
+        aux_hidden_states: list[torch.Tensor] | None,
+        num_tokens_across_dp: torch.Tensor | None,
+    ) -> None:
+        """Profile the loaded draft without touching proposal lifecycle state.
+
+        Initial memory profiling runs before KV allocation, so the paired core
+        runner deliberately supplies no attention metadata or block tables.
+        The DSA profile branch consumes ``attn_metadata=None`` while this path
+        still executes the real context projection, draft backbone, LM head,
+        and every sequential Markov head at the configured batch and K.
+        """
+        if self._model is None or self._loaded_target_model is None:
+            raise RuntimeError("Ascend DSpark models must be loaded before profile execution.")
+        if not isinstance(input_batch, InputBatch):
+            raise TypeError("Ascend DSpark profile execution requires a V2 InputBatch.")
+        num_reqs = input_batch.num_reqs
+        num_target_tokens = input_batch.num_tokens
+        num_tokens_after_padding = input_batch.num_tokens_after_padding
+        if num_reqs <= 0 or num_target_tokens <= 0:
+            raise ValueError("Ascend DSpark profile execution requires a non-empty target batch.")
+        if num_target_tokens != num_tokens_after_padding:
+            raise RuntimeError(
+                "Ascend DSpark profile execution requires the unpadded eager "
+                "shape produced by the core memory profiler."
+            )
+
+        last_hidden_states = self._validate_step_tensor(
+            "profile last_hidden_states",
+            last_hidden_states,
+            ndim=2,
+        )
+        auxiliary_states = self._validate_aux_hidden_states(
+            aux_hidden_states,
+            last_hidden_states,
+            num_tokens_after_padding,
+        )
+        target_positions = self._validate_step_tensor(
+            "profile target positions",
+            input_batch.positions,
+            ndim=1,
+            dtypes=(torch.int64,),
+            min_size=num_target_tokens,
+        )
+        target_input_ids = self._validate_step_tensor(
+            "profile target input IDs",
+            input_batch.input_ids,
+            ndim=1,
+            dtypes=(torch.int32,),
+            min_size=num_target_tokens,
+        )
+        logits_indices = self._validate_step_tensor(
+            "profile logits indices",
+            input_batch.logits_indices,
+            ndim=1,
+            dtypes=(torch.int32, torch.int64),
+            min_size=num_reqs,
+        )
+        seq_lens = self._validate_step_tensor(
+            "profile sequence lengths",
+            input_batch.seq_lens,
+            ndim=1,
+            dtypes=(torch.int32,),
+            min_size=num_reqs,
+        )
+
+        concatenated_aux = torch.cat(
+            tuple(state[:num_target_tokens] for state in auxiliary_states),
+            dim=-1,
+        )
+        context_states = self.model.combine_hidden_states(concatenated_aux)
+        expected_context_shape = (
+            num_target_tokens,
+            int(self.draft_model_config.hf_config.hidden_size),
+        )
+        if not isinstance(context_states, torch.Tensor) or context_states.shape != expected_context_shape:
+            actual_shape = tuple(context_states.shape) if isinstance(context_states, torch.Tensor) else None
+            raise RuntimeError(
+                "Ascend DSpark profile context projection returned shape "
+                f"{actual_shape} instead of {expected_context_shape}."
+            )
+        self._validate_step_tensor(
+            "profile combined context states",
+            context_states,
+            ndim=2,
+        )
+        if context_states.dtype != auxiliary_states[0].dtype:
+            raise RuntimeError(
+                "Ascend DSpark profile context states must preserve the "
+                f"target auxiliary dtype {auxiliary_states[0].dtype}, got "
+                f"{context_states.dtype}."
+            )
+        self.model.precompute_and_store_context_kv(
+            context_states,
+            target_positions[:num_target_tokens],
+            None,
+        )
+
+        active_logits_indices = logits_indices[:num_reqs].to(torch.int64)
+        _assert_markov_tensor_contract(
+            ((active_logits_indices >= 0) & (active_logits_indices < num_target_tokens)).all(),
+            "Ascend DSpark profile logits indices are outside the active target batch.",
+        )
+        anchor_token_ids = target_input_ids[active_logits_indices]
+        num_query_tokens = num_reqs * self.num_speculative_steps
+        draft_input_ids = torch.full(
+            (num_reqs, self.num_speculative_steps),
+            self.parallel_drafting_token_id,
+            dtype=torch.int32,
+            device=self.device,
+        )
+        draft_input_ids[:, 0] = anchor_token_ids
+        draft_input_ids = draft_input_ids.reshape(num_query_tokens)
+        query_offsets = torch.arange(
+            self.num_speculative_steps,
+            dtype=torch.int64,
+            device=self.device,
+        )
+        draft_positions = (seq_lens[:num_reqs].to(torch.int64)[:, None] + query_offsets).clamp(
+            max=int(self.vllm_config.model_config.max_model_len) - 1
+        )
+        draft_positions = draft_positions.reshape(num_query_tokens)
+
+        batch_descriptor = BatchDescriptor(
+            num_tokens=num_query_tokens,
+            num_reqs=num_reqs,
+            uniform=True,
+        )
+        with set_forward_context(
+            None,
+            self.vllm_config,
+            num_tokens=num_query_tokens,
+            num_tokens_across_dp=num_tokens_across_dp,
+            cudagraph_runtime_mode=CUDAGraphMode.NONE,
+            batch_descriptor=batch_descriptor,
+            slot_mapping=None,
+            input_ids=draft_input_ids,
+            model_instance=self.model,
+        ):
+            forward_context = get_forward_context()
+            draft_context = build_ascend_forward_context(
+                attn_metadata=None,
+                vllm_config=self.vllm_config,
+                num_tokens=num_query_tokens,
+                num_tokens_across_dp=num_tokens_across_dp,
+                dp_metadata=forward_context.dp_metadata,
+                in_profile_run=True,
+                num_actual_tokens=num_query_tokens,
+                model_instance=self.model,
+                is_draft_model=True,
+                draft_attn_metadatas=None,
+                input_ids=draft_input_ids,
+            )
+            draft_context["is_draft_model_prefill"] = True
+            forward_context.additional_kwargs.update(draft_context)
+            hidden_states = self.model(
+                input_ids=draft_input_ids,
+                positions=draft_positions,
+            )
+
+        if not isinstance(hidden_states, torch.Tensor):
+            raise TypeError("Ascend DSpark profile draft backbone must return a tensor.")
+        self._profile_markov_heads(
+            hidden_states,
+            anchor_token_ids,
+            num_reqs,
+        )
+
+    def _run_profile_without_proposal_state(
+        self,
+        input_batch: InputBatch,
+        last_hidden_states: torch.Tensor,
+        aux_hidden_states: list[torch.Tensor] | None,
+        num_tokens_across_dp: torch.Tensor | None,
+    ) -> None:
+        state = {name: getattr(self, name) for name in _DSPARK_PROFILE_PRESERVED_STATE}
+        try:
+            self._profile_draft_execution(
+                input_batch,
+                last_hidden_states,
+                aux_hidden_states,
+                num_tokens_across_dp,
+            )
+        finally:
+            for name, value in state.items():
+                setattr(self, name, value)
+
     def propose(
         self,
         input_batch: InputBatch,
-        attn_metadata: dict[str, Any],
-        slot_mappings: dict[str, torch.Tensor],
+        attn_metadata: dict[str, Any] | None,
+        slot_mappings: dict[str, torch.Tensor] | None,
         last_hidden_states: torch.Tensor,
         aux_hidden_states: list[torch.Tensor] | None,
         num_sampled: torch.Tensor,
@@ -2168,12 +2480,21 @@ class AscendDSparkSpeculator(BaseSpeculator):
         is_profile: bool = False,
     ) -> torch.Tensor | None:
         """Publish DSpark proposals using core's optimistic V2 lifecycle."""
-        if dummy_run or is_profile:
-            dspark_runtime_not_wired("V2 draft execution (dummy/profile)")
-        if skip_attn_for_dummy_run:
-            raise ValueError("skip_attn_for_dummy_run is only valid for a DSpark dummy run.")
         if mm_inputs is not None:
             raise ValueError("Ascend DeepSeek V4 DSpark does not accept multimodal proposal inputs.")
+        if dummy_run or is_profile or skip_attn_for_dummy_run:
+            if not (dummy_run and is_profile and skip_attn_for_dummy_run):
+                raise ValueError(
+                    "Ascend DSpark profile execution requires dummy_run=True, "
+                    "is_profile=True, and skip_attn_for_dummy_run=True."
+                )
+            self._run_profile_without_proposal_state(
+                input_batch,
+                last_hidden_states,
+                aux_hidden_states,
+                num_tokens_across_dp,
+            )
+            return None
         if self._next_proposal_skipped:
             dspark_runtime_not_wired("M2.4B multi-round DSpark lifecycle")
         if self._published_candidate_tokens is not None:

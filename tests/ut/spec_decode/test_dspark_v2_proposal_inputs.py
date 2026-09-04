@@ -16,7 +16,6 @@ import torch
 import torch.nn as nn
 from vllm.v1.worker.gpu.input_batch import InputBatch
 
-from vllm_ascend.spec_decode import DSparkRuntimeNotWiredError
 from vllm_ascend.worker.v2.spec_decode.dspark import (
     AscendDSparkProposalInputs,
     create_dspark_speculator,
@@ -562,8 +561,8 @@ def test_propose_runs_backbone_and_markov_then_publishes_candidates(monkeypatch)
     assert published.dtype is torch.int64
 
 
-@pytest.mark.parametrize("flag", ["dummy_run", "is_profile"])
-def test_dummy_and_profile_proposal_fail_at_draft_execution(flag: str) -> None:
+@pytest.mark.parametrize("flag", ["dummy_run", "is_profile", "skip_attn_for_dummy_run"])
+def test_incomplete_dummy_profile_protocol_fails_closed(flag: str) -> None:
     speculator = _ready_speculator()
     kwargs = {
         "input_batch": None,
@@ -580,7 +579,7 @@ def test_dummy_and_profile_proposal_fail_at_draft_execution(flag: str) -> None:
         flag: True,
     }
 
-    with pytest.raises(DSparkRuntimeNotWiredError, match="draft execution.*dummy/profile"):
+    with pytest.raises(ValueError, match="profile execution requires dummy_run=True"):
         speculator.propose(**kwargs)
 
 

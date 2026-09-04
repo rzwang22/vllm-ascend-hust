@@ -111,15 +111,15 @@ def test_factory_rejects_missing_dspark_configuration(vllm_config, error: str) -
         create_dspark_speculator(vllm_config, torch.device("cpu"))
 
 
-@pytest.mark.parametrize("flag", ("dummy_run", "is_profile"))
-def test_dummy_proposal_boundaries_fail_closed(flag: str) -> None:
+@pytest.mark.parametrize("flag", ("dummy_run", "is_profile", "skip_attn_for_dummy_run"))
+def test_incomplete_profile_protocol_fails_closed(flag: str) -> None:
     speculator = create_dspark_speculator(_dspark_config(), torch.device("cpu"))
     kwargs = _proposal_kwargs(dummy_run=False)
     kwargs[flag] = True
 
     with pytest.raises(
-        DSparkRuntimeNotWiredError,
-        match="V2 draft execution.*dummy/profile",
+        ValueError,
+        match="profile execution requires dummy_run=True",
     ):
         speculator.propose(**kwargs)
 
