@@ -9,6 +9,7 @@ normal imported-class CPU tests on the server. Neither is NPU validation.
 
 import ast
 import importlib.util
+from dataclasses import dataclass
 from types import SimpleNamespace
 
 import numpy as np
@@ -39,6 +40,7 @@ def api(request, monkeypatch, scatter_selector):
         from tests.ut.worker.test_dsa_capture_metadata import _Mode
 
         namespace = {
+            "dataclass": dataclass,
             "torch": torch,
             "np": np,
             "PAD_SLOT_ID": pad_id,
@@ -47,7 +49,9 @@ def api(request, monkeypatch, scatter_selector):
             "BUILD_METADATA_STEP_DECODE": 1,
             "is_pd_decode_recompute_scheduler_enabled": lambda: False,
             "AscendCommonAttentionMetadata": lambda **values: SimpleNamespace(_seq_lens_cpu=None, **values),
-            "AscendDSADecodeMetadata": lambda **values: SimpleNamespace(sharedkv_contract_validated=False, **values),
+            "AscendDSADecodeMetadata": lambda **values: SimpleNamespace(
+                sharedkv_contract_validated=False, sharedkv_index_validation=None, **values
+            ),
         }
         _load_functions(ROOT / "vllm_ascend/attention/utils.py", namespace, ["split_decodes_and_prefills"])
         names = [
@@ -64,8 +68,21 @@ def api(request, monkeypatch, scatter_selector):
         _load_functions(
             ROOT / "vllm_ascend/attention/dsa_v1.py",
             namespace,
-            ["_assert_dsa_tensor_range", "validate_dsa_sharedkv_page_contract"],
+            [
+                "_assert_dsa_tensor_range",
+                "_dsa_sharedkv_index_checks",
+                "validate_dsa_sharedkv_page_contract",
+                "_dsa_sharedkv_index_signature",
+                "preflight_dsa_sharedkv_indices",
+            ],
         )
+        receipt = next(
+            n
+            for n in ast.parse((ROOT / "vllm_ascend/attention/dsa_v1.py").read_text()).body
+            if isinstance(n, ast.ClassDef) and n.name == "DSASharedKVIndexValidation"
+        )
+        module = ast.Module(body=[*ast.parse("from __future__ import annotations").body, receipt], type_ignores=[])
+        exec(compile(module, "dsa-receipt", "exec"), namespace)
         methods = [
             "format_dsa_slot_mapping",
             "dsa_kv_compress_scatter",
@@ -288,16 +305,21 @@ def _metadata_run(api, monkeypatch, batch):
 
     monkeypatch.setitem(api.graph_globals, "InputBatch", SimpleNamespace(make_dummy=make_dummy))
 
-    def prepare(capture):
+    def prepare(capture, mode=None):
         if capture:
             metadata, _ = api.prepare(batch, batch * 6, state, batch_input, tables, [[group]], config)
         else:
             metadata = state.prepare_attn(
-                batch_input, api.mode.NONE, (block_table,), tables.slot_mappings[:, : batch * 6], [[group]], config
+                batch_input,
+                api.mode.NONE if mode is None else mode,
+                (block_table,),
+                tables.slot_mappings[:, : batch * 6],
+                [[group]],
+                config,
             )
         return metadata["swa"].decode
 
-    return SimpleNamespace(builder=builder, tables=tables, prepare=prepare)
+    return SimpleNamespace(builder=builder, tables=tables, prepare=prepare, state=state, group=group)
 
 
 @pytest.mark.parametrize("batch", [1, 2, 4])

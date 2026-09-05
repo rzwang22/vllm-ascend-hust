@@ -25,6 +25,7 @@ from vllm.v1.kv_cache_interface import KVCacheConfig
 from vllm.v1.worker.gpu.model_states.default import DefaultModelState
 from vllm.v1.worker.utils import AttentionGroup
 
+from vllm_ascend.attention.dsa_v1 import _should_validate_dspark_sharedkv_contract, preflight_dsa_sharedkv_indices
 from vllm_ascend.worker.v2.attn_utils import build_attn_metadata
 from vllm_ascend.worker.v2.input_batch import AscendInputBatch
 
@@ -43,6 +44,15 @@ class AscendModelState(DefaultModelState):
         for_capture: bool = False,
     ) -> dict[str, Any]:
         """Override prepare_attn method because `build_attn_metadata` is different from vllm."""
+        config = getattr(self, "vllm_config", None)
+        self._sharedkv_validation_enabled = (
+            config is not None
+            and _should_validate_dspark_sharedkv_contract(config)
+            and not config.model_config.enforce_eager
+        )
+        # A failed/new preparation invalidates the previous replay permission,
+        # even though the same persistent tensor buffers are being updated.
+        self._sharedkv_replay_input = None
         if cudagraph_mode == CUDAGraphMode.FULL:
             # Use padded sizes - padding is handled by model_runner.prepare_attn.
             num_reqs = input_batch.num_reqs_after_padding
@@ -56,7 +66,7 @@ class AscendModelState(DefaultModelState):
         max_query_len = input_batch.num_scheduled_tokens.max().item()
         # attn_metadata is needed when update_full_graph_params, but no way can get it now.
         # Temporarily store it in model_state.
-        self.attn_metadata = build_attn_metadata(
+        attn_metadata = build_attn_metadata(
             attn_groups=attn_groups,
             num_reqs=num_reqs,
             num_tokens=num_input_tokens,
@@ -78,4 +88,9 @@ class AscendModelState(DefaultModelState):
             attn_state=input_batch.attn_state,
             for_cudagraph_capture=for_capture,
         )
+        if self._sharedkv_validation_enabled:
+            preflight_dsa_sharedkv_indices(attn_metadata, attn_groups, config.compilation_config.static_forward_context)
+            if not for_capture and cudagraph_mode == CUDAGraphMode.FULL:
+                self._sharedkv_replay_input = (attn_metadata, num_input_tokens)
+        self.attn_metadata = attn_metadata
         return self.attn_metadata

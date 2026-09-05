@@ -72,6 +72,16 @@ class ModelAclGraphManager(ModelCudaGraphManager):
         """Override run_fullgraph to update full graph params in run_fullgraph."""
         num_tokens = desc.num_tokens
         logger.info_once("run_fullgraph with num_tokens=%s", num_tokens)
+        model_state = self.model_runner.model_state
+        if getattr(model_state, "_sharedkv_validation_enabled", False):
+            validated_input = model_state._sharedkv_replay_input
+            model_state._sharedkv_replay_input = None
+            if (
+                validated_input is None
+                or validated_input[0] is not model_state.attn_metadata
+                or validated_input[1] != num_tokens
+            ):
+                raise RuntimeError("DSA FULL replay requires a successful preflight of newly prepared input metadata.")
         ret = super().run_fullgraph(desc)
 
         positions = self.model_runner.input_buffers.positions[:num_tokens]

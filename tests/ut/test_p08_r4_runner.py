@@ -49,6 +49,8 @@ elif name == 'tee':
 elif name == 'python':
     if args[:2] == ['-m', 'pytest']:
         assert 'tests/ut/attention/test_dsa_padding_contract.py' in args
+        if os.environ['P08_TEST_REVISION'] == 'r5':
+            assert 'tests/ut/attention/test_dsa_capture_validation.py' in args
         print('CPU test: focused invocation recorded')
         sys.exit(7 if failure == 'focused' else 0)
     elif args[0].endswith('/benchmark_dspark_acceptance.py'):
@@ -93,7 +95,8 @@ else:
 
 
 @pytest.mark.parametrize("failure", ["none", "focused", "graph", "tee", "replay_zero", "replay_eager", "replay_shape"])
-def test_server_script_preserves_failures_and_requires_measured_full(tmp_path, failure):
+@pytest.mark.parametrize("revision", ["r4", "r5"])
+def test_server_script_preserves_failures_and_requires_measured_full(tmp_path, failure, revision):
     workspace = tmp_path / "workspace"
     plugin = workspace / "vllm-ascend-hust"
     plugin.mkdir(parents=True)
@@ -101,7 +104,7 @@ def test_server_script_preserves_failures_and_requires_measured_full(tmp_path, f
     data = workspace / "dspark-results/m2_5a-p08-r3-25a1ceba0.7jgir6/input-dataset.jsonl"
     data.parent.mkdir(parents=True)
     data.write_text('{"prompt_token_ids": [1, 2, 3]}\n')
-    source = (ROOT / "tools/dspark/run_p08_r4.sh").read_text()
+    source = (ROOT / f"tools/dspark/run_p08_{revision}.sh").read_text()
     assert "set -e" not in source and "exit" not in source
     source = source.replace("/workspace", str(workspace)).replace(
         "6a2f629a5b5c9bbd9a3058b7a450fc18b2332f4699047f164cdde6a33b58d053",
@@ -119,13 +122,14 @@ def test_server_script_preserves_failures_and_requires_measured_full(tmp_path, f
         **os.environ,
         "PATH": f"{commands}:{os.environ['PATH']}",
         "P08_TEST_FAILURE": failure,
+        "P08_TEST_REVISION": revision,
         "P08_TEST_TEE": shutil.which("tee"),
         "P08_TEST_CORE": CORE_SHA,
         "P08_TEST_PLUGIN": PLUGIN_SHA,
     }
     result = subprocess.run(["bash", str(script)], env=env, text=True, capture_output=True, timeout=30)
     assert (result.returncode == 0) == (failure == "none"), result.stdout + result.stderr
-    outputs = list((workspace / "dspark-results").glob("m2_5a-p08-r4.*"))
+    outputs = list((workspace / "dspark-results").glob(f"m2_5a-p08-{revision}.*"))
     assert len(outputs) == 1
     out = outputs[0]
     gate = dict(line.split("=", 1) for line in (out / "gate.txt").read_text().splitlines())

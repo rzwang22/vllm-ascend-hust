@@ -20,7 +20,7 @@ from vllm_ascend.attention.abstract import DSAAttentionImpl
 from vllm_ascend.attention.attention_mask import AttentionMaskBuilder
 from vllm_ascend.attention.attention_v1 import AscendAttentionState
 from vllm_ascend.attention.utils import AscendCommonAttentionMetadata, split_decodes_and_prefills
-from vllm_ascend.core.kv_cache_interface import AscendMLAAttentionSpec
+from vllm_ascend.core.kv_cache_interface import AscendMLAAttentionSpec, AscendSlidingWindowMLASpec
 from vllm_ascend.device.device_op import DeviceOperator
 from vllm_ascend.distributed.parallel_state import get_otp_group
 from vllm_ascend.ops.cv_linear import CVLinearWrapper
@@ -253,6 +253,7 @@ class AscendDSAPrefillMetadata:
     cu_c4_cmp_seqlen_list: torch.Tensor = None
     cu_c128_cmp_seqlen_list: torch.Tensor = None
     sharedkv_contract_validated: bool = False
+    sharedkv_index_validation: "DSASharedKVIndexValidation | None" = None
 
 
 @dataclass
@@ -284,6 +285,7 @@ class AscendDSADecodeMetadata:
     sas_metadata: torch.Tensor = None
     qli_metadata: torch.Tensor = None
     sharedkv_contract_validated: bool = False
+    sharedkv_index_validation: "DSASharedKVIndexValidation | None" = None
 
 
 @dataclass
@@ -356,14 +358,16 @@ def _require_decode_metadata(metadata: AscendDSAMetadata) -> AscendDSADecodeMeta
 def _assert_dsa_tensor_range(predicate: torch.Tensor, message: str) -> None:
     """Fail before DSA consumes an invalid device-side index.
 
-    CPU tests raise a regular ``ValueError``. On an accelerator, use the
-    asynchronous assertion primitive so the hot path does not copy index
-    tensors back to the host merely to validate them.
+    CPU tests raise a regular ``ValueError``. The NPU dispatcher can fall back
+    to CPU for aten::_assert_async: its name does not guarantee an asynchronous
+    device assertion. This legacy eager helper must stay outside ACL capture.
     """
     if predicate.device.type == "cpu":
         if not bool(predicate):
             raise ValueError(message)
         return
+    if predicate.device.type == "npu" and torch.npu.is_current_stream_capturing():
+        raise RuntimeError("DSA shared-KV dynamic indices require capture-external preflight for this metadata.")
     torch._assert_async(predicate, message)
 
 
@@ -380,6 +384,7 @@ def validate_dsa_sharedkv_page_contract(
     block_size: int,
     num_query_tokens: int,
     num_reqs_actual: int | None,
+    index_validation: "DSASharedKVIndexValidation | None" = None,
 ) -> None:
     """Validate the PA_ND inputs shared by DSA KV scatter and attention.
 
@@ -464,44 +469,224 @@ def validate_dsa_sharedkv_page_contract(
             f"{prefix} slot_mapping token count {slot_mapping.shape[0]} does not match query tokens {num_query_tokens}."
         )
 
+    if index_validation is not None:
+        index_validation.require_matches(
+            block_table,
+            slot_mapping,
+            query_start_loc,
+            seqused_kv,
+            block_size,
+            num_query_tokens,
+            num_reqs,
+            kv_cache.shape[0],
+        )
+        return
+
+    for predicate, message in _dsa_sharedkv_index_checks(
+        prefix=prefix,
+        block_table=block_table,
+        slot_mapping=slot_mapping,
+        query_start_loc=query_start_loc,
+        seqused_kv=seqused_kv,
+        num_reqs=num_reqs,
+        num_blocks=kv_cache.shape[0],
+        block_size=block_size,
+        num_query_tokens=num_query_tokens,
+    ):
+        _assert_dsa_tensor_range(predicate, message)
+
+
+def _dsa_sharedkv_index_checks(
+    *,
+    prefix: str,
+    block_table: torch.Tensor,
+    slot_mapping: torch.Tensor,
+    query_start_loc: torch.Tensor,
+    seqused_kv: torch.Tensor,
+    num_reqs: int,
+    num_blocks: int,
+    block_size: int,
+    num_query_tokens: int,
+) -> tuple[tuple[torch.Tensor, str], ...]:
+    """Build all dynamic predicates without reading a device scalar on the host."""
     actual_query_start_loc = query_start_loc[: num_reqs + 1]
     actual_seqused_kv = seqused_kv[:num_reqs]
     actual_block_table = block_table[:num_reqs]
     query_lens = actual_query_start_loc[1:] - actual_query_start_loc[:-1]
-    _assert_dsa_tensor_range(actual_query_start_loc[0] == 0, f"{prefix} cu_seqlens_q must start at zero.")
-    _assert_dsa_tensor_range(
-        torch.all(query_lens > 0),
-        f"{prefix} actual cu_seqlens_q rows must be strictly increasing.",
-    )
-    _assert_dsa_tensor_range(
-        actual_query_start_loc[-1] == num_query_tokens,
-        f"{prefix} cu_seqlens_q terminal value must equal the query token count.",
-    )
-    _assert_dsa_tensor_range(
-        torch.all(actual_seqused_kv >= query_lens),
-        f"{prefix} seqused_kv must include every current query token.",
-    )
-    _assert_dsa_tensor_range(
-        torch.all(actual_seqused_kv <= kv_cache.shape[0] * block_size),
-        f"{prefix} seqused_kv exceeds the physical cache capacity.",
-    )
-    _assert_dsa_tensor_range(
-        torch.all((actual_block_table >= 0) & (actual_block_table < kv_cache.shape[0])),
-        f"{prefix} ori_block_table contains a physical block outside ori_kv.",
-    )
-    # format_dsa_slot_mapping maps the flat PAD_SLOT_ID (-1) to [-1, B-1].
-    # With the page-local strides checked above its linear address is -H*D;
-    # both int32 scatter kernels exclude it from their nonnegative write range.
-    # Accept only this exact sentinel, including in capture warmup (mode NONE).
+    # R4: only the exact formatted PAD_SLOT_ID sentinel is exempt. Its linear
+    # address is -H*D under the validated page-local strides; scatter skips it.
     padding_slots = (slot_mapping[:, 0] == PAD_SLOT_ID) & (slot_mapping[:, 1] == block_size - 1)
-    _assert_dsa_tensor_range(
-        torch.all(padding_slots | ((slot_mapping[:, 0] >= 0) & (slot_mapping[:, 0] < kv_cache.shape[0]))),
-        f"{prefix} slot_mapping contains a physical block outside ori_kv.",
+    return (
+        (actual_query_start_loc[0] == 0, f"{prefix} cu_seqlens_q must start at zero."),
+        (torch.all(query_lens > 0), f"{prefix} actual cu_seqlens_q rows must be strictly increasing."),
+        (
+            actual_query_start_loc[-1] == num_query_tokens,
+            f"{prefix} cu_seqlens_q terminal value must equal the query token count.",
+        ),
+        (torch.all(actual_seqused_kv >= query_lens), f"{prefix} seqused_kv must include every current query token."),
+        (
+            torch.all(actual_seqused_kv <= num_blocks * block_size),
+            f"{prefix} seqused_kv exceeds the physical cache capacity.",
+        ),
+        (
+            torch.all((actual_block_table >= 0) & (actual_block_table < num_blocks)),
+            f"{prefix} ori_block_table contains a physical block outside ori_kv.",
+        ),
+        (
+            torch.all(padding_slots | ((slot_mapping[:, 0] >= 0) & (slot_mapping[:, 0] < num_blocks))),
+            f"{prefix} slot_mapping contains a physical block outside ori_kv.",
+        ),
+        (
+            torch.all((slot_mapping[:, 1] >= 0) & (slot_mapping[:, 1] < block_size)),
+            f"{prefix} slot_mapping contains an offset outside the cache block.",
+        ),
     )
-    _assert_dsa_tensor_range(
-        torch.all((slot_mapping[:, 1] >= 0) & (slot_mapping[:, 1] < block_size)),
-        f"{prefix} slot_mapping contains an offset outside the cache block.",
+
+
+def _dsa_sharedkv_index_signature(
+    block_table,
+    slot_mapping,
+    query_start_loc,
+    seqused_kv,
+    block_size,
+    num_query_tokens,
+    num_reqs,
+) -> tuple:
+    """Identify the buffers and dimensions covered by one metadata preparation."""
+    if num_reqs <= 0 or seqused_kv.ndim != 1 or seqused_kv.shape[0] < num_reqs:
+        raise ValueError("DSA shared-KV invalid actual request count or sequence dimensions.")
+    if query_start_loc.ndim != 1 or query_start_loc.shape[0] < num_reqs + 1:
+        raise ValueError("DSA shared-KV query dimensions do not cover actual requests.")
+    if block_table.ndim != 2 or block_table.shape[0] < num_reqs:
+        raise ValueError("DSA shared-KV block table dimensions do not cover actual requests.")
+    if slot_mapping is None or slot_mapping.shape != (num_query_tokens, 2):
+        raise ValueError("DSA shared-KV slot_mapping must have shape [query tokens, 2].")
+    tensors = (block_table, slot_mapping, query_start_loc, seqused_kv)
+    if any(t.dtype != torch.int32 or t.device != slot_mapping.device for t in tensors):
+        raise ValueError("DSA shared-KV index buffers must be int32 on the same device.")
+    return (
+        tuple((t.data_ptr(), tuple(t.shape), t.stride(), t.dtype, t.device) for t in tensors),
+        block_size,
+        num_query_tokens,
+        num_reqs,
     )
+
+
+@dataclass(frozen=True)
+class DSASharedKVIndexValidation:
+    """A receipt for this preparation, never a persistent buffer-valid flag."""
+
+    signature: tuple
+    num_blocks: int
+
+    def require_matches(
+        self,
+        block_table,
+        slot_mapping,
+        query_start_loc,
+        seqused_kv,
+        block_size,
+        num_query_tokens,
+        num_reqs,
+        num_blocks,
+    ) -> None:
+        signature = _dsa_sharedkv_index_signature(
+            block_table,
+            slot_mapping,
+            query_start_loc,
+            seqused_kv,
+            block_size,
+            num_query_tokens,
+            num_reqs,
+        )
+        if signature != self.signature or num_blocks < self.num_blocks:
+            raise ValueError("DSA shared-KV validation does not cover the current input buffers/cache capacity.")
+
+
+def preflight_dsa_sharedkv_indices(attn_metadata, attn_groups, forward_context) -> None:
+    """Validate updated SWA indices once per preparation, outside ACL capture.
+
+    Deduplicate shared layer metadata and combine every dynamic predicate in a
+    single status transfer. Static page/query layout checks stay in forward.
+    Receipts are published only after all checks pass; the model state controls
+    their one-preparation lifetime before replay.
+    """
+    checks = []
+    receipts = []
+    seen = set()
+    for groups in attn_groups:
+        for group in groups:
+            builder = group.get_metadata_builder(0)
+            # Compressor state caches also use this builder with ratio=1,
+            # but are not the ori_kv consumed by the shared-KV validator.
+            spec = group.kv_cache_spec
+            if (
+                not isinstance(builder, AscendDSAMetadataBuilder)
+                or not isinstance(spec, AscendSlidingWindowMLASpec)
+                or spec.model_version != "deepseek_v4"
+                or builder.compressor_ratio > 1
+            ):
+                continue
+            capacities = []
+            for name in group.layer_names:
+                cache = forward_context[name].kv_cache
+                if isinstance(cache, (tuple, list)) and len(cache) == 1:
+                    cache = cache[0]
+                if not isinstance(cache, torch.Tensor) or cache.ndim != 4 or cache.shape[0] <= 0:
+                    raise ValueError(f"DSA shared-KV {name} has no bound PA_ND cache for preflight.")
+                if cache.shape[1] != group.kv_cache_spec.block_size:
+                    raise ValueError(f"DSA shared-KV {name} cache block_size differs from its KV group.")
+                capacities.append(cache.shape[0])
+            num_blocks = min(capacities)
+            metadata = attn_metadata[group.layer_names[0]]
+            for leaf, num_tokens in (
+                (metadata.prefill, metadata.num_actual_tokens - metadata.num_decode_tokens),
+                (metadata.decode, metadata.num_decode_tokens),
+            ):
+                if leaf is None:
+                    continue
+                leaf.sharedkv_index_validation = None
+                leaf.sharedkv_contract_validated = False
+                if leaf.block_size != spec.block_size:
+                    raise ValueError("DSA shared-KV metadata block_size differs from its KV group.")
+                num_reqs = leaf.seq_lens.shape[0] if leaf.num_reqs_actual is None else leaf.num_reqs_actual
+                signature = _dsa_sharedkv_index_signature(
+                    leaf.block_table,
+                    leaf.slot_mapping,
+                    leaf.query_start_loc,
+                    leaf.seq_lens,
+                    leaf.block_size,
+                    num_tokens,
+                    num_reqs,
+                )
+                receipt = DSASharedKVIndexValidation(signature, num_blocks)
+                receipts.append((leaf, receipt))
+                key = (signature, num_blocks)
+                if key in seen:
+                    continue
+                seen.add(key)
+                checks.extend(
+                    _dsa_sharedkv_index_checks(
+                        prefix=f"DSA shared-KV contract for {group.layer_names[0]}:",
+                        block_table=leaf.block_table,
+                        slot_mapping=leaf.slot_mapping,
+                        query_start_loc=leaf.query_start_loc,
+                        seqused_kv=leaf.seq_lens,
+                        num_reqs=num_reqs,
+                        num_blocks=num_blocks,
+                        block_size=leaf.block_size,
+                        num_query_tokens=num_tokens,
+                    )
+                )
+    if checks:
+        # One explicit synchronization for the whole preparation, not eight
+        # implicit CPU fallbacks per shared metadata in model forward.
+        statuses = torch.stack([predicate for predicate, _ in checks]).to(device="cpu").tolist()
+        for valid, (_, message) in zip(statuses, checks):
+            if not valid:
+                raise ValueError(message)
+    for leaf, receipt in receipts:
+        leaf.sharedkv_index_validation = receipt
 
 
 def validate_dsa_sharedkv_query_contract(
@@ -2089,6 +2274,7 @@ class AscendDSAImpl(DSAAttentionImpl):
                 block_size=swa_prefill_metadata.block_size,
                 num_query_tokens=hidden_states.shape[0],
                 num_reqs_actual=swa_prefill_metadata.num_reqs_actual,
+                index_validation=swa_prefill_metadata.sharedkv_index_validation,
             )
             swa_prefill_metadata.sharedkv_contract_validated = True
 
@@ -2416,6 +2602,7 @@ class AscendDSAImpl(DSAAttentionImpl):
                 block_size=swa_decode_metadata.block_size,
                 num_query_tokens=hidden_states.shape[0],
                 num_reqs_actual=swa_decode_metadata.num_reqs_actual,
+                index_validation=swa_decode_metadata.sharedkv_index_validation,
             )
             swa_decode_metadata.sharedkv_contract_validated = True
 
