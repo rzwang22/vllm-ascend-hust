@@ -1014,6 +1014,7 @@ class DeepseekV2DecoderLayer(nn.Module):
         self.hc_ffn_base = nn.Parameter(torch.empty(mix_hc, dtype=torch.float32))
         self.hc_attn_scale = nn.Parameter(torch.empty(3, dtype=torch.float32))
         self.hc_ffn_scale = nn.Parameter(torch.empty(3, dtype=torch.float32))
+        self._dspark_layer_snapshots = None
 
     def hc_pre(self, x: torch.Tensor, hc_fn: torch.Tensor, hc_scale: torch.Tensor, hc_base: torch.Tensor):
         y = torch.ops._C_ascend.npu_hc_pre_v2(
@@ -1038,14 +1039,27 @@ class DeepseekV2DecoderLayer(nn.Module):
         residual = hidden_states.clone()
         hidden_states, post, comb = self.hc_pre(hidden_states, self.hc_attn_fn, self.hc_attn_scale, self.hc_attn_base)
         hidden_states = self.input_layernorm(hidden_states)
+        diagnostic = self._dspark_layer_snapshots
+        if diagnostic is not None:
+            diagnostic.write(f"layer.{self.layer_idx}.attn_input", hidden_states)
         attn_kwargs = {"positions": positions, "hidden_states": hidden_states, "llama_4_scaling": llama_4_scaling}
         hidden_states = self.self_attn(**attn_kwargs)
+        if diagnostic is not None:
+            diagnostic.write(f"layer.{self.layer_idx}.attn_output", hidden_states)
         hidden_states = self.hc_post(hidden_states, residual, post, comb)
         residual = hidden_states.clone()
+        if diagnostic is not None:
+            diagnostic.write(f"layer.{self.layer_idx}.residual", residual)
         hidden_states, post, comb = self.hc_pre(hidden_states, self.hc_ffn_fn, self.hc_ffn_scale, self.hc_ffn_base)
         hidden_states = self.post_attention_layernorm(hidden_states)
+        if diagnostic is not None:
+            diagnostic.write(f"layer.{self.layer_idx}.ffn_input", hidden_states)
         hidden_states = self.mlp(hidden_states, input_ids=input_ids)
+        if diagnostic is not None:
+            diagnostic.write(f"layer.{self.layer_idx}.ffn_output", hidden_states)
         hidden_states = self.hc_post(hidden_states, residual, post, comb)
+        if diagnostic is not None:
+            diagnostic.write(f"layer.{self.layer_idx}.output", hidden_states)
 
         return hidden_states, residual
 
@@ -1134,6 +1148,24 @@ class DeepseekV4Model(nn.Module, EagleModelMixin):
             dtype=vllm_config.model_config.dtype,
             device=self.device,
         )
+        # Install before the first compile/profile, not as a Python hook on an
+        # already compiled model. R8 diagnostics alone retain their old behavior.
+        self._dspark_layer_snapshots = None
+        if (vllm_config.additional_config or {}).get("dspark_nan_replay_window") is not None:
+            from vllm_ascend.diagnostics.dspark_replay import TargetLayerSnapshots
+
+            self._dspark_layer_snapshots = TargetLayerSnapshots(
+                sizes=sorted(vllm_config.compilation_config.cudagraph_capture_sizes),
+                query_len=vllm_config.speculative_config.num_speculative_tokens + 1,
+                hidden_size=config.hidden_size,
+                hc_mult=self.hc_mult,
+                layers=range(self.start_layer, self.end_layer),
+                dtype=vllm_config.model_config.dtype,
+                device=self.device,
+                rank=get_tensor_model_parallel_rank(),
+            )
+            for layer in islice(self.layers, self.start_layer, self.end_layer):
+                layer._dspark_layer_snapshots = self._dspark_layer_snapshots
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embed_tokens(input_ids)
@@ -1164,6 +1196,10 @@ class DeepseekV4Model(nn.Module, EagleModelMixin):
             assert intermediate_tensors is not None
             hidden_states = intermediate_tensors["hidden_states"]
             residual = None
+
+        diagnostic = self._dspark_layer_snapshots
+        if diagnostic is not None:
+            diagnostic.write("embedding", hidden_states)
 
         # Compute llama 4 scaling once per forward pass if enabled
         llama_4_scaling_config = None
@@ -1203,6 +1239,8 @@ class DeepseekV4Model(nn.Module, EagleModelMixin):
         # leading to NaN values and low acceptance rate.
         from vllm_ascend.ascend_forward_context import _EXTRA_CTX
 
+        if diagnostic is not None:
+            diagnostic.write("pre_hc", hidden_states)
         if _EXTRA_CTX.flash_comm_v1_enabled:
             h_states_flat = tensor_model_parallel_all_gather(hidden_states.flatten(1), dim=0)
             pad_size = _EXTRA_CTX.pad_size
@@ -1222,8 +1260,12 @@ class DeepseekV4Model(nn.Module, EagleModelMixin):
             )
 
         hidden_states = self.hc_head(hidden_states, self.hc_head_fn, self.hc_head_scale, self.hc_head_base)
+        if diagnostic is not None:
+            diagnostic.write("post_hc", hidden_states)
 
         hidden_states = self.norm(hidden_states)
+        if diagnostic is not None:
+            diagnostic.write("post_norm", hidden_states)
         if aux_hidden_states:
             return hidden_states, aux_hidden_states
         return hidden_states

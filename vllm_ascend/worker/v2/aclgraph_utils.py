@@ -125,9 +125,25 @@ class ModelAclGraphManager(ModelCudaGraphManager):
         progress_bar_desc: str = "Capturing CUDA graphs",
     ) -> dict[BatchExecutionDescriptor, AttentionStatePair]:
         """Capture CUDA graphs for model forward pass."""
-        model = ModelWithContext(model)
+        replay_diagnostics = None
+        config = getattr(self, "vllm_config", None)
+        additional = getattr(config, "additional_config", None) or {}
+        if additional.get("dspark_nan_replay_window") is not None:
+            from vllm_ascend.diagnostics.dspark_nan import DSparkNaNDiagnostics
+            from vllm_ascend.diagnostics.dspark_replay import ReplaySnapshots
+
+            bank = model.model._dspark_layer_snapshots
+            if bank is None:
+                raise RuntimeError("DSpark layer snapshots must be installed before target compilation.")
+            if _EXTRA_CTX.flash_comm_v1_enabled or self.model_runner.dp_size != 1:
+                raise ValueError("DSpark replay diagnostics currently require FlashComm1 off and DP1.")
+            self._dspark_nan_diagnostic = DSparkNaNDiagnostics(additional["dspark_nan_diagnostic_dir"], bank.rank)
+            replay_diagnostics = ReplaySnapshots(
+                self._dspark_nan_diagnostic, self, bank, additional["dspark_nan_replay_window"]
+            )
+        model = ModelWithContext(model, replay_diagnostics=replay_diagnostics)
         with communicator_switch():
-            return super().capture(
+            states = super().capture(
                 model,
                 model_state,
                 input_buffers,
@@ -140,6 +156,9 @@ class ModelAclGraphManager(ModelCudaGraphManager):
                 lora_capture_hook=lora_capture_hook,
                 progress_bar_desc=progress_bar_desc,
             )
+        if replay_diagnostics is not None:
+            replay_diagnostics.finish_capture(states)
+        return states
 
 
 class ModelWithContext(nn.Module):
@@ -147,11 +166,12 @@ class ModelWithContext(nn.Module):
     so we can inherit vllm's CudaGraphManager._capture_full_graph.
     """
 
-    def __init__(self, original_model, is_draft_model=False, is_draft_model_prefill=False):
+    def __init__(self, original_model, is_draft_model=False, is_draft_model_prefill=False, replay_diagnostics=None):
         super().__init__()
         self.original_model = original_model
         self.is_draft_model = is_draft_model
         self.is_draft_model_prefill = is_draft_model_prefill
+        self.replay_diagnostics = replay_diagnostics
 
     def forward(self, *args, **kwargs):
         # In warmup phase, capturing=False by default.
@@ -163,7 +183,12 @@ class ModelWithContext(nn.Module):
         if self.is_draft_model_prefill:
             _EXTRA_CTX.is_draft_model_prefill = True
 
-        return self.original_model(*args, **kwargs)
+        if self.replay_diagnostics is None:
+            return self.original_model(*args, **kwargs)
+        size = self.replay_diagnostics.model_inputs(kwargs)
+        output = self.original_model(*args, **kwargs)
+        self.replay_diagnostics.model_outputs(size, output)
+        return output
 
     def get_original_model(self):
         return self.original_model

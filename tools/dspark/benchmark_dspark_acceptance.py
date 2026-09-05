@@ -669,6 +669,8 @@ def build_engine_kwargs(args: argparse.Namespace) -> dict[str, Any]:
         kwargs["worker_extension_cls"] = _GRAPH_WORKER_EXTENSION
     if args.dspark_nan_diagnostic_dir is not None:
         kwargs["additional_config"] = {"dspark_nan_diagnostic_dir": str(args.dspark_nan_diagnostic_dir)}
+        if args.dspark_nan_replay_window is not None:
+            kwargs["additional_config"]["dspark_nan_replay_window"] = list(args.dspark_nan_replay_window)
     if args.revision:
         kwargs["revision"] = args.revision
     if args.kv_cache_memory_bytes is not None:
@@ -1407,6 +1409,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=Path,
         help="Opt-in capture-external rank diagnostics; disables performance publication.",
     )
+    parser.add_argument(
+        "--dspark-nan-replay-window",
+        nargs=2,
+        type=int,
+        metavar=("FIRST_EPOCH", "LAST_EPOCH"),
+        help="Opt-in compiled target copy snapshots and pre-replay metadata in this inclusive execution window.",
+    )
     args = parser.parse_args(argv)
     for name in ("num_spec_tokens", "warmup_prompts", "output_len", "tensor_parallel_size"):
         value = getattr(args, name)
@@ -1433,6 +1442,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             parser.error("--dspark-nan-diagnostic-dir requires DSpark with target full_decode_only")
         if not args.dspark_nan_diagnostic_dir.is_absolute():
             parser.error("--dspark-nan-diagnostic-dir must be an absolute path")
+    if args.dspark_nan_replay_window is not None:
+        first, last = args.dspark_nan_replay_window
+        if args.dspark_nan_diagnostic_dir is None or first < 1 or last < first:
+            parser.error("--dspark-nan-replay-window requires diagnostic-dir and 1 <= FIRST_EPOCH <= LAST_EPOCH")
+        sizes = args.cudagraph_capture_sizes
+        query_len = args.num_spec_tokens + 1
+        if not sizes or sorted(sizes) != list(range(query_len, max(sizes) + 1, query_len)):
+            parser.error("--dspark-nan-replay-window requires consecutive uniform-query capture sizes")
     return args
 
 

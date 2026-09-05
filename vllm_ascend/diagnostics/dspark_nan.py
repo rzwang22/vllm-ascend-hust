@@ -39,7 +39,7 @@ class DSparkNaNDiagnostics:
         if npu is not None and npu.is_current_stream_capturing():
             raise RuntimeError("DSpark NaN diagnostics must run outside ACLGraph capture.")
 
-    def _write(self, *, first_failure: bool = False) -> None:
+    def _write(self, *, first_failure: bool = False, window_snapshot: bool = False) -> None:
         report = {
             "status": "ROOT_CAUSE_NOT_YET_PROVEN",
             "performance_eligible": False,
@@ -47,8 +47,11 @@ class DSparkNaNDiagnostics:
             "previous_executions": list(self.history),
             "current": self.current,
         }
+        if hasattr(self, "replay_configuration"):
+            report["replay_configuration"] = self.replay_configuration
         text = json.dumps(report, ensure_ascii=False, allow_nan=False, indent=2) + "\n"
-        path = self.directory / f"rank-{self.rank}-latest.json"
+        suffix = "window" if window_snapshot else "latest"
+        path = self.directory / f"rank-{self.rank}-{suffix}.json"
         temporary = path.with_suffix(".tmp")
         temporary.write_text(text)
         temporary.replace(path)
@@ -153,6 +156,13 @@ class DSparkNaNDiagnostics:
         for index, tensor in enumerate(state.aux_hidden_states or []):
             tensors[f"target_aux_{index}"] = tensor
         self.check("target_outputs", tensors, batch.num_tokens)
+        detail = self.current.get("replay_detail", {})
+        if detail.get("status") == "ACTUAL_FULL_REPLAY_SNAPSHOTS":
+            localization = detail["localization"]
+            if localization["first_invalid_boundary"] or localization["raw_output_nonfinite"]:
+                self.current["stage"] = "target_internal_snapshots"
+                self._write(first_failure=True)
+                raise RuntimeError("DSpark NaN diagnostic detected non-finite target replay snapshots.")
 
     def proposal_inputs(self, proposal: Any) -> None:
         self._outside_capture()

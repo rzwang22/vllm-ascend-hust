@@ -58,7 +58,9 @@ class _FullReplayObserver:
             from vllm_ascend.diagnostics.dspark_nan import DSparkNaNDiagnostics
 
             speculator = runner.speculator
-            self.nan_diagnostic = DSparkNaNDiagnostics(directory, speculator.rank)
+            self.nan_diagnostic = getattr(self.manager, "_dspark_nan_diagnostic", None)
+            if self.nan_diagnostic is None:
+                self.nan_diagnostic = DSparkNaNDiagnostics(directory, speculator.rank)
             speculator._nan_diagnostic = self.nan_diagnostic
         runner.execute_model = self.execute_model
         self.manager.run_fullgraph = self.run_fullgraph
