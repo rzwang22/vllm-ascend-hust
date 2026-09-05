@@ -157,6 +157,7 @@ def _loaded_speculator(monkeypatch: pytest.MonkeyPatch):
 
     draft_model = object.__new__(DSparkDeepseekV4ForCausalLM)
     nn.Module.__init__(draft_model)
+    draft_model.vllm_config = SimpleNamespace(**vars(config))
     draft_model.lm_head = _LoadedHead()
     draft_model.model = _LoadedDraftBackbone()
     draft_model.get_draft_kv_cache_layer_names = lambda: list(DRAFT_LAYERS)
@@ -888,6 +889,8 @@ def test_set_attn_installs_draft_only_groups_and_real_cache_identity(
     def init_attn_backend(*_args, **kwargs):
         nonlocal init_calls
         init_calls += 1
+        assert _args[1] is speculator.draft_vllm_config
+        assert _args[1] is not config
         assert kwargs["active_layer_names"] == set(DRAFT_LAYERS)
         return draft_groups, object(), [16, 16]
 

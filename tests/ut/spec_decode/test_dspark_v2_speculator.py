@@ -345,13 +345,14 @@ def test_both_ascend_selectors_bypass_core_dspark_factory(
     assert vllm_model_runner.init_speculator is core_factory
 
 
-def test_graph_lifecycle_remains_eager_before_proposal() -> None:
+@pytest.mark.parametrize("target_mode", [CUDAGraphMode.NONE, CUDAGraphMode.FULL, CUDAGraphMode.FULL_DECODE_ONLY])
+def test_graph_lifecycle_remains_eager_before_proposal(target_mode) -> None:
     speculator = create_dspark_speculator(_dspark_config(), torch.device("cpu"))
 
-    speculator.init_cudagraph_manager(CUDAGraphMode.FULL)
+    speculator.init_cudagraph_manager(target_mode)
     speculator.capture({})
 
-    assert speculator.requested_cudagraph_mode == CUDAGraphMode.FULL
+    assert speculator.requested_cudagraph_mode == target_mode
     assert speculator.cudagraph_mode == CUDAGraphMode.NONE
 
 

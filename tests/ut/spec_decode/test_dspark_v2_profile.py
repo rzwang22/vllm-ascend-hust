@@ -20,6 +20,7 @@ from vllm_ascend.worker.v2.spec_decode.dspark import speculator as speculator_mo
 class _ProfileDraftModel(nn.Module):
     def __init__(self, *, vocab_size: int = 16) -> None:
         super().__init__()
+        self.vllm_config = SimpleNamespace(model_config=SimpleNamespace(enforce_eager=True))
         self.vocab_size = vocab_size
         self.combined_aux: torch.Tensor | None = None
         self.precomputed: tuple[torch.Tensor, torch.Tensor, None] | None = None
@@ -90,7 +91,8 @@ def _install_forward_context_stubs(
     contexts: list[SimpleNamespace] = []
 
     @contextmanager
-    def fake_set_forward_context(*_args, **kwargs):
+    def fake_set_forward_context(_metadata, config, **kwargs):
+        assert config.model_config.enforce_eager
         set_calls.append(kwargs)
         context = SimpleNamespace(
             dp_metadata=object(),
@@ -165,6 +167,7 @@ def test_profile_executes_context_backbone_and_all_markov_heads_without_publicat
     assert contexts[0].additional_kwargs["is_draft_model_prefill"] is True
     assert contexts[0].additional_kwargs["profile_contract"]["in_profile_run"] is True
     assert contexts[0].additional_kwargs["profile_contract"]["is_draft_model"] is True
+    assert contexts[0].additional_kwargs["profile_contract"]["vllm_config"] is model.vllm_config
     assert contexts[0].exited is True
     after = _proposal_state(speculator)
     assert all(after[name] is value for name, value in before.items())

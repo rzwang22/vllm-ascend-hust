@@ -324,6 +324,9 @@ def test_eager_forward_context_receives_real_model_inputs_and_restores(monkeypat
 
     assert output is speculator.model.forward_output
     assert output.shape == (proposal.num_query_tokens, 8)
+    assert calls["set_args"][1] is speculator.model.vllm_config
+    assert calls["set_args"][1] is not speculator.vllm_config
+    assert calls["ascend_kwargs"]["vllm_config"] is speculator.model.vllm_config
     assert calls["set_kwargs"]["cudagraph_runtime_mode"].name == "NONE"
     assert calls["set_kwargs"]["input_ids"] is proposal.draft_input_ids
     assert calls["set_kwargs"]["model_instance"] is speculator.model

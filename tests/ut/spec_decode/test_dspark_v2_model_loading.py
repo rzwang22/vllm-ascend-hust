@@ -22,7 +22,7 @@ from vllm.config import (
     VllmConfig,
     replace,
 )
-from vllm.config.compilation import CompilationMode
+from vllm.config.compilation import CompilationConfig, CompilationMode, CUDAGraphMode
 from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
 from vllm.v1.attention.backends.registry import AttentionBackendEnum
 from vllm.v1.worker.gpu import model_runner as vllm_model_runner
@@ -93,6 +93,7 @@ def _register_fake_draft_kv_layer(config, draft_model: nn.Module) -> None:
     layer_name = "mtp.0.self_attn.swa_cache"
     config.compilation_config.static_forward_context[layer_name] = _DraftKVCacheLayer()
     draft_model.get_draft_kv_cache_layer_names = lambda: [layer_name]
+    draft_model.vllm_config = config
 
 
 def _modelslim_dspark_descriptor() -> dict[str, str]:
@@ -159,6 +160,7 @@ def _modelslim_loader_config(
     draft_model_config = SimpleNamespace(
         model=checkpoint,
         hf_config=draft_hf_config,
+        enforce_eager=True,
     )
     target_model_config = SimpleNamespace(
         model=checkpoint,
@@ -166,12 +168,19 @@ def _modelslim_loader_config(
     )
     speculative_config = SimpleNamespace(
         method="dspark",
+        enforce_eager=None,
         draft_model_config=draft_model_config,
         num_speculative_tokens=5,
         attention_backend="ASCEND",
     )
     return SimpleNamespace(
         model_config=target_model_config,
+        compilation_config=SimpleNamespace(
+            mode=CompilationMode.NONE,
+            cudagraph_mode=CUDAGraphMode.NONE,
+            static_forward_context={},
+            static_all_moe_layers=[],
+        ),
         quant_config=(
             target_quant_config
             if target_quant_config is not None
@@ -193,6 +202,8 @@ def _modelslim_loader_config(
 def _real_dspark_vllm_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    *,
+    target_eager: bool = True,
 ) -> VllmConfig:
     checkpoint = tmp_path / "dspark-w8a8"
     checkpoint.mkdir()
@@ -277,7 +288,7 @@ def _real_dspark_vllm_config(
         dtype="bfloat16",
         max_model_len=128,
         quantization="ascend",
-        enforce_eager=True,
+        enforce_eager=target_eager,
         config_format="hf",
         hf_overrides={},
     )
@@ -288,6 +299,7 @@ def _real_dspark_vllm_config(
     )
     speculative_config = SpeculativeConfig(
         method="dspark",
+        enforce_eager=True,
         target_model_config=target_model_config,
         target_parallel_config=parallel_config,
         num_speculative_tokens=5,
@@ -298,19 +310,25 @@ def _real_dspark_vllm_config(
         parallel_config=parallel_config,
         speculative_config=speculative_config,
         quant_config=AscendModelSlimConfig(descriptor),
+        compilation_config=CompilationConfig(
+            cudagraph_mode=CUDAGraphMode.NONE if target_eager else CUDAGraphMode.FULL_DECODE_ONLY,
+            cudagraph_capture_sizes=[] if target_eager else [6],
+        ),
     )
 
 
+@pytest.mark.parametrize("target_eager", [True, False])
 def test_dspark_draft_vllm_config_handles_callable_hf_overrides(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    target_eager: bool,
 ) -> None:
     from vllm_ascend.worker.v2.spec_decode.dspark.model_loader import (
         _build_draft_quant_config,
         _build_draft_vllm_config,
     )
 
-    target_vllm_config = _real_dspark_vllm_config(tmp_path, monkeypatch)
+    target_vllm_config = _real_dspark_vllm_config(tmp_path, monkeypatch, target_eager=target_eager)
     target_model_config = target_vllm_config.model_config
     speculative_config = target_vllm_config.speculative_config
     assert speculative_config is not None
@@ -330,17 +348,30 @@ def test_dspark_draft_vllm_config_handles_callable_hf_overrides(
     target_quant_config = target_vllm_config.quant_config
     assert isinstance(target_quant_config, AscendModelSlimConfig)
     target_quant_description_before = copy.deepcopy(target_quant_config.quant_description)
+    target_compilation_before = copy.deepcopy(vars(target_vllm_config.compilation_config))
+    target_additional_before = copy.deepcopy(target_vllm_config.additional_config)
 
     # This is the former construction shape: once quant resolution runs for
     # the draft ModelConfig, its callable override is not a supported source
     # for quantization descriptor file/json options.
     with pytest.raises(ValueError, match="hf_overrides must be a dict"):
         replace(
-            target_vllm_config,
+            copy.deepcopy(target_vllm_config),
             model_config=copy.deepcopy(draft_model_config),
             quant_config=None,
         )
 
+    from vllm.platforms import current_platform
+
+    from vllm_ascend.ascend_config import get_ascend_config
+
+    target_ascend_config = get_ascend_config()
+    target_npugraph_ex = target_ascend_config.ascend_compilation_config.enable_npugraph_ex
+    monkeypatch.setattr(
+        current_platform,
+        "check_and_update_config",
+        lambda *_args: pytest.fail("draft config must not reinitialize the process-wide Ascend config"),
+    )
     draft_quant_config = _build_draft_quant_config(
         target_vllm_config,
         draft_model_config,
@@ -351,11 +382,16 @@ def test_dspark_draft_vllm_config_handles_callable_hf_overrides(
     )
 
     assert draft_vllm_config is not target_vllm_config
-    assert draft_vllm_config.model_config is target_model_config
-    assert draft_vllm_config.speculative_config is speculative_config
-    assert draft_vllm_config.speculative_config.draft_model_config is draft_model_config
+    assert draft_vllm_config.model_config is not target_model_config
+    assert draft_vllm_config.speculative_config is not speculative_config
+    assert draft_vllm_config.speculative_config.draft_model_config is not draft_model_config
+    assert draft_vllm_config.speculative_config.draft_model_config.enforce_eager
+    assert draft_model_config.enforce_eager is target_eager
     assert draft_vllm_config.speculative_config.draft_model_config.architectures == [DSPARK_MODEL_ARCHITECTURE]
-    assert draft_vllm_config.compilation_config is target_vllm_config.compilation_config
+    assert draft_vllm_config.compilation_config is not target_vllm_config.compilation_config
+    assert draft_vllm_config.compilation_config.mode == CompilationMode.NONE
+    assert draft_vllm_config.compilation_config.cudagraph_mode == CUDAGraphMode.NONE
+    assert draft_vllm_config.compilation_config.cudagraph_capture_sizes == []
     assert (
         draft_vllm_config.compilation_config.static_forward_context
         is target_vllm_config.compilation_config.static_forward_context
@@ -372,13 +408,89 @@ def test_dspark_draft_vllm_config_handles_callable_hf_overrides(
     assert draft_vllm_config.parallel_config.enable_expert_parallel
     assert draft_vllm_config.parallel_config.pipeline_parallel_size == 1
     assert draft_vllm_config.model_config.enforce_eager
+    assert get_ascend_config() is target_ascend_config
+    assert get_ascend_config().ascend_compilation_config.enable_npugraph_ex is target_npugraph_ex
 
     assert target_vllm_config.model_config is target_model_config
+    assert target_model_config.enforce_eager is target_eager
+    assert vars(target_vllm_config.compilation_config) == target_compilation_before
+    assert target_vllm_config.additional_config == target_additional_before
     assert target_model_config.hf_config.to_dict() == target_hf_config_before
     assert target_model_config.hf_overrides == target_hf_overrides_before
     assert target_vllm_config.quant_config is target_quant_config
     assert target_quant_config.quant_description == target_quant_description_before
     assert not target_vllm_config.attention_config.use_non_causal
+
+
+@pytest.mark.parametrize("target_eager", [True, False])
+def test_loader_passes_eager_configs_through_real_model_initialization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    target_eager: bool,
+) -> None:
+    from vllm.config import get_current_vllm_config
+    from vllm.model_executor.model_loader.utils import initialize_model
+
+    from vllm_ascend.worker.v2.spec_decode.dspark import model_loader
+
+    config = _real_dspark_vllm_config(tmp_path, monkeypatch, target_eager=target_eager)
+    target_compilation = copy.deepcopy(vars(config.compilation_config))
+
+    class DraftConstructionProbe(nn.Module):
+        def __init__(self, *, vllm_config, prefix):
+            super().__init__()
+            assert get_current_vllm_config() is vllm_config
+            assert vllm_config.model_config.enforce_eager
+            assert vllm_config.speculative_config.draft_model_config.enforce_eager
+            assert vllm_config.compilation_config.mode == CompilationMode.NONE
+            assert vllm_config.compilation_config.cudagraph_mode == CUDAGraphMode.NONE
+            self.vllm_config = vllm_config
+            self.model = nn.Module()
+
+    def get_model(*, vllm_config, model_config):
+        assert model_config is vllm_config.speculative_config.draft_model_config
+        assert model_config.enforce_eager
+        assert callable(model_config.hf_overrides)
+        assert model_config.architectures == [DSPARK_MODEL_ARCHITECTURE]
+        return initialize_model(
+            vllm_config,
+            model_config=model_config,
+            model_class=DraftConstructionProbe,
+        )
+
+    monkeypatch.setattr(model_loader, "get_model", get_model)
+    monkeypatch.setattr(model_loader, "get_pp_group", lambda: SimpleNamespace(world_size=1))
+    model = model_loader.load_dspark_model(SimpleNamespace(model=nn.Module()), config)
+
+    assert model.vllm_config is not config
+    assert config.model_config.enforce_eager is target_eager
+    assert config.speculative_config.draft_model_config.enforce_eager is target_eager
+    assert vars(config.compilation_config) == target_compilation
+
+
+def test_p08_capture_sizes_do_not_cover_k5_verification() -> None:
+    config = CompilationConfig(
+        cudagraph_mode=CUDAGraphMode.FULL_DECODE_ONLY,
+        cudagraph_capture_sizes=[1, 2, 4],
+        max_cudagraph_capture_size=4,
+    )
+    config.pass_config.enable_sp = False
+    with pytest.raises(ValueError, match="No valid cudagraph sizes.*multiple of 6"):
+        config.adjust_cudagraph_sizes_for_spec_decode(6, 8)
+
+
+@pytest.mark.parametrize(
+    "enable_sp,sizes,expected", [(False, [6], [6]), (False, [6, 12, 24], [6, 12, 24]), (True, [6, 24], [24])]
+)
+def test_explicit_capture_sizes_cover_k5_verification(enable_sp, sizes, expected) -> None:
+    config = CompilationConfig(
+        cudagraph_mode=CUDAGraphMode.FULL_DECODE_ONLY,
+        cudagraph_capture_sizes=sizes,
+        max_cudagraph_capture_size=max(sizes),
+    )
+    config.pass_config.enable_sp = enable_sp
+    config.adjust_cudagraph_sizes_for_spec_decode(6, 8)
+    assert config.cudagraph_capture_sizes == expected
 
 
 def test_dspark_registry_resolves_to_ascend_model_without_touching_other_architectures(
@@ -739,11 +851,13 @@ def _run_hardware_agnostic_loader(
         fields.update(changes)
         return SimpleNamespace(**fields)
 
-    draft_model_config = object()
+    draft_model_config = SimpleNamespace(enforce_eager=True)
     config = SimpleNamespace(
         model_config=SimpleNamespace(),
+        compilation_config=SimpleNamespace(static_forward_context={}, static_all_moe_layers=[]),
         quant_config=None,
         speculative_config=SimpleNamespace(
+            enforce_eager=None,
             draft_model_config=draft_model_config,
             attention_backend="ASCEND",
         ),
@@ -758,7 +872,7 @@ def _run_hardware_agnostic_loader(
         "get_model",
         lambda *, vllm_config, model_config: (
             draft_model
-            if model_config is draft_model_config and vllm_config.attention_config.use_non_causal
+            if model_config.enforce_eager and vllm_config.attention_config.use_non_causal
             else pytest.fail("DSpark loader did not build the expected config")
         ),
     )
@@ -817,7 +931,9 @@ def test_modelslim_loader_uses_independent_draft_quant_config_and_own_heads(
     def fake_get_model(*, vllm_config, model_config):
         nonlocal captured_config
         captured_config = vllm_config
-        assert model_config is draft_model_config
+        assert model_config is not draft_model_config
+        assert model_config.enforce_eager
+        assert model_config.hf_config == draft_model_config.hf_config
         return draft_model
 
     monkeypatch.setattr(model_loader, "replace", fake_replace)
@@ -837,7 +953,7 @@ def test_modelslim_loader_uses_independent_draft_quant_config_and_own_heads(
 
     assert loaded is draft_model
     assert captured_config is not None
-    assert captured_config.model_config is config.model_config
+    assert captured_config.model_config is not config.model_config
     assert captured_config.quant_config is not target_quant_config
     assert target_quant_config.quant_description == target_quant_description
     assert target_quant_description.items() <= captured_config.quant_config.quant_description.items()

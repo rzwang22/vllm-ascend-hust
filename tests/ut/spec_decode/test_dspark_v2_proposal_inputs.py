@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 Huawei Technologies Co., Ltd. All Rights Reserved.
 
+import copy
 import json
 import os
 import subprocess
@@ -119,6 +120,7 @@ def _ready_speculator(*, continue_after_verification: bool = False):
         torch.device("cpu"),
     )
     speculator._model = _DraftModel()
+    speculator._model.vllm_config = copy.deepcopy(speculator.vllm_config)
     speculator._loaded_target_model = _TargetModel()
     speculator.target_attn_layer_names = frozenset()
     speculator.draft_attn_layer_names = frozenset(DRAFT_LAYERS)

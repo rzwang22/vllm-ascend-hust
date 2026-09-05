@@ -9,8 +9,10 @@ from typing import Any
 
 import torch.nn as nn
 from vllm.config import VllmConfig, replace
+from vllm.config.compilation import CompilationMode, CUDAGraphMode
 from vllm.distributed.parallel_state import get_pp_group
 from vllm.model_executor.model_loader import get_model
+from vllm.v1.attention.backends.registry import AttentionBackendEnum
 from vllm.v1.worker.gpu.spec_decode.eagle.utils import _should_share
 
 _DSPARK_BLOCK_SIZE = 5
@@ -316,10 +318,14 @@ def _validate_w8a8_runtime_contract(
             f"The 0731 Ascend DSpark W8A8 contract requires dspark_target_layer_ids={list(_DSPARK_TARGET_LAYER_IDS)}."
         )
 
-    model_config = vllm_config.model_config
     parallel_config = vllm_config.parallel_config
-    if not model_config.enforce_eager:
-        raise ValueError("The initial Ascend DSpark W8A8 loader requires enforce_eager=True.")
+    if not vllm_config.model_config.enforce_eager or not draft_model_config.enforce_eager:
+        raise ValueError("Ascend DSpark W8A8 construction requires an eager draft runtime config.")
+    if (
+        vllm_config.compilation_config.mode != CompilationMode.NONE
+        or vllm_config.compilation_config.cudagraph_mode != CUDAGraphMode.NONE
+    ):
+        raise ValueError("Ascend DSpark W8A8 draft compilation and graphs must be disabled.")
     if parallel_config.tensor_parallel_size != 8:
         raise ValueError("The initial Ascend DSpark W8A8 loader requires tensor parallel size 8.")
     if not parallel_config.enable_expert_parallel:
@@ -332,32 +338,59 @@ def _build_draft_vllm_config(
     vllm_config: VllmConfig,
     draft_quant_config: Any,
 ) -> VllmConfig:
-    """Build the validated runtime config used to instantiate the draft.
+    """Build an isolated eager runtime from the validated target config.
 
-    ``SpeculativeConfig`` constructs its draft ``ModelConfig`` with a callable
-    ``hf_overrides``. Replacing ``VllmConfig.model_config`` with that object
-    makes ``VllmConfig`` validation resolve quantization from the callable,
-    while ``get_quant_config`` only accepts dict overrides for that lookup.
+    Reconstructing VllmConfig reruns platform validation, which replaces the
+    process-wide Ascend config and can disable npugraph_ex for the target.
+    Copy the resolved settings instead; only the draft execution mode and
+    non-causal attention differ. No target configuration is changed.
 
-    Keep the target ``ModelConfig`` while rebuilding ``VllmConfig``, matching
-    the core DSpark loader contract. ``get_model`` receives the draft
-    ``ModelConfig`` separately for registry resolution and weight loading. The
-    independently validated ModelSlim draft quant config is installed only
-    after the ordinary ``VllmConfig`` reconstruction has completed.
+    Keep the core DSpark ABI: a copied target ModelConfig is the runtime base,
+    while get_model receives the copied draft ModelConfig for registry/weights.
+    This also avoids re-resolving quantization from the draft's callable
+    hf_overrides. Install the independently validated draft quant config.
     """
     speculative_config = vllm_config.speculative_config
     assert speculative_config is not None
+    draft_enforce_eager = speculative_config.enforce_eager
+    if draft_enforce_eager is None:
+        draft_enforce_eager = speculative_config.draft_model_config.enforce_eager
+    if not draft_enforce_eager:
+        raise ValueError(
+            "Ascend DSpark draft graph execution is unsupported; "
+            "set speculative_config.enforce_eager=True (the target may use FULL_DECODE_ONLY)."
+        )
 
-    draft_vllm_config = replace(
+    # Isolate nested model/compilation/platform options, including ModelConfig passed
+    # separately to get_model: core currently inherits its flag from target.
+    # Keep only the live layer registries shared for runner KV/MoE discovery;
+    # copying their modules would duplicate target weights and cache ownership.
+    compilation_config = vllm_config.compilation_config
+    draft_config = copy.deepcopy(
         vllm_config,
-        attention_config=replace(
-            vllm_config.attention_config,
-            use_non_causal=True,
-            backend=speculative_config.attention_backend,
-        ),
+        memo={
+            id(compilation_config.static_forward_context): compilation_config.static_forward_context,
+            id(compilation_config.static_all_moe_layers): compilation_config.static_all_moe_layers,
+        },
     )
-    draft_vllm_config.quant_config = draft_quant_config
-    return draft_vllm_config
+    draft_config.model_config.enforce_eager = True
+    draft_config.speculative_config.enforce_eager = True
+    draft_config.speculative_config.draft_model_config.enforce_eager = True
+    draft_config.compilation_config.mode = CompilationMode.NONE
+    draft_config.compilation_config.cudagraph_mode = CUDAGraphMode.NONE
+    draft_config.compilation_config.cudagraph_capture_sizes = []
+    draft_config.compilation_config.max_cudagraph_capture_size = 0
+
+    # Match NPUPlatform's backend normalization without rerunning its global
+    # configuration lifecycle. FLASH_ATTN is its sole preserved override.
+    backend = speculative_config.attention_backend
+    draft_config.attention_config = replace(
+        draft_config.attention_config,
+        use_non_causal=True,
+        backend=backend if backend == AttentionBackendEnum.FLASH_ATTN else None,
+    )
+    draft_config.quant_config = draft_quant_config
+    return draft_config
 
 
 def load_dspark_model(
@@ -372,16 +405,16 @@ def load_dspark_model(
         vllm_config,
         draft_model_config,
     )
-    _validate_w8a8_runtime_contract(
-        vllm_config,
-        draft_model_config,
-        draft_quant_config,
-    )
-
     from vllm.compilation.backends import set_model_tag
 
     draft_vllm_config = _build_draft_vllm_config(
         vllm_config,
+        draft_quant_config,
+    )
+    draft_model_config = draft_vllm_config.speculative_config.draft_model_config
+    _validate_w8a8_runtime_contract(
+        draft_vllm_config,
+        draft_model_config,
         draft_quant_config,
     )
 

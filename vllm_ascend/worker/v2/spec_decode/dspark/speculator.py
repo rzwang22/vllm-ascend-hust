@@ -19,7 +19,7 @@ from vllm.forward_context import (
     get_forward_context,
     set_forward_context,
 )
-from vllm.logger import init_logger
+from vllm.logger import logger
 from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
 from vllm.v1.attention.backend import AttentionBackend
 from vllm.v1.kv_cache_interface import KVCacheConfig, KVCacheSpec
@@ -82,8 +82,6 @@ _DSPARK_PROFILE_PRESERVED_STATE = (
     "_proposal_dropped_count",
     "_terminal_proposal_discard_count",
 )
-
-logger = init_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -326,6 +324,11 @@ class AscendDSparkSpeculator(BaseSpeculator):
             dspark_runtime_not_wired("V2 draft-model loading")
         return self._model
 
+    @property
+    def draft_vllm_config(self) -> VllmConfig:
+        """Use the loader's isolated eager config for draft attention/forward."""
+        return self.model.vllm_config
+
     def load_model(self, target_model: torch.nn.Module) -> None:
         """Load the Ascend DSpark model once, then publish it atomically."""
         if self._model is not None:
@@ -360,6 +363,7 @@ class AscendDSparkSpeculator(BaseSpeculator):
                 f"{type(draft_model).__module__}.{type(draft_model).__name__}."
             )
 
+        draft_model_config = draft_model.vllm_config.speculative_config.draft_model_config
         markov_module_contract = self._inspect_markov_modules(draft_model)
 
         get_draft_layer_names = getattr(
@@ -395,6 +399,7 @@ class AscendDSparkSpeculator(BaseSpeculator):
         # and implementation validation all succeed.
         self._loaded_target_model = target_model
         self._model = draft_model
+        self.draft_model_config = draft_model_config
         self._markov_module_contract = markov_module_contract
         self.target_attn_layer_names = target_attn_layer_names
         self.draft_attn_layer_names = draft_attn_layer_names
@@ -491,7 +496,7 @@ class AscendDSparkSpeculator(BaseSpeculator):
         self.validate_kv_cache_config(kv_cache_config)
         attn_groups, _attn_cg_support, _kernel_block_sizes = init_attn_backend(
             kv_cache_config,
-            self.vllm_config,
+            self.draft_vllm_config,
             self.device,
             active_layer_names=set(self.draft_attn_layer_names),
         )
@@ -1330,7 +1335,7 @@ class AscendDSparkSpeculator(BaseSpeculator):
         slot_mappings = dict(proposal_inputs.draft_query_slot_mappings)
         with set_forward_context(
             draft_attn_metadata,
-            self.vllm_config,
+            self.draft_vllm_config,
             num_tokens=execution.execution_token_count,
             num_tokens_across_dp=proposal_inputs.num_tokens_across_dp,
             cudagraph_runtime_mode=CUDAGraphMode.NONE,
@@ -1342,7 +1347,7 @@ class AscendDSparkSpeculator(BaseSpeculator):
             forward_context = get_forward_context()
             draft_context = build_ascend_forward_context(
                 attn_metadata=draft_attn_metadata,
-                vllm_config=self.vllm_config,
+                vllm_config=self.draft_vllm_config,
                 num_tokens=execution.execution_token_count,
                 num_tokens_across_dp=proposal_inputs.num_tokens_across_dp,
                 dp_metadata=forward_context.dp_metadata,
@@ -2586,7 +2591,7 @@ class AscendDSparkSpeculator(BaseSpeculator):
         self.eplb_state = eplb_state
 
     def init_cudagraph_manager(self, cudagraph_mode: CUDAGraphMode) -> None:
-        """Record the requested mode while keeping DSpark execution eager."""
+        """Record the target runner's mode; the draft remains eager."""
         self.requested_cudagraph_mode = cudagraph_mode
         self.cudagraph_mode = CUDAGraphMode.NONE
 
@@ -2824,7 +2829,7 @@ class AscendDSparkSpeculator(BaseSpeculator):
         )
         with set_forward_context(
             None,
-            self.vllm_config,
+            self.draft_vllm_config,
             num_tokens=num_query_tokens,
             num_tokens_across_dp=num_tokens_across_dp,
             cudagraph_runtime_mode=CUDAGraphMode.NONE,
@@ -2836,7 +2841,7 @@ class AscendDSparkSpeculator(BaseSpeculator):
             forward_context = get_forward_context()
             draft_context = build_ascend_forward_context(
                 attn_metadata=None,
-                vllm_config=self.vllm_config,
+                vllm_config=self.draft_vllm_config,
                 num_tokens=num_query_tokens,
                 num_tokens_across_dp=num_tokens_across_dp,
                 dp_metadata=forward_context.dp_metadata,
