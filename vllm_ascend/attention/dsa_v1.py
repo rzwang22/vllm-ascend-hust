@@ -738,7 +738,7 @@ class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
         self.decode_ratio_to_sas_metadata = kwargs.get("decode_ratio_to_sas_metadata")
         assert self.prefill_ratio_to_sas_metadata is not None
         assert self.decode_ratio_to_sas_metadata is not None
-        self.block_size = kwargs.get("block_size", 128)
+        self.block_size = kwargs["block_size"]
 
         self.common_ratio_to_sas_metadata = kwargs.get("common_ratio_to_sas_metadata")
         assert self.common_ratio_to_sas_metadata is not None
@@ -1515,6 +1515,29 @@ class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
             #     return self.graph_pad_size
             return common_attn_metadata.num_reqs
         return self.num_decodes
+
+    def build_for_cudagraph_capture(
+        self,
+        common_attn_metadata: AscendCommonAttentionMetadata,
+        *,
+        num_reqs_actual: int,
+        prefill_ratio_to_sas_metadata: dict,
+        decode_ratio_to_sas_metadata: dict,
+        common_ratio_to_sas_metadata: dict,
+        block_size: int,
+    ) -> AscendDSAMetadata:
+        # MRV2 prepares warmup and capture separately. The caller owns fresh
+        # batch-local dictionaries shared across KV groups in each preparation.
+        # Retain the base capture builder's build semantics and actual KV layout.
+        return self.build(
+            common_prefix_len=0,
+            common_attn_metadata=common_attn_metadata,
+            num_reqs_actual=num_reqs_actual,
+            prefill_ratio_to_sas_metadata=prefill_ratio_to_sas_metadata,
+            decode_ratio_to_sas_metadata=decode_ratio_to_sas_metadata,
+            common_ratio_to_sas_metadata=common_ratio_to_sas_metadata,
+            block_size=block_size,
+        )
 
     def build_for_graph_capture(
         self,

@@ -328,8 +328,19 @@ def build_attn_metadata(
 
         for attn_group in attn_groups[i]:
             attn_metadata_builder = attn_group.get_metadata_builder(0)
+            dsa_metadata_kwargs = {}
+            if isinstance(attn_metadata_builder, AscendDSAMetadataBuilder):
+                dsa_metadata_kwargs = dict(
+                    num_reqs_actual=num_reqs,
+                    prefill_ratio_to_sas_metadata=prefill_ratio_to_sas_metadata,
+                    decode_ratio_to_sas_metadata=decode_ratio_to_sas_metadata,
+                    common_ratio_to_sas_metadata=common_ratio_to_sas_metadata,
+                    block_size=attn_group.kv_cache_spec.block_size,
+                )
             if for_cudagraph_capture:
-                metadata = attn_metadata_builder.build_for_cudagraph_capture(common_attn_metadata)
+                metadata = attn_metadata_builder.build_for_cudagraph_capture(
+                    common_attn_metadata, **dsa_metadata_kwargs
+                )
             else:
                 attn_metadata_extra_kwargs = (
                     model_specific_attn_metadata.get_extra_attn_kwargs(
@@ -339,25 +350,19 @@ def build_attn_metadata(
                     if model_specific_attn_metadata is not None
                     else {}
                 )
-                if isinstance(attn_metadata_builder, AscendDSAMetadataBuilder):
-                    attn_metadata_extra_kwargs.update(
-                        num_reqs_actual=num_reqs,
-                        prefill_ratio_to_sas_metadata=prefill_ratio_to_sas_metadata,
-                        decode_ratio_to_sas_metadata=decode_ratio_to_sas_metadata,
-                        common_ratio_to_sas_metadata=common_ratio_to_sas_metadata,
-                        block_size=attn_group.kv_cache_spec.block_size,
-                    )
+                if dsa_metadata_kwargs:
+                    attn_metadata_extra_kwargs.update(dsa_metadata_kwargs)
                 metadata = attn_metadata_builder.build(
                     common_prefix_len=0,
                     common_attn_metadata=common_attn_metadata,
                     **attn_metadata_extra_kwargs,
                 )
-                if isinstance(attn_metadata_builder, AscendDSAMetadataBuilder):
-                    # Preserve the exact cache identities if a specialized
-                    # builder replaces a dictionary during construction.
-                    prefill_ratio_to_sas_metadata = attn_metadata_builder.prefill_ratio_to_sas_metadata  # type: ignore[assignment]
-                    decode_ratio_to_sas_metadata = attn_metadata_builder.decode_ratio_to_sas_metadata  # type: ignore[assignment]
-                    common_ratio_to_sas_metadata = attn_metadata_builder.common_ratio_to_sas_metadata  # type: ignore[assignment]
+            if isinstance(attn_metadata_builder, AscendDSAMetadataBuilder):
+                # Preserve the exact cache identities if a specialized builder
+                # replaces a dictionary, including during capture preparation.
+                prefill_ratio_to_sas_metadata = attn_metadata_builder.prefill_ratio_to_sas_metadata  # type: ignore[assignment]
+                decode_ratio_to_sas_metadata = attn_metadata_builder.decode_ratio_to_sas_metadata  # type: ignore[assignment]
+                common_ratio_to_sas_metadata = attn_metadata_builder.common_ratio_to_sas_metadata  # type: ignore[assignment]
             for layer_name in attn_group.layer_names:
                 attn_metadata[layer_name] = metadata
     return attn_metadata
