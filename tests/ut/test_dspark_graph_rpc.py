@@ -29,6 +29,7 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
+from tests.ut.test_dspark_graph_replay import ReplayGraph, ReplayRunner
 from tools.dspark import benchmark_dspark_acceptance as benchmark
 
 msgspec = pytest.importorskip("msgspec")
@@ -86,6 +87,7 @@ def _boundary(monkeypatch):
         raise AssertionError("Telemetry must not use pickle fallback")
 
     ns.update(
+        core_path=core,
         torch=torch,
         np=np,
         msgspec=msgspec,
@@ -178,6 +180,10 @@ def _workers(api, monkeypatch, extension, count=8):
                 ),
                 speculator=SimpleNamespace(requested_cudagraph_mode=_Mode.FULL_DECODE_ONLY, cudagraph_mode=_Mode.NONE),
             )
+
+            replay_runner = ReplayRunner()
+            self.model_runner.execute_model = replay_runner.execute_model
+            self.model_runner.cudagraph_manager.run_fullgraph = replay_runner.cudagraph_manager.run_fullgraph
 
     worker_module = ModuleType("p08_cpu_worker")
     worker_module.Worker = Worker
@@ -394,3 +400,141 @@ def test_real_rank_snapshots_must_agree_and_cover_requested_graphs(monkeypatch, 
     args = SimpleNamespace(tensor_parallel_size=8, mode="dspark", cudagraph_capture_sizes=[6])
     with pytest.raises(RuntimeError, match="rank|capture sizes"):
         benchmark._collect_worker_graph_runtime(_executor(api, workers), args)
+
+
+def _core_execution_runner(api):
+    """Real frozen execute_model/run_fullgraph bodies with CPU model/device fixtures."""
+    ns = dict(vars(api))
+    ns.update(
+        CUDAGraphMode=SimpleNamespace(FULL="FULL", NONE="NONE", PIECEWISE="PIECEWISE"),
+        get_offloader=lambda: SimpleNamespace(sync_prev_onload=lambda: None),
+        get_uniform_token_count=lambda num_reqs, num_toks, max_query_len: max_query_len,
+        dispatch_cg_and_sync_dp=lambda manager, *args, **kwargs: (manager.desc, None),
+        build_slot_mappings_by_layer=lambda slots, config: {},
+        ExecuteModelState=SimpleNamespace,
+        BatchDescriptor=SimpleNamespace,
+        set_forward_context=lambda *args, **kwargs: nullcontext(),
+    )
+    _load(api.core_path / "v1/worker/gpu/cudagraph_utils.py", ns, methods={"CudaGraphManager": ("run_fullgraph",)})
+    _load(api.core_path / "v1/worker/gpu/model_runner.py", ns, methods={"GPUModelRunner": ("execute_model",)})
+
+    # Use the real manager body and its descriptor lookup / graph.replay call.
+    @dataclass(frozen=True)
+    class Descriptor:
+        cg_mode: str = "FULL"
+        num_tokens: int = 6
+        num_reqs: int = 1
+        num_active_loras: int = 0
+
+    class CPUManager(ns["CudaGraphManager"]):
+        def run_fullgraph(self, desc):
+            super().run_fullgraph(desc)
+            return self.hidden_states
+
+    manager = CPUManager()
+    manager.desc = Descriptor()
+    manager.graphs = {manager.desc: ReplayGraph()}
+    manager.hidden_states = torch.zeros(6, 2)
+    runner = ns["GPUModelRunner"]()
+    runner.cudagraph_manager = manager
+    runner.execute_model_state = None
+    noop = lambda *args, **kwargs: None
+    for method in ("update_pp_decode_requests", "finish_requests", "free_states", "add_requests", "update_requests"):
+        setattr(runner, method, noop)
+    runner.block_tables = SimpleNamespace(apply_staged_writes=noop)
+    runner.lora_config = None
+    runner.is_encoder_decoder = runner.supports_mm_inputs = False
+    runner.dp_size, runner.dp_rank = 1, 0
+    batch = SimpleNamespace(
+        num_tokens=5,
+        num_tokens_after_padding=6,
+        input_ids=torch.zeros(6, dtype=torch.int64),
+        positions=torch.arange(6),
+        is_padding=torch.zeros(6, dtype=torch.bool),
+    )
+    ns["InputBatch"] = SimpleNamespace(make_dummy=lambda *args: batch)
+    runner.input_buffers = object()
+    runner.prepare_inputs = lambda scheduler, descriptor: batch
+    runner.prepare_attn = runner.prepare_dummy_attn = lambda batch: ([], [])
+    runner.model_state = SimpleNamespace(
+        preprocess_state=noop, prepare_attn=lambda *args: {}, prepare_inputs=lambda batch, states: {}
+    )
+    runner.req_states = SimpleNamespace(num_computed_tokens=SimpleNamespace(gpu=None))
+    runner.attn_groups = runner.kv_cache_config = runner.model_config = None
+    runner.eplb = SimpleNamespace(prepare_forward=noop)
+    runner.kv_connector = SimpleNamespace(pre_forward=noop, observe_kv_recovery_first_compute=noop)
+    runner.is_first_pp_rank = runner.is_last_pp_rank = True
+    runner.use_aux_hidden_state_outputs = False
+    runner.speculator = None
+    runner.model = lambda **kwargs: manager.hidden_states
+    runner.vllm_config = None
+    scheduler = SimpleNamespace(
+        total_num_scheduled_tokens=5, num_scheduled_tokens={"request": 5}, finished_req_ids=set()
+    )
+    return runner, scheduler
+
+
+@pytest.mark.parametrize("insecure", [None, "0"])
+def test_real_core_execution_and_safe_rpc_phase_snapshots(monkeypatch, insecure):
+    if insecure is None:
+        monkeypatch.delenv("VLLM_ALLOW_INSECURE_SERIALIZATION", raising=False)
+    else:
+        monkeypatch.setenv("VLLM_ALLOW_INSECURE_SERIALIZATION", insecure)
+    api = _boundary(monkeypatch)
+    workers = _workers(api, monkeypatch, benchmark._GRAPH_WORKER_EXTENSION)
+    schedulers = []
+    for worker in workers:
+        worker.worker.model_runner, scheduler = _core_execution_runner(api)
+        schedulers.append(scheduler)
+    executor = _executor(api, workers)
+
+    def serve(payload, extension=None):
+        # Persistent workers across phase RPCs; real utility decode/dispatch/encode.
+        engine = api.EngineCore()
+        engine.model_executor = executor
+        _, call_id, method_name, args = api.MsgpackDecoder().decode(payload)
+        method = getattr(engine, method_name)
+        output = api.UtilityOutput(call_id)
+        api.EngineCoreProc._invoke_utility_method(
+            method_name, lambda: method(*api.EngineCoreProc._convert_msgspec_args(method, args)), output, lambda _: None
+        )
+        return api.MsgpackEncoder().encode(output)[0]
+
+    monkeypatch.setattr(sys.modules[__name__], "_serve", serve)
+    frontend, sent = _frontend(api)
+    start = frontend.collective_rpc(benchmark._REPLAY_SNAPSHOT_METHOD)
+    for worker, scheduler in zip(workers, schedulers):
+        runner = worker.model_runner
+        assert runner.execute_model(scheduler, dummy_run=True) is None
+        assert runner.execute_model(scheduler) is None  # Warmup with real host batch fields.
+    warmup_end = frontend.collective_rpc(benchmark._REPLAY_SNAPSHOT_METHOD)
+    for worker, scheduler in zip(workers, schedulers):
+        assert worker.model_runner.execute_model(scheduler) is None
+    measured_end = frontend.collective_rpc(benchmark._REPLAY_SNAPSHOT_METHOD)
+    _assert_basic([start, warmup_end, measured_end])
+    args = SimpleNamespace(tensor_parallel_size=8)
+    measured = benchmark._replay_interval(args, warmup_end, measured_end)
+    assert measured["graph_replay_count"] == 1
+    assert measured["records"] == [
+        {"runtime_mode": "FULL", "num_unpadded_tokens": 5, "num_padded_tokens": 6, "num_paddings": 1, "count": 1}
+    ]
+    assert benchmark._replay_interval(args, start, warmup_end)["graph_replay_count"] == 1
+    assert all(state["excluded_dummy_replay_count"] == 1 for state in warmup_end)
+    assert len(sent) == 3  # No per-step RPC.
+
+
+@pytest.mark.parametrize("insecure", [None, "0"])
+def test_replay_observer_installs_by_named_rpc_in_fresh_process(monkeypatch, insecure):
+    if insecure is None:
+        monkeypatch.delenv("VLLM_ALLOW_INSECURE_SERIALIZATION", raising=False)
+    else:
+        monkeypatch.setenv("VLLM_ALLOW_INSECURE_SERIALIZATION", insecure)
+    api = _boundary(monkeypatch)
+    frontend, sent = _frontend(api, subprocess_worker=True)
+    states = frontend.collective_rpc(benchmark._REPLAY_SNAPSHOT_METHOD)
+    _assert_basic(states)
+    assert [state["rank"] for state in states] == list(range(8))
+    assert all(state["records"] == [] and state["error"] is None for state in states)
+    assert all(state["observer_id"] and state["source"] == benchmark._REPLAY_SOURCE for state in states)
+    assert all(state["eager_fallback_count"] is None for state in states)
+    assert len(sent) == 1

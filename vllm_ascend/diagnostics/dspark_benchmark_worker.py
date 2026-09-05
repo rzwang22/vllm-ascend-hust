@@ -9,6 +9,7 @@ No tensors, graph objects, callables or enum objects cross the telemetry RPC.
 
 from numbers import Integral
 from typing import Any
+from uuid import uuid4
 
 
 def _cudagraph_mode_name(value: Any) -> str | None:
@@ -21,8 +22,132 @@ def _cudagraph_mode_name(value: Any) -> str | None:
     return text.rsplit(".", 1)[-1]
 
 
+def _host_count(value: Any) -> int:
+    # Never convert a tensor: telemetry must not synchronize or copy from NPU.
+    if isinstance(value, bool) or not isinstance(value, Integral) or value < 0:
+        raise ValueError("Replay token counts must be nonnegative host integers.")
+    return int(value)
+
+
+class _FullReplayObserver:
+    """Benchmark-local wrappers; delegate each call once, preserve its return/exception.
+
+    Installed after model capture. A successful run_fullgraph is committed only
+    after its enclosing real execute_model returns successfully. Shapes come
+    from that call's completed InputBatch, not the scheduler's graph statistics.
+    Histograms bound storage by shape count rather than generation length.
+    """
+
+    def __init__(self, runner: Any) -> None:
+        self.runner = runner
+        self.manager = runner.cudagraph_manager
+        self.original_execute = runner.execute_model
+        self.original_fullgraph = self.manager.run_fullgraph
+        self.observer_id = str(uuid4())
+        self.pending: list[Any] | None = None
+        self.shapes: dict[tuple[int, int], int] = {}
+        self.excluded_dummy_replay_count = 0
+        self.excluded_unscoped_replay_count = 0
+        self.failed_execution_count = 0
+        self.error: str | None = None
+        runner.execute_model = self.execute_model
+        self.manager.run_fullgraph = self.run_fullgraph
+
+    def execute_model(
+        self,
+        scheduler_output: Any,
+        intermediate_tensors: Any = None,
+        dummy_run: bool = False,
+        skip_attn_for_dummy_run: bool = False,
+        is_profile: bool = False,
+    ) -> Any:
+        if self.pending is not None:
+            self.error = "Nested execute_model is unsupported by replay telemetry."
+        pending: list[Any] = []
+        previous = self.pending
+        self.pending = pending
+        try:
+            result = self.original_execute(
+                scheduler_output,
+                intermediate_tensors=intermediate_tensors,
+                dummy_run=dummy_run,
+                skip_attn_for_dummy_run=skip_attn_for_dummy_run,
+                is_profile=is_profile,
+            )
+        except BaseException:
+            self.failed_execution_count += 1
+            raise
+        else:
+            if dummy_run or is_profile:
+                self.excluded_dummy_replay_count += len(pending)
+            elif pending:
+                try:
+                    batch = self.runner.execute_model_state.input_batch
+                    unpadded = _host_count(batch.num_tokens)
+                    padded = _host_count(batch.num_tokens_after_padding)
+                    if (
+                        len(pending) != 1
+                        or _cudagraph_mode_name(pending[0].cg_mode) != "FULL"
+                        or _host_count(pending[0].num_tokens) != padded
+                        or not 0 < unpadded <= padded
+                    ):
+                        raise ValueError("FULL replay descriptor disagrees with the completed input batch.")
+                    shape = (unpadded, padded)
+                    self.shapes[shape] = self.shapes.get(shape, 0) + 1
+                except (AttributeError, TypeError, ValueError) as error:
+                    # Retain output/timing even if the evidence ABI is unavailable.
+                    self.error = str(error)
+            return result
+        finally:
+            self.pending = previous
+
+    def run_fullgraph(self, desc: Any) -> Any:
+        result = self.original_fullgraph(desc)
+        if self.pending is None:
+            self.excluded_unscoped_replay_count += 1
+        else:
+            self.pending.append(desc)
+        return result
+
+    def snapshot(self) -> dict[str, Any]:
+        if self.runner.execute_model != self.execute_model or self.manager.run_fullgraph != self.run_fullgraph:
+            self.error = "Replay observer was replaced after installation."
+        if self.pending is not None:
+            self.error = "Replay snapshot requested inside execute_model."
+        return {
+            "observer_id": self.observer_id,
+            "source": "mrv2_successful_execute_model_full_replay",
+            "error": self.error,
+            "records": [
+                {
+                    "runtime_mode": "FULL",
+                    "num_unpadded_tokens": unpadded,
+                    "num_padded_tokens": padded,
+                    "num_paddings": padded - unpadded,
+                    "count": count,
+                }
+                for (unpadded, padded), count in sorted(self.shapes.items())
+            ],
+            "excluded_dummy_replay_count": self.excluded_dummy_replay_count,
+            "excluded_unscoped_replay_count": self.excluded_unscoped_replay_count,
+            "failed_execution_count": self.failed_execution_count,
+            "eager_fallback_count": None,
+            "eager_fallback_evidence": "unavailable: observer covers FULL replay only",
+        }
+
+
 class DSparkBenchmarkWorkerExtension:
-    """Named telemetry RPC; no worker initialization or compute overrides."""
+    """Named benchmark telemetry RPC, installed through worker_extension_cls."""
+
+    def dspark_benchmark_replay_snapshot(self) -> dict[str, Any]:
+        """Install once at a quiescent boundary, then read cumulative host counters."""
+        rank = _host_count(self.rank)
+        runner = self.model_runner
+        observer = getattr(runner, "_dspark_benchmark_replay_observer", None)
+        if observer is None:
+            observer = _FullReplayObserver(runner)
+            runner._dspark_benchmark_replay_observer = observer
+        return {"rank": rank, **observer.snapshot()}
 
     def dspark_benchmark_graph_runtime(self) -> dict[str, Any]:
         """Return JSON-safe target/draft graph state from one real worker."""

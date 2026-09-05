@@ -90,6 +90,9 @@ def _validate_graph_execution(result: Mapping[str, Any], expected_mode: str) -> 
         or effective.get("static_kernel_enabled") is not result["static_kernel_enabled"]
     ):
         raise ValueError("Target graph result aliases differ from requested/effective engine configuration.")
+    graph_execution = result.get("graph_execution")
+    if isinstance(graph_execution, Mapping) and graph_execution.get("replay_evidence_status") == "unavailable":
+        raise ValueError("Replay evidence unavailable; output/timing diagnostics cannot pass benchmark validation.")
     for field in (
         "graph_capture_count",
         "graph_replay_count",
@@ -98,6 +101,14 @@ def _validate_graph_execution(result: Mapping[str, Any], expected_mode: str) -> 
         "measured_eager_fallback_count",
     ):
         value = result[field]
+        if (
+            requested_mode == "full_decode_only"
+            and field in {"graph_fallback_count", "measured_eager_fallback_count"}
+            and value is None
+            and isinstance(graph_execution, Mapping)
+            and graph_execution.get("eager_fallback_evidence", "").startswith("unavailable:")
+        ):
+            continue
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise ValueError(f"Target graph counter {field!r} is invalid.")
     for field in ("configured_capture_sizes", "observed_capture_sizes"):
@@ -383,12 +394,18 @@ def _target_execution_summary(results: Sequence[Mapping[str, Any]]) -> dict[str,
         "observed_capture_sizes": first["observed_capture_sizes"],
         "graph_capture_count": _statistics([float(result["graph_capture_count"]) for result in results]),
         "graph_replay_count": _statistics([float(result["graph_replay_count"]) for result in results]),
-        "graph_fallback_count": _statistics([float(result["graph_fallback_count"]) for result in results]),
+        "graph_fallback_count": (
+            None
+            if any(result["graph_fallback_count"] is None for result in results)
+            else _statistics([float(result["graph_fallback_count"]) for result in results])
+        ),
         "measured_graph_replay_count": _statistics(
             [float(result["measured_graph_replay_count"]) for result in results]
         ),
-        "measured_eager_fallback_count": _statistics(
-            [float(result["measured_eager_fallback_count"]) for result in results]
+        "measured_eager_fallback_count": (
+            None
+            if any(result["measured_eager_fallback_count"] is None for result in results)
+            else _statistics([float(result["measured_eager_fallback_count"]) for result in results])
         ),
     }
 

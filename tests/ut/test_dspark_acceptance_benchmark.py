@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 
+from tests.ut.test_dspark_graph_replay import batch, replay_worker
 from tools.dspark import benchmark_dspark_acceptance as benchmark
 from tools.dspark import summarize_dspark_acceptance_benchmark as summary
 
@@ -144,7 +145,9 @@ class _FakeEngine:
         self.tensor_parallel_size = args.tensor_parallel_size
         self.graph_enabled = graph_enabled
         self.graph_runtime_mode = "FULL"
-        self.emit_graph_metrics = True
+        self.emit_graph_metrics = False  # Frozen MRV2 has no scheduler graph-stat producer.
+        self.replay_workers = [replay_worker(rank) for rank in range(args.tensor_parallel_size)]
+        self.rpc_calls = []
         self.graph_capture_count = len(configured_capture_sizes) if graph_enabled else 0
         self.configured_capture_sizes = list(configured_capture_sizes)
         self.observed_capture_sizes = list(configured_capture_sizes) if graph_enabled else []
@@ -165,6 +168,10 @@ class _FakeEngine:
             scheduler_stats = SimpleNamespace(cudagraph_stats=graph_stats)
             for stat_logger in self.llm_engine.logger_manager.stat_loggers:
                 stat_logger.record(scheduler_stats, None)
+        if self.graph_enabled:
+            for worker in self.replay_workers:
+                tokens = len(prompts) * (6 if self.mode == "dspark" else 1)
+                worker.model_runner.execute_model(batch(tokens, tokens, self.graph_runtime_mode))
         return [
             _Output(prompt["prompt_token_ids"], [request_index + 10] * 4)
             for request_index, prompt in enumerate(prompts)
@@ -182,7 +189,11 @@ class _FakeEngine:
         self.shutdown_called = True
 
     def collective_rpc(self, method: str) -> list[dict[str, Any]]:
-        assert type(method) is str and method == benchmark._GRAPH_SNAPSHOT_METHOD
+        assert type(method) is str
+        self.rpc_calls.append(method)
+        if method == benchmark._REPLAY_SNAPSHOT_METHOD:
+            return [worker.dspark_benchmark_replay_snapshot() for worker in self.replay_workers]
+        assert method == benchmark._GRAPH_SNAPSHOT_METHOD
         speculator_requested = "FULL_DECODE_ONLY" if self.mode == "dspark" else None
         speculator_effective = "NONE" if self.mode == "dspark" else None
         return [
@@ -804,9 +815,9 @@ def test_graph_run_records_capture_replay_and_eager_draft(
     assert result["observed_capture_sizes"] == [6, 24]
     assert result["graph_capture_count"] == 2
     assert result["graph_replay_count"] == 2
-    assert result["graph_fallback_count"] == 0
+    assert result["graph_fallback_count"] is None
     assert result["measured_graph_replay_count"] == 1
-    assert result["measured_eager_fallback_count"] == 0
+    assert result["measured_eager_fallback_count"] is None
     assert result["graph_execution"]["warmup_runtime"]["record_count"] == 1
     assert result["graph_execution"]["measured_runtime"]["record_count"] == 1
     assert result["timing"]["graph_capture_included"] is False
@@ -815,42 +826,26 @@ def test_graph_run_records_capture_replay_and_eager_draft(
     json.dumps(result)
 
 
-@pytest.mark.parametrize(
-    ("configure", "match"),
-    [
-        (lambda engine: setattr(engine, "emit_graph_metrics", False), "published no graph runtime metrics"),
-        (lambda engine: setattr(engine, "graph_runtime_mode", "NONE"), "performed no target graph replay"),
-        (
-            lambda engine: (
-                setattr(engine, "graph_capture_count", 0),
-                setattr(engine, "observed_capture_sizes", []),
-            ),
-            "without captured target graph descriptors",
-        ),
-    ],
-)
-def test_graph_run_fails_closed_without_runtime_proof(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    configure: Any,
-    match: str,
-) -> None:
-    args = _graph_args(tmp_path)
-    engine = _FakeEngine(args)
-    configure(engine)
-    monkeypatch.setattr(benchmark, "_git_head", lambda _path: "a" * 40)
+def test_graph_run_fails_before_generation_without_capture(tmp_path, monkeypatch):
+    def configure(engine):
+        engine.graph_capture_count = 0
+        engine.observed_capture_sizes = []
 
-    with pytest.raises(RuntimeError, match=match):
-        benchmark.run_benchmark(
-            args,
-            engine_factory=lambda _kwargs: engine,
-            sampling_factory=lambda _args: object(),
-            clock=iter((10.0, 12.0)).__next__,
-            plugin_root=tmp_path,
-            core_root=tmp_path,
-        )
+    with pytest.raises(RuntimeError, match="without captured target graph descriptors"):
+        _run_graph(tmp_path, monkeypatch, "dspark", configure)
 
-    assert engine.shutdown_called is True
+
+def test_graph_run_preserves_diagnostics_without_actual_replay(tmp_path, monkeypatch):
+    result, engine = _run_graph(
+        tmp_path, monkeypatch, "dspark", lambda engine: setattr(engine, "graph_runtime_mode", "NONE")
+    )
+    assert result["graph_execution"]["replay_evidence_status"] == "unavailable"
+    assert "performed no target graph replay" in result["graph_execution"]["error"]
+    assert result["measured_graph_replay_count"] is None
+    assert result["outputs"] and result["timing"]["elapsed_seconds"] == 2.0
+    assert engine.shutdown_called
+    with pytest.raises(ValueError, match="Replay evidence unavailable"):
+        summary._validate_graph_execution(result, "dspark")
 
 
 def test_capture_and_warmup_full_do_not_replace_measured_replay(tmp_path, monkeypatch):
@@ -863,13 +858,19 @@ def test_capture_and_warmup_full_do_not_replace_measured_replay(tmp_path, monkey
         return generate(prompts, params, use_tqdm=use_tqdm)
 
     engine.generate = generate_phase
-    with pytest.raises(RuntimeError, match="measured decode performed no target graph replay"):
-        benchmark.run_benchmark(
-            args,
-            engine_factory=lambda kwargs: engine,
-            sampling_factory=lambda args: object(),
-            clock=iter((10.0, 12.0)).__next__,
-        )
+    monkeypatch.setattr(benchmark, "_git_head", lambda _path: "a" * 40)
+    result = benchmark.run_benchmark(
+        args,
+        engine_factory=lambda kwargs: engine,
+        sampling_factory=lambda args: object(),
+        clock=iter((10.0, 12.0)).__next__,
+        plugin_root=tmp_path,
+        core_root=tmp_path,
+    )
+    assert result["graph_execution"]["replay_evidence_status"] == "unavailable"
+    assert result["graph_execution"]["warmup_runtime"]["graph_replay_count"] == 1
+    assert result["graph_execution"]["measured_runtime"]["graph_replay_count"] == 0
+    assert result["outputs"] and result["timing"]["elapsed_seconds"] == 2.0
     assert len(engine.generate_calls) == 2 and engine.graph_capture_count > 0
     assert engine.shutdown_called
 
@@ -1304,3 +1305,45 @@ def test_cleanup_has_no_process_kill_or_global_shutdown_patch() -> None:
     assert "killall" not in source
     assert "os._exit" not in source
     assert "LLMEngine.shutdown =" not in source
+
+
+@pytest.mark.parametrize("fault", ["missing_rank", "rpc_failure"])
+def test_post_generate_telemetry_failure_keeps_json_and_has_no_pass_marker(tmp_path, monkeypatch, capsys, fault):
+    args = _graph_args(tmp_path)
+    engine = _FakeEngine(args)
+    rpc = engine.collective_rpc
+    events = []
+
+    def observed_rpc(method):
+        events.append("rpc")
+        states = rpc(method)
+        if method == benchmark._REPLAY_SNAPSHOT_METHOD and len(engine.generate_calls) == 2:
+            if fault == "rpc_failure":
+                raise RuntimeError("telemetry transport failed")
+            states.pop()
+        return states
+
+    def clock():
+        events.append("clock")
+        return float(events.count("clock"))
+
+    engine.collective_rpc = observed_rpc
+    monkeypatch.setattr(benchmark, "_git_head", lambda _path: "a" * 40)
+    result = benchmark.run_benchmark(
+        args,
+        engine_factory=lambda kwargs: engine,
+        sampling_factory=lambda args: object(),
+        clock=clock,
+        plugin_root=tmp_path,
+        core_root=tmp_path,
+    )
+    assert events == ["rpc", "rpc", "rpc", "clock", "clock", "rpc"]
+    assert result["graph_execution"]["replay_evidence_status"] == "unavailable"
+    assert result["outputs"] and result["throughput"]["total_output_tokens"] == 8
+    monkeypatch.setattr(benchmark, "parse_args", lambda argv: args)
+    monkeypatch.setattr(benchmark, "run_benchmark", lambda args: result)
+    assert benchmark.main([]) == 1
+    saved = json.loads(args.result_json.read_text())
+    assert saved == result and saved["cleanup"]["engine_shutdown_complete"]
+    output = capsys.readouterr()
+    assert "BENCHMARK_PASS" not in output.out and "Replay evidence unavailable" in output.err

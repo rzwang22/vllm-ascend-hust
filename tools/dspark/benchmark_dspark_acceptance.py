@@ -53,6 +53,8 @@ _MULTIPROCESS_LLM_ENGINE_TYPE = ("vllm.v1.engine.llm_engine", "LLMEngine")
 _SYNC_ENGINE_CORE_CLIENT_TYPE = ("vllm.v1.engine.core_client", "SyncMPClient")
 _GRAPH_WORKER_EXTENSION = "vllm_ascend.diagnostics.dspark_benchmark_worker.DSparkBenchmarkWorkerExtension"
 _GRAPH_SNAPSHOT_METHOD = "dspark_benchmark_graph_runtime"
+_REPLAY_SNAPSHOT_METHOD = "dspark_benchmark_replay_snapshot"
+_REPLAY_SOURCE = "mrv2_successful_execute_model_full_replay"
 
 
 @dataclass(frozen=True)
@@ -60,76 +62,6 @@ class PromptSource:
     source_index: int
     value: str | list[int]
     source_record_sha256: str
-
-
-class _CUDAGraphRuntimeCollector:
-    """Collect host-side scheduler graph dispatch records for one run phase."""
-
-    def __init__(self) -> None:
-        self._records: list[dict[str, Any]] = []
-
-    def record(
-        self,
-        scheduler_stats: Any,
-        _iteration_stats: Any,
-        mm_cache_stats: Any = None,
-        engine_idx: int = 0,
-    ) -> None:
-        del mm_cache_stats
-        graph_stats = getattr(scheduler_stats, "cudagraph_stats", None)
-        if graph_stats is None:
-            return
-        runtime_mode = _cudagraph_mode_name(getattr(graph_stats, "runtime_mode", None))
-        if runtime_mode not in {
-            _CUDAGRAPH_MODE_NONE,
-            _CUDAGRAPH_MODE_FULL,
-            _CUDAGRAPH_MODE_PIECEWISE,
-        }:
-            raise RuntimeError(f"Unknown runtime CUDAGraph mode {runtime_mode!r}.")
-        record = {"engine_idx": engine_idx, "runtime_mode": runtime_mode}
-        for field in ("num_unpadded_tokens", "num_padded_tokens", "num_paddings"):
-            value = getattr(graph_stats, field, None)
-            if isinstance(value, bool) or not isinstance(value, Integral) or value < 0:
-                raise RuntimeError(f"CUDAGraph runtime metric {field!r} is invalid: {value!r}.")
-            record[field] = int(value)
-        if record["num_padded_tokens"] < record["num_unpadded_tokens"]:
-            raise RuntimeError("CUDAGraph runtime metrics report fewer padded than unpadded tokens.")
-        if record["num_paddings"] != record["num_padded_tokens"] - record["num_unpadded_tokens"]:
-            raise RuntimeError("CUDAGraph runtime padding metrics are inconsistent.")
-        self._records.append(record)
-
-    def log_engine_initialized(self) -> None:
-        return None
-
-    def log(self) -> None:
-        return None
-
-    def record_sleep_state(self, _is_awake: int, _level: int) -> None:
-        return None
-
-    def reset(self) -> None:
-        self._records.clear()
-
-    def snapshot(self) -> dict[str, Any]:
-        records = [dict(record) for record in self._records]
-        replay_count = sum(
-            record["runtime_mode"] in {_CUDAGRAPH_MODE_FULL, _CUDAGRAPH_MODE_PIECEWISE} for record in records
-        )
-        fallback_count = sum(record["runtime_mode"] == _CUDAGRAPH_MODE_NONE for record in records)
-        return {
-            "record_count": len(records),
-            "graph_replay_count": replay_count,
-            "eager_fallback_count": fallback_count,
-            "runtime_mode_counts": {
-                mode: sum(record["runtime_mode"] == mode for record in records)
-                for mode in (
-                    _CUDAGRAPH_MODE_NONE,
-                    _CUDAGRAPH_MODE_FULL,
-                    _CUDAGRAPH_MODE_PIECEWISE,
-                )
-            },
-            "records": records,
-        }
 
 
 def _canonical_json_bytes(value: Any) -> bytes:
@@ -556,14 +488,95 @@ def _collect_worker_graph_runtime(engine: Any, args: argparse.Namespace) -> dict
     }
 
 
-def _install_graph_runtime_collector(engine: Any) -> _CUDAGraphRuntimeCollector:
-    logger_manager = getattr(getattr(engine, "llm_engine", None), "logger_manager", None)
-    stat_loggers = getattr(logger_manager, "stat_loggers", None)
-    if not isinstance(stat_loggers, list):
-        raise RuntimeError("Public LLM does not expose scheduler stat loggers for graph replay evidence.")
-    collector = _CUDAGraphRuntimeCollector()
-    stat_loggers.append(collector)
-    return collector
+def _replay_ranks(states: Any, args: argparse.Namespace) -> dict[int, Mapping[str, Any]]:
+    if not isinstance(states, list) or len(states) != args.tensor_parallel_size:
+        raise RuntimeError("Replay evidence does not cover every tensor-parallel rank.")
+    if any(not isinstance(state, Mapping) or type(state.get("rank")) is not int for state in states):
+        raise RuntimeError("Replay evidence contains invalid rank identities.")
+    ranks = {state["rank"]: state for state in states}
+    if sorted(ranks) != list(range(args.tensor_parallel_size)):
+        raise RuntimeError("Replay evidence must contain each tensor-parallel rank exactly once.")
+    return ranks
+
+
+def _replay_shapes(state: Mapping[str, Any]) -> dict[tuple[int, int], int]:
+    if state.get("source") != _REPLAY_SOURCE or state.get("error") is not None:
+        raise RuntimeError(f"Replay observer evidence unavailable: {state.get('error')!r}.")
+    records = state.get("records")
+    if not isinstance(records, list):
+        raise RuntimeError("Replay observer omitted its shape counters.")
+    shapes = {}
+    for record in records:
+        if not isinstance(record, Mapping) or record.get("runtime_mode") != "FULL":
+            raise RuntimeError("Replay observer reported a non-FULL record.")
+        values = [record.get(key) for key in ("num_unpadded_tokens", "num_padded_tokens", "num_paddings", "count")]
+        if any(type(value) is not int or value < 0 for value in values):
+            raise RuntimeError("Replay observer shape/count fields must be nonnegative integers.")
+        unpadded, padded, padding, count = values
+        if not 0 < unpadded <= padded or padding != padded - unpadded or count <= 0:
+            raise RuntimeError("Replay observer reported inconsistent shape counters.")
+        shape = (unpadded, padded)
+        if shape in shapes:
+            raise RuntimeError("Replay observer reported a duplicate shape counter.")
+        shapes[shape] = count
+    return shapes
+
+
+def _replay_interval(args: argparse.Namespace, start: Any, end: Any) -> dict[str, Any]:
+    before, after = _replay_ranks(start, args), _replay_ranks(end, args)
+    workers = []
+    for rank in sorted(before):
+        first, last = before[rank], after[rank]
+        observer_id = first.get("observer_id")
+        if not isinstance(observer_id, str) or not observer_id or observer_id != last.get("observer_id"):
+            raise RuntimeError("Replay observer was reset between phase boundaries.")
+        first_shapes, last_shapes = _replay_shapes(first), _replay_shapes(last)
+        records = []
+        for shape in sorted(first_shapes.keys() | last_shapes.keys()):
+            count = last_shapes.get(shape, 0) - first_shapes.get(shape, 0)
+            if count < 0:
+                raise RuntimeError("Replay shape counter decreased between phase boundaries.")
+            if count:
+                unpadded, padded = shape
+                records.append(
+                    {
+                        "runtime_mode": "FULL",
+                        "num_unpadded_tokens": unpadded,
+                        "num_padded_tokens": padded,
+                        "num_paddings": padded - unpadded,
+                        "count": count,
+                    }
+                )
+        excluded = {}
+        for key in ("excluded_dummy_replay_count", "excluded_unscoped_replay_count", "failed_execution_count"):
+            values = [state.get(key) for state in (first, last)]
+            if any(type(value) is not int or value < 0 for value in values) or values[1] < values[0]:
+                raise RuntimeError(f"Invalid replay observer counter: {key}.")
+            excluded[key] = values[1] - values[0]
+        if excluded["failed_execution_count"]:
+            raise RuntimeError("Replay interval contains a failed execute_model call.")
+        workers.append(
+            {
+                "rank": rank,
+                "observer_id": observer_id,
+                "records": records,
+                "graph_replay_count": sum(record["count"] for record in records),
+                **excluded,
+            }
+        )
+    # TP ranks execute the same batch: require agreement, never sum rank counts.
+    if any(worker["records"] != workers[0]["records"] for worker in workers[1:]):
+        raise RuntimeError("FULL replay shapes/counts differ across tensor-parallel ranks.")
+    return {
+        "source": _REPLAY_SOURCE,
+        "record_count": workers[0]["graph_replay_count"],
+        "graph_replay_count": workers[0]["graph_replay_count"],
+        "records": workers[0]["records"],
+        "workers": workers,
+        "rank_aggregation": "require_identical_shapes_and_counts_then_use_one_rank",
+        "eager_fallback_count": None,
+        "eager_fallback_evidence": "unavailable: observer covers FULL replay only",
+    }
 
 
 def _graph_execution_result(
@@ -575,6 +588,7 @@ def _graph_execution_result(
 ) -> dict[str, Any]:
     if args.target_execution_mode == "eager":
         return {
+            "replay_evidence_status": "not_applicable",
             "configured_capture_sizes": list(effective["frontend_configured_capture_sizes"]),
             "observed_capture_sizes": [],
             "graph_capture_count": 0,
@@ -593,19 +607,18 @@ def _graph_execution_result(
         or worker_runtime.get("static_kernel_enabled") is not effective["static_kernel_enabled"]
     ):
         raise RuntimeError("Frontend and worker target graph configuration evidence differs.")
-    if measured_runtime.get("record_count", 0) <= 0:
-        raise RuntimeError("FULL_DECODE_ONLY measured interval published no graph runtime metrics.")
-    if measured_runtime.get("runtime_mode_counts", {}).get(_CUDAGRAPH_MODE_PIECEWISE, 0):
-        raise RuntimeError("FULL_DECODE_ONLY unexpectedly dispatched a PIECEWISE graph.")
     measured_replay_count = measured_runtime.get("graph_replay_count", 0)
     if measured_replay_count <= 0:
         raise RuntimeError("FULL_DECODE_ONLY measured decode performed no target graph replay.")
     return {
+        "replay_evidence_status": "available",
+        "source": _REPLAY_SOURCE,
+        "eager_fallback_evidence": "unavailable: observer covers FULL replay only",
         "configured_capture_sizes": list(worker_runtime["configured_capture_sizes"]),
         "observed_capture_sizes": list(worker_runtime["observed_capture_sizes"]),
         "graph_capture_count": worker_runtime["graph_capture_count"],
         "graph_replay_count": warmup_runtime["graph_replay_count"] + measured_replay_count,
-        "graph_fallback_count": warmup_runtime["eager_fallback_count"] + measured_runtime["eager_fallback_count"],
+        "graph_fallback_count": None,
         "measured_graph_replay_count": measured_replay_count,
         "measured_eager_fallback_count": measured_runtime["eager_fallback_count"],
         "warmup_runtime": dict(warmup_runtime),
@@ -1125,25 +1138,33 @@ def run_benchmark(
             expected_model_type=model_descriptor["model_type"],
         )
         graph_worker_runtime: dict[str, Any] | None = None
-        graph_collector: _CUDAGraphRuntimeCollector | None = None
+        graph_snapshots: list[Any] = []
+        graph_errors: list[str] = []
+
+        def snapshot_replays() -> None:
+            if args.target_execution_mode == "full_decode_only":
+                try:
+                    graph_snapshots.append(engine.collective_rpc(_REPLAY_SNAPSHOT_METHOD))
+                except Exception as error:
+                    graph_snapshots.append(None)
+                    graph_errors.append(f"{type(error).__name__}: {error}")
+
         if args.target_execution_mode == "full_decode_only":
             graph_worker_runtime = _collect_worker_graph_runtime(engine, args)
-            graph_collector = _install_graph_runtime_collector(engine)
         prompts, prompt_identities, prompt_set_sha256 = tokenize_prompt_sources(sources, engine.get_tokenizer())
         sampling_params = sampling_factory(args)
         if args.warmup_prompts > len(prompts):
             raise ValueError("--warmup-prompts cannot exceed the measured prompt count.")
         warmup_count = args.warmup_prompts
+        snapshot_replays()  # Installs the observer after capture; baseline before warmup.
         if warmup_count:
             engine.generate(prompts[:warmup_count], sampling_params, use_tqdm=False)
-        warmup_graph_runtime = graph_collector.snapshot() if graph_collector is not None else None
-        if graph_collector is not None:
-            graph_collector.reset()
+        snapshot_replays()  # Warmup end / measured start; outside the timed interval.
         metrics_start = capture_spec_metrics(engine.get_metrics())
         measured_started_at = clock()
         outputs = engine.generate(prompts, sampling_params, use_tqdm=False)
         measured_finished_at = clock()
-        measured_graph_runtime = graph_collector.snapshot() if graph_collector is not None else None
+        snapshot_replays()  # Synchronous generate has returned; timing has stopped.
         metrics_end = capture_spec_metrics(engine.get_metrics())
         elapsed_seconds = measured_finished_at - measured_started_at
         if not math.isfinite(elapsed_seconds) or elapsed_seconds <= 0:
@@ -1159,13 +1180,35 @@ def run_benchmark(
         else:
             metric_delta = None
             acceptance = _not_applicable_acceptance(args.num_spec_tokens)
-        graph_execution = _graph_execution_result(
-            args,
-            effective,
-            graph_worker_runtime,
-            warmup_graph_runtime,
-            measured_graph_runtime,
-        )
+        warmup_graph_runtime = measured_graph_runtime = None
+        try:
+            if graph_errors:
+                raise RuntimeError("; ".join(graph_errors))
+            if graph_snapshots:
+                warmup_graph_runtime = _replay_interval(args, graph_snapshots[0], graph_snapshots[1])
+                measured_graph_runtime = _replay_interval(args, graph_snapshots[1], graph_snapshots[2])
+            graph_execution = _graph_execution_result(
+                args, effective, graph_worker_runtime, warmup_graph_runtime, measured_graph_runtime
+            )
+        except RuntimeError as error:
+            # Generation already completed: keep its outputs and raw timing even
+            # when telemetry fails. main writes this diagnostic but never PASS.
+            graph_execution = {
+                "replay_evidence_status": "unavailable",
+                "error": str(error),
+                "source": _REPLAY_SOURCE,
+                "configured_capture_sizes": list(effective["frontend_configured_capture_sizes"]),
+                "observed_capture_sizes": (graph_worker_runtime or {}).get("observed_capture_sizes", []),
+                "graph_capture_count": (graph_worker_runtime or {}).get("graph_capture_count"),
+                "graph_replay_count": None,
+                "graph_fallback_count": None,
+                "measured_graph_replay_count": None,
+                "measured_eager_fallback_count": None,
+                "warmup_runtime": warmup_graph_runtime,
+                "measured_runtime": measured_graph_runtime,
+                "worker_capture": graph_worker_runtime,
+            }
+        graph_execution["boundary_snapshots"] = graph_snapshots
         sampling = {
             "temperature": args.temperature,
             "top_p": args.top_p,
@@ -1236,6 +1279,7 @@ def run_benchmark(
                 "graph_capture_included": False,
                 "graph_warmup_included": False,
                 "explicit_device_synchronization": False,
+                "graph_telemetry_rpc_included": False,
                 "elapsed_seconds": elapsed_seconds,
             },
             "throughput": {
@@ -1370,6 +1414,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     result = run_benchmark(args)
     _atomic_write_json(args.result_json.expanduser().resolve(), result)
+    if result["graph_execution"].get("replay_evidence_status") == "unavailable":
+        print(f"Replay evidence unavailable: {result['graph_execution']['error']}", file=sys.stderr)
+        print(f"Outputs and raw timing diagnostics retained: {args.result_json}", file=sys.stderr)
+        return 1
     _print_summary(result)
     print(f"DSPARK_PR_STYLE_BENCHMARK_PASS={args.result_json}")
     return 0
