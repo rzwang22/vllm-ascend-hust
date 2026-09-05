@@ -49,8 +49,11 @@ elif name == 'tee':
 elif name == 'python':
     if args[:2] == ['-m', 'pytest']:
         assert 'tests/ut/attention/test_dsa_padding_contract.py' in args
-        if os.environ['P08_TEST_REVISION'] == 'r5':
+        if os.environ['P08_TEST_REVISION'] in ('r5', 'r6'):
             assert 'tests/ut/attention/test_dsa_capture_validation.py' in args
+        if os.environ['P08_TEST_REVISION'] == 'r6':
+            assert 'tests/ut/test_dspark_graph_rpc.py' in args
+            assert os.environ['VLLM_ALLOW_INSECURE_SERIALIZATION'] == '0'
         print('CPU test: focused invocation recorded')
         sys.exit(7 if failure == 'focused' else 0)
     elif args[0].endswith('/benchmark_dspark_acceptance.py'):
@@ -83,6 +86,8 @@ elif name == 'python':
         sys.exit(9 if failure == 'graph' else 0)
     elif args[0] == '-' and args[1].endswith('/vllm-ascend-hust'):
         sys.stdin.read()
+        if os.environ['P08_TEST_REVISION'] == 'r6':
+            assert os.environ['VLLM_ALLOW_INSECURE_SERIALIZATION'] == '0'
         print('CPU test: source imports replaced')
     elif args[0] == '-' and args[1].endswith('/graph-p1.json'):
         # Execute the script's actual JSON assertions, including measured FULL.
@@ -95,7 +100,7 @@ else:
 
 
 @pytest.mark.parametrize("failure", ["none", "focused", "graph", "tee", "replay_zero", "replay_eager", "replay_shape"])
-@pytest.mark.parametrize("revision", ["r4", "r5"])
+@pytest.mark.parametrize("revision", ["r4", "r5", "r6"])
 def test_server_script_preserves_failures_and_requires_measured_full(tmp_path, failure, revision):
     workspace = tmp_path / "workspace"
     plugin = workspace / "vllm-ascend-hust"
@@ -127,7 +132,11 @@ def test_server_script_preserves_failures_and_requires_measured_full(tmp_path, f
         "P08_TEST_CORE": CORE_SHA,
         "P08_TEST_PLUGIN": PLUGIN_SHA,
     }
-    result = subprocess.run(["bash", str(script)], env=env, text=True, capture_output=True, timeout=30)
+    command = ["bash", str(script)]
+    if revision == "r6":
+        command.append(PLUGIN_SHA)
+        env["VLLM_ALLOW_INSECURE_SERIALIZATION"] = "1"  # Runner must explicitly pin 0.
+    result = subprocess.run(command, env=env, text=True, capture_output=True, timeout=30)
     assert (result.returncode == 0) == (failure == "none"), result.stdout + result.stderr
     outputs = list((workspace / "dspark-results").glob(f"m2_5a-p08-{revision}.*"))
     assert len(outputs) == 1
@@ -144,3 +153,31 @@ def test_server_script_preserves_failures_and_requires_measured_full(tmp_path, f
         assert (out / "graph-p1.json").is_file()
         assert gate["REPLAY_GATE_RC"] == ("99" if failure == "graph" else "0" if failure == "none" else "1")
     assert data.is_file()  # The previous run's evidence is never removed.
+
+
+@pytest.mark.parametrize("fault", ["missing_plugin_sha", "wrong_plugin_sha", "wrong_core_sha"])
+def test_r6_exact_source_gate_preserves_logs_and_does_not_run_graph(tmp_path, fault):
+    # Exercise the complete runner first to create the strict command shims.
+    test_server_script_preserves_failures_and_requires_measured_full(tmp_path, "none", "r6")
+    workspace = tmp_path / "workspace"
+    command = ["bash", str(tmp_path / "run.sh")]
+    if fault != "missing_plugin_sha":
+        command.append("0" * 40 if fault == "wrong_plugin_sha" else PLUGIN_SHA)
+    env = {
+        **os.environ,
+        "PATH": f"{tmp_path / 'bin'}:{os.environ['PATH']}",
+        "P08_TEST_FAILURE": "none",
+        "P08_TEST_REVISION": "r6",
+        "P08_TEST_TEE": shutil.which("tee"),
+        "P08_TEST_CORE": "0" * 40 if fault == "wrong_core_sha" else CORE_SHA,
+        "P08_TEST_PLUGIN": PLUGIN_SHA,
+    }
+    result = subprocess.run(command, env=env, text=True, capture_output=True, timeout=30)
+    assert result.returncode != 0
+    outputs = list((workspace / "dspark-results").glob("m2_5a-p08-r6.*"))
+    assert len(outputs) == 2  # Each invocation keeps a new directory, including failure.
+    failed = next(path for path in outputs if not (path / "focused.log").exists())
+    gate = dict(line.split("=", 1) for line in (failed / "gate.txt").read_text().splitlines())
+    assert gate["SOURCE_GATE_RC"] != "0" and gate["GRAPH_P1_RC"] == "99"
+    assert (failed / "source-pipestatus.txt").read_text().strip() == "1 0"
+    assert (failed / "process-after.log").is_file() and (failed / "source.log").is_file()

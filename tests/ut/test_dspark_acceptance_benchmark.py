@@ -181,7 +181,8 @@ class _FakeEngine:
     def _shutdown(self) -> None:
         self.shutdown_called = True
 
-    def collective_rpc(self, _method: object) -> list[dict[str, Any]]:
+    def collective_rpc(self, method: str) -> list[dict[str, Any]]:
+        assert type(method) is str and method == benchmark._GRAPH_SNAPSHOT_METHOD
         speculator_requested = "FULL_DECODE_ONLY" if self.mode == "dspark" else None
         speculator_effective = "NONE" if self.mode == "dspark" else None
         return [
@@ -348,6 +349,7 @@ def test_engine_kwargs_select_target_only_or_exact_dspark_config(tmp_path: Path)
     }
     assert target["enforce_eager"] is True
     assert "compilation_config" not in target
+    assert "worker_extension_cls" not in target and "worker_extension_cls" not in dspark
     assert dspark["tensor_parallel_size"] == 8
     assert dspark["enable_expert_parallel"] is True
     assert dspark["async_scheduling"] is True
@@ -364,6 +366,7 @@ def test_full_decode_only_configures_target_graph_and_eager_draft(tmp_path: Path
     assert "enforce_eager" not in kwargs
     assert kwargs["compilation_config"] == {"cudagraph_mode": "FULL_DECODE_ONLY"}
     assert kwargs["cudagraph_metrics"] is True
+    assert kwargs["worker_extension_cls"] == benchmark._GRAPH_WORKER_EXTENSION
     if mode == "target_only":
         assert kwargs["speculative_config"] is None
     else:
@@ -413,46 +416,6 @@ def test_full_decode_only_rejects_launch_blocking(tmp_path: Path, monkeypatch: p
 
     with pytest.raises(RuntimeError, match="rejects ASCEND_LAUNCH_BLOCKING=1"):
         benchmark.build_engine_kwargs(args)
-
-
-def test_worker_graph_snapshot_reads_current_mrv2_target_and_draft_abi() -> None:
-    class Descriptor:
-        def __init__(self, num_tokens: int):
-            self.num_tokens = num_tokens
-
-    runner = SimpleNamespace(
-        compilation_config=SimpleNamespace(
-            cudagraph_mode="FULL_DECODE_ONLY",
-            cudagraph_capture_sizes=[6, 24],
-        ),
-        cudagraph_manager=SimpleNamespace(
-            graphs={Descriptor(6): object(), Descriptor(24): object()},
-        ),
-        ascend_config=SimpleNamespace(
-            ascend_compilation_config=SimpleNamespace(
-                enable_npugraph_ex=True,
-                enable_static_kernel=False,
-            )
-        ),
-        speculator=SimpleNamespace(
-            requested_cudagraph_mode="FULL_DECODE_ONLY",
-            cudagraph_mode="NONE",
-        ),
-    )
-
-    snapshot = benchmark._worker_graph_runtime_snapshot(SimpleNamespace(rank=3, model_runner=runner))
-
-    assert snapshot == {
-        "rank": 3,
-        "target_cudagraph_mode": "FULL_DECODE_ONLY",
-        "configured_capture_sizes": [6, 24],
-        "observed_capture_sizes": [6, 24],
-        "graph_capture_count": 2,
-        "npugraph_ex_enabled": True,
-        "static_kernel_enabled": False,
-        "dspark_requested_cudagraph_mode": "FULL_DECODE_ONLY",
-        "dspark_cudagraph_mode": "NONE",
-    }
 
 
 def test_mrv2_environment_is_set_before_dynamic_vllm_import(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -888,6 +851,27 @@ def test_graph_run_fails_closed_without_runtime_proof(
         )
 
     assert engine.shutdown_called is True
+
+
+def test_capture_and_warmup_full_do_not_replace_measured_replay(tmp_path, monkeypatch):
+    args = _graph_args(tmp_path)
+    engine = _FakeEngine(args)
+    generate = engine.generate
+
+    def generate_phase(prompts, params, *, use_tqdm):
+        engine.graph_runtime_mode = "NONE" if engine.generate_calls else "FULL"
+        return generate(prompts, params, use_tqdm=use_tqdm)
+
+    engine.generate = generate_phase
+    with pytest.raises(RuntimeError, match="measured decode performed no target graph replay"):
+        benchmark.run_benchmark(
+            args,
+            engine_factory=lambda kwargs: engine,
+            sampling_factory=lambda args: object(),
+            clock=iter((10.0, 12.0)).__next__,
+        )
+    assert len(engine.generate_calls) == 2 and engine.graph_capture_count > 0
+    assert engine.shutdown_called
 
 
 def test_graph_run_rejects_non_eager_dspark_config(tmp_path: Path) -> None:

@@ -51,6 +51,8 @@ MODEL_FINGERPRINT_FILES = (
 _PUBLIC_LLM_TYPE = ("vllm.entrypoints.llm", "LLM")
 _MULTIPROCESS_LLM_ENGINE_TYPE = ("vllm.v1.engine.llm_engine", "LLMEngine")
 _SYNC_ENGINE_CORE_CLIENT_TYPE = ("vllm.v1.engine.core_client", "SyncMPClient")
+_GRAPH_WORKER_EXTENSION = "vllm_ascend.diagnostics.dspark_benchmark_worker.DSparkBenchmarkWorkerExtension"
+_GRAPH_SNAPSHOT_METHOD = "dspark_benchmark_graph_runtime"
 
 
 @dataclass(frozen=True)
@@ -495,52 +497,11 @@ def _validate_target_execution_environment(
         raise RuntimeError("FULL_DECODE_ONLY ACLGraph rejects ASCEND_LAUNCH_BLOCKING=1.")
 
 
-def _worker_graph_runtime_snapshot(worker: Any) -> dict[str, Any]:
-    """Return JSON-safe target/draft graph state from one real worker."""
-    runner = getattr(worker, "model_runner", None)
-    if runner is None:
-        raise RuntimeError("Worker does not expose its MRV2 model runner.")
-    compilation_config = getattr(runner, "compilation_config", None)
-    graph_manager = getattr(runner, "cudagraph_manager", None)
-    graphs = getattr(graph_manager, "graphs", None)
-    if not isinstance(graphs, dict):
-        raise RuntimeError("MRV2 model runner does not expose captured graph descriptors.")
-    descriptors = list(graphs)
-    observed_capture_sizes = sorted(
-        {
-            int(num_tokens)
-            for descriptor in descriptors
-            if isinstance((num_tokens := getattr(descriptor, "num_tokens", None)), Integral)
-            and not isinstance(num_tokens, bool)
-            and num_tokens > 0
-        }
-    )
-    configured_capture_sizes = getattr(compilation_config, "cudagraph_capture_sizes", None)
-    if not isinstance(configured_capture_sizes, list) or any(
-        isinstance(value, bool) or not isinstance(value, Integral) or value <= 0 for value in configured_capture_sizes
-    ):
-        raise RuntimeError("MRV2 model runner exposes invalid configured capture sizes.")
-    ascend_config = getattr(runner, "ascend_config", None)
-    ascend_compilation = getattr(ascend_config, "ascend_compilation_config", None)
-    speculator = getattr(runner, "speculator", None)
-    return {
-        "rank": getattr(worker, "rank", None),
-        "target_cudagraph_mode": _cudagraph_mode_name(getattr(compilation_config, "cudagraph_mode", None)),
-        "configured_capture_sizes": [int(value) for value in configured_capture_sizes],
-        "observed_capture_sizes": observed_capture_sizes,
-        "graph_capture_count": len(descriptors),
-        "npugraph_ex_enabled": getattr(ascend_compilation, "enable_npugraph_ex", None),
-        "static_kernel_enabled": getattr(ascend_compilation, "enable_static_kernel", None),
-        "dspark_requested_cudagraph_mode": _cudagraph_mode_name(getattr(speculator, "requested_cudagraph_mode", None)),
-        "dspark_cudagraph_mode": _cudagraph_mode_name(getattr(speculator, "cudagraph_mode", None)),
-    }
-
-
 def _collect_worker_graph_runtime(engine: Any, args: argparse.Namespace) -> dict[str, Any]:
     collective_rpc = getattr(engine, "collective_rpc", None)
     if not callable(collective_rpc):
         raise RuntimeError("Public LLM does not expose collective_rpc for graph capture evidence.")
-    states = collective_rpc(_worker_graph_runtime_snapshot)
+    states = collective_rpc(_GRAPH_SNAPSHOT_METHOD)
     if not isinstance(states, list) or len(states) != args.tensor_parallel_size:
         raise RuntimeError(
             "Graph capture evidence does not cover every tensor-parallel rank: "
@@ -548,6 +509,9 @@ def _collect_worker_graph_runtime(engine: Any, args: argparse.Namespace) -> dict
         )
     if any(not isinstance(state, Mapping) for state in states):
         raise RuntimeError("Graph capture evidence contains a non-mapping worker result.")
+    ranks = [state.get("rank") for state in states]
+    if any(type(rank) is not int for rank in ranks) or sorted(ranks) != list(range(args.tensor_parallel_size)):
+        raise RuntimeError("Graph capture evidence must contain each tensor-parallel rank exactly once.")
     identity_fields = (
         "target_cudagraph_mode",
         "configured_capture_sizes",
@@ -570,6 +534,11 @@ def _collect_worker_graph_runtime(engine: Any, args: argparse.Namespace) -> dict
         raise RuntimeError("Workers did not expose the Ascend static-kernel setting.")
     if not first.get("observed_capture_sizes") or first.get("graph_capture_count", 0) <= 0:
         raise RuntimeError("FULL_DECODE_ONLY initialized without captured target graph descriptors.")
+    if args.cudagraph_capture_sizes is not None and (
+        sorted(first["configured_capture_sizes"]) != sorted(args.cudagraph_capture_sizes)
+        or sorted(first["observed_capture_sizes"]) != sorted(args.cudagraph_capture_sizes)
+    ):
+        raise RuntimeError("Worker configured/observed capture sizes differ from the requested capture sizes.")
     if args.mode == "dspark":
         if first.get("dspark_requested_cudagraph_mode") != _CUDAGRAPH_MODE_FULL_DECODE_ONLY:
             raise RuntimeError("DSpark did not observe the target graph-mode request.")
@@ -684,6 +653,7 @@ def build_engine_kwargs(args: argparse.Namespace) -> dict[str, Any]:
             compilation_config["cudagraph_capture_sizes"] = list(args.cudagraph_capture_sizes)
         kwargs["compilation_config"] = compilation_config
         kwargs["cudagraph_metrics"] = True
+        kwargs["worker_extension_cls"] = _GRAPH_WORKER_EXTENSION
     if args.revision:
         kwargs["revision"] = args.revision
     if args.kv_cache_memory_bytes is not None:
