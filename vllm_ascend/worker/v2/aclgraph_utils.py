@@ -16,6 +16,7 @@
 # limitations under the License.
 # This file is a part of the vllm-ascend project.
 #
+from collections.abc import Callable
 from typing import Any
 
 import torch
@@ -27,7 +28,7 @@ from vllm.logger import logger
 from vllm.sequence import IntermediateTensors
 from vllm.v1.kv_cache_interface import KVCacheConfig
 from vllm.v1.worker.gpu.block_table import BlockTables
-from vllm.v1.worker.gpu.cudagraph_utils import BatchExecutionDescriptor, ModelCudaGraphManager
+from vllm.v1.worker.gpu.cudagraph_utils import AttentionStatePair, BatchExecutionDescriptor, ModelCudaGraphManager
 from vllm.v1.worker.gpu.input_batch import InputBuffers
 from vllm.v1.worker.gpu.model_states.interface import ModelState
 from vllm.v1.worker.utils import AttentionGroup
@@ -110,8 +111,9 @@ class ModelAclGraphManager(ModelCudaGraphManager):
         kv_cache_config: KVCacheConfig,
         has_lora: bool = False,
         use_aux_hidden_state_outputs: bool = False,
+        lora_capture_hook: Callable[[int, int, int], None] | None = None,
         progress_bar_desc: str = "Capturing CUDA graphs",
-    ) -> None:
+    ) -> dict[BatchExecutionDescriptor, AttentionStatePair]:
         """Capture CUDA graphs for model forward pass."""
         model = ModelWithContext(model)
         with communicator_switch():
@@ -123,9 +125,10 @@ class ModelAclGraphManager(ModelCudaGraphManager):
                 block_tables,
                 attn_groups,
                 kv_cache_config,
-                has_lora,
-                use_aux_hidden_state_outputs,
-                progress_bar_desc,
+                has_lora=has_lora,
+                use_aux_hidden_state_outputs=use_aux_hidden_state_outputs,
+                lora_capture_hook=lora_capture_hook,
+                progress_bar_desc=progress_bar_desc,
             )
 
 
