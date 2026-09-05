@@ -994,6 +994,9 @@ class AscendDSparkSpeculator(BaseSpeculator):
             num_tokens_across_dp=num_tokens_across_dp,
         )
         self._prepared_step_epoch = step_epoch
+        diagnostic = getattr(self, "_nan_diagnostic", None)
+        if diagnostic is not None:
+            diagnostic.proposal_inputs(proposal_inputs)
         return proposal_inputs
 
     def validate_prepared_inputs_current(
@@ -1221,6 +1224,9 @@ class AscendDSparkSpeculator(BaseSpeculator):
                 f"draft model ABI: {tuple(context_states.shape)}."
             )
 
+        diagnostic = getattr(self, "_nan_diagnostic", None)
+        if diagnostic is not None:
+            diagnostic.check("combined_context", {"context_hidden": context_states}, proposal_inputs.num_target_tokens)
         context_slot_mappings = [
             proposal_inputs.draft_context_slot_mappings[layer_name] for layer_name in self.draft_attn_layer_order
         ]
@@ -1229,6 +1235,8 @@ class AscendDSparkSpeculator(BaseSpeculator):
             proposal_inputs.target_positions[: proposal_inputs.num_target_tokens],
             context_slot_mappings,
         )
+        if diagnostic is not None:
+            diagnostic.context_kv(proposal_inputs, self.draft_kv_caches, self.block_tables.kernel_block_sizes)
         return AscendDSparkDraftExecution(
             proposal_inputs=proposal_inputs,
             execution_token_count=proposal_inputs.draft_input_ids.shape[0],
@@ -1583,6 +1591,9 @@ class AscendDSparkSpeculator(BaseSpeculator):
             )
         if not base_logits.dtype.is_floating_point:
             raise TypeError("Ascend DSpark Markov base logits must be floating point.")
+        diagnostic = getattr(self, "_nan_diagnostic", None)
+        if diagnostic is not None:
+            diagnostic.check("base_logits", {"base_logits": base_logits}, expected_tokens, allow_negative_infinity=True)
         _assert_markov_tensor_contract(
             ~torch.isnan(base_logits).any(),
             "Ascend DSpark Markov base logits contain NaN.",
@@ -2582,9 +2593,17 @@ class AscendDSparkSpeculator(BaseSpeculator):
         proposal_inputs: AscendDSparkProposalInputs,
     ) -> torch.Tensor:
         self.validate_prepared_inputs_current(proposal_inputs)
-        hidden_states = self._execute_draft_backbone(proposal_inputs)
-        result = self._execute_sequential_markov_sampling(proposal_inputs, hidden_states)
-        return self._build_core_proposal(proposal_inputs, result)
+        diagnostic = getattr(self, "_nan_diagnostic", None)
+        try:
+            hidden_states = self._execute_draft_backbone(proposal_inputs)
+            if diagnostic is not None:
+                diagnostic.check("draft_hidden", {"draft_hidden": hidden_states}, proposal_inputs.num_query_tokens)
+            result = self._execute_sequential_markov_sampling(proposal_inputs, hidden_states)
+            return self._build_core_proposal(proposal_inputs, result)
+        except BaseException as error:
+            if diagnostic is not None:
+                diagnostic.failed_execution("draft_execution", error)
+            raise
 
     def set_eplb_state(self, eplb_state: Any) -> None:
         """Accept the runner's EPLB state after a successful model load."""

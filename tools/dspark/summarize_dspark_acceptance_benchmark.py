@@ -165,6 +165,8 @@ def _validate_graph_execution(result: Mapping[str, Any], expected_mode: str) -> 
 
 
 def _validate_result(result: Mapping[str, Any], expected_mode: str) -> None:
+    if result.get("performance_eligible") is False or result.get("nan_diagnostic", {}).get("enabled"):
+        raise ValueError("DSpark NaN diagnostic runs are not eligible for performance comparison.")
     if result.get("schema_version") != benchmark.SCHEMA_VERSION:
         raise ValueError("Unsupported benchmark result schema.")
     if result.get("benchmark") != "dspark_pr_style_batch_throughput":

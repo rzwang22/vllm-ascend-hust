@@ -667,6 +667,8 @@ def build_engine_kwargs(args: argparse.Namespace) -> dict[str, Any]:
         kwargs["compilation_config"] = compilation_config
         kwargs["cudagraph_metrics"] = True
         kwargs["worker_extension_cls"] = _GRAPH_WORKER_EXTENSION
+    if args.dspark_nan_diagnostic_dir is not None:
+        kwargs["additional_config"] = {"dspark_nan_diagnostic_dir": str(args.dspark_nan_diagnostic_dir)}
     if args.revision:
         kwargs["revision"] = args.revision
     if args.kv_cache_memory_bytes is not None:
@@ -1141,11 +1143,19 @@ def run_benchmark(
         graph_snapshots: list[Any] = []
         graph_errors: list[str] = []
 
-        def snapshot_replays() -> None:
+        def snapshot_replays(phase: str) -> None:
             if args.target_execution_mode == "full_decode_only":
                 try:
-                    graph_snapshots.append(engine.collective_rpc(_REPLAY_SNAPSHOT_METHOD))
+                    rpc_kwargs = {"diagnostic_phase": phase} if args.dspark_nan_diagnostic_dir is not None else {}
+                    snapshot = (
+                        engine.collective_rpc(_REPLAY_SNAPSHOT_METHOD, kwargs=rpc_kwargs)
+                        if rpc_kwargs
+                        else engine.collective_rpc(_REPLAY_SNAPSHOT_METHOD)
+                    )
+                    graph_snapshots.append(snapshot)
                 except Exception as error:
+                    if args.dspark_nan_diagnostic_dir is not None and phase != "complete":
+                        raise RuntimeError("Cannot install/read the DSpark diagnostic observer.") from error
                     graph_snapshots.append(None)
                     graph_errors.append(f"{type(error).__name__}: {error}")
 
@@ -1156,15 +1166,15 @@ def run_benchmark(
         if args.warmup_prompts > len(prompts):
             raise ValueError("--warmup-prompts cannot exceed the measured prompt count.")
         warmup_count = args.warmup_prompts
-        snapshot_replays()  # Installs the observer after capture; baseline before warmup.
+        snapshot_replays("warmup")  # Installs the observer after capture; baseline before warmup.
         if warmup_count:
             engine.generate(prompts[:warmup_count], sampling_params, use_tqdm=False)
-        snapshot_replays()  # Warmup end / measured start; outside the timed interval.
+        snapshot_replays("measured")  # Warmup end / measured start; outside the timed interval.
         metrics_start = capture_spec_metrics(engine.get_metrics())
         measured_started_at = clock()
         outputs = engine.generate(prompts, sampling_params, use_tqdm=False)
         measured_finished_at = clock()
-        snapshot_replays()  # Synchronous generate has returned; timing has stopped.
+        snapshot_replays("complete")  # Synchronous generate has returned; timing has stopped.
         metrics_end = capture_spec_metrics(engine.get_metrics())
         elapsed_seconds = measured_finished_at - measured_started_at
         if not math.isfinite(elapsed_seconds) or elapsed_seconds <= 0:
@@ -1234,6 +1244,12 @@ def run_benchmark(
         result = {
             "schema_version": SCHEMA_VERSION,
             "benchmark": "dspark_pr_style_batch_throughput",
+            "performance_eligible": args.dspark_nan_diagnostic_dir is None,
+            "nan_diagnostic": {
+                "enabled": args.dspark_nan_diagnostic_dir is not None,
+                "directory": str(args.dspark_nan_diagnostic_dir) if args.dspark_nan_diagnostic_dir else None,
+                "root_cause_status": "ROOT_CAUSE_NOT_YET_PROVEN" if args.dspark_nan_diagnostic_dir else None,
+            },
             "run_id": str(uuid.uuid4()),
             "runner": RUNNER,
             "mode": args.mode,
@@ -1278,7 +1294,7 @@ def run_benchmark(
                 "warmup_included": False,
                 "graph_capture_included": False,
                 "graph_warmup_included": False,
-                "explicit_device_synchronization": False,
+                "explicit_device_synchronization": args.dspark_nan_diagnostic_dir is not None,
                 "graph_telemetry_rpc_included": False,
                 "elapsed_seconds": elapsed_seconds,
             },
@@ -1386,6 +1402,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--async-scheduling", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--ignore-eos", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--result-json", type=Path, required=True)
+    parser.add_argument(
+        "--dspark-nan-diagnostic-dir",
+        type=Path,
+        help="Opt-in capture-external rank diagnostics; disables performance publication.",
+    )
     args = parser.parse_args(argv)
     for name in ("num_spec_tokens", "warmup_prompts", "output_len", "tensor_parallel_size"):
         value = getattr(args, name)
@@ -1407,6 +1428,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             or len(set(args.cudagraph_capture_sizes)) != len(args.cudagraph_capture_sizes)
         ):
             parser.error("--cudagraph-capture-sizes must contain unique positive integers")
+    if args.dspark_nan_diagnostic_dir is not None:
+        if args.mode != "dspark" or args.target_execution_mode != "full_decode_only":
+            parser.error("--dspark-nan-diagnostic-dir requires DSpark with target full_decode_only")
+        if not args.dspark_nan_diagnostic_dir.is_absolute():
+            parser.error("--dspark-nan-diagnostic-dir must be an absolute path")
     return args
 
 
@@ -1418,6 +1444,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Replay evidence unavailable: {result['graph_execution']['error']}", file=sys.stderr)
         print(f"Outputs and raw timing diagnostics retained: {args.result_json}", file=sys.stderr)
         return 1
+    if not result["performance_eligible"]:
+        print(f"DSPARK_NAN_DIAGNOSTIC_COMPLETE={args.result_json}; ROOT_CAUSE_NOT_YET_PROVEN")
+        return 0
     _print_summary(result)
     print(f"DSPARK_PR_STYLE_BENCHMARK_PASS={args.result_json}")
     return 0

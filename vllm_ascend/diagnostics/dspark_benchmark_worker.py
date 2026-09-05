@@ -50,6 +50,16 @@ class _FullReplayObserver:
         self.excluded_unscoped_replay_count = 0
         self.failed_execution_count = 0
         self.error: str | None = None
+        self.nan_diagnostic = None
+        additional = getattr(getattr(runner, "vllm_config", None), "additional_config", None) or {}
+        directory = additional.get("dspark_nan_diagnostic_dir")
+        if directory is not None:
+            # Explicit benchmark-only instrumentation, installed after capture.
+            from vllm_ascend.diagnostics.dspark_nan import DSparkNaNDiagnostics
+
+            speculator = runner.speculator
+            self.nan_diagnostic = DSparkNaNDiagnostics(directory, speculator.rank)
+            speculator._nan_diagnostic = self.nan_diagnostic
         runner.execute_model = self.execute_model
         self.manager.run_fullgraph = self.run_fullgraph
 
@@ -66,7 +76,10 @@ class _FullReplayObserver:
         pending: list[Any] = []
         previous = self.pending
         self.pending = pending
+        diagnostic = self.nan_diagnostic if not (dummy_run or is_profile) else None
         try:
+            if diagnostic is not None:
+                diagnostic.begin_execution(scheduler_output)
             result = self.original_execute(
                 scheduler_output,
                 intermediate_tensors=intermediate_tensors,
@@ -74,8 +87,12 @@ class _FullReplayObserver:
                 skip_attn_for_dummy_run=skip_attn_for_dummy_run,
                 is_profile=is_profile,
             )
-        except BaseException:
+            if diagnostic is not None:
+                diagnostic.target_completed(self.runner, pending)
+        except BaseException as error:
             self.failed_execution_count += 1
+            if diagnostic is not None:
+                diagnostic.failed_execution("target_execute", error)
             raise
         else:
             if dummy_run or is_profile:
@@ -139,7 +156,7 @@ class _FullReplayObserver:
 class DSparkBenchmarkWorkerExtension:
     """Named benchmark telemetry RPC, installed through worker_extension_cls."""
 
-    def dspark_benchmark_replay_snapshot(self) -> dict[str, Any]:
+    def dspark_benchmark_replay_snapshot(self, diagnostic_phase: str | None = None) -> dict[str, Any]:
         """Install once at a quiescent boundary, then read cumulative host counters."""
         rank = _host_count(self.rank)
         runner = self.model_runner
@@ -147,6 +164,10 @@ class DSparkBenchmarkWorkerExtension:
         if observer is None:
             observer = _FullReplayObserver(runner)
             runner._dspark_benchmark_replay_observer = observer
+        if diagnostic_phase is not None:
+            if diagnostic_phase not in ("warmup", "measured", "complete") or observer.nan_diagnostic is None:
+                raise ValueError("Diagnostic phase requires an installed DSpark NaN observer and a valid phase.")
+            observer.nan_diagnostic.phase = diagnostic_phase
         return {"rank": rank, **observer.snapshot()}
 
     def dspark_benchmark_graph_runtime(self) -> dict[str, Any]:
