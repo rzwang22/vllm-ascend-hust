@@ -11,6 +11,7 @@ from vllm.config import VllmConfig, get_current_vllm_config
 from vllm.distributed import get_tensor_model_parallel_world_size
 from vllm.triton_utils import HAS_TRITON
 from vllm.v1.attention.backend import AttentionBackend, AttentionCGSupport, AttentionMetadataBuilder
+from vllm.v1.attention.backends.utils import PAD_SLOT_ID
 from vllm.v1.kv_cache_interface import AttentionSpec
 
 from vllm_ascend.ascend_config import get_ascend_config
@@ -488,8 +489,13 @@ def validate_dsa_sharedkv_page_contract(
         torch.all((actual_block_table >= 0) & (actual_block_table < kv_cache.shape[0])),
         f"{prefix} ori_block_table contains a physical block outside ori_kv.",
     )
+    # format_dsa_slot_mapping maps the flat PAD_SLOT_ID (-1) to [-1, B-1].
+    # With the page-local strides checked above its linear address is -H*D;
+    # both int32 scatter kernels exclude it from their nonnegative write range.
+    # Accept only this exact sentinel, including in capture warmup (mode NONE).
+    padding_slots = (slot_mapping[:, 0] == PAD_SLOT_ID) & (slot_mapping[:, 1] == block_size - 1)
     _assert_dsa_tensor_range(
-        torch.all((slot_mapping[:, 0] >= 0) & (slot_mapping[:, 0] < kv_cache.shape[0])),
+        torch.all(padding_slots | ((slot_mapping[:, 0] >= 0) & (slot_mapping[:, 0] < kv_cache.shape[0]))),
         f"{prefix} slot_mapping contains a physical block outside ori_kv.",
     )
     _assert_dsa_tensor_range(
