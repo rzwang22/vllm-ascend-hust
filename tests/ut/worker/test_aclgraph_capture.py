@@ -12,6 +12,7 @@ under the ordinary CPU UT mocks and is skipped only when Torch is unavailable.
 import ast
 import copy
 import importlib.util
+import sys
 from contextlib import contextmanager
 from inspect import signature
 from pathlib import Path
@@ -73,7 +74,9 @@ def capture_api(request, monkeypatch):
 
         module, parent = aclgraph_utils, ModelCudaGraphManager
 
-    state = SimpleNamespace(calls=[], events=[], result={object(): object()}, error=None)
+    state = SimpleNamespace(
+        calls=[], events=[], result={object(): object()}, error=None, source=request.param == "source"
+    )
     state.parent_capture = parent.capture
     state.plugin_capture = module.ModelAclGraphManager.capture
     state.wrapper_type = module.ModelWithContext
@@ -207,3 +210,143 @@ def test_optional_parent_arguments_are_forwarded_by_keyword():
         "progress_bar_desc",
     }
     assert capture.args.kwarg is None
+
+
+@pytest.fixture
+def diagnostic_capture(capture_api, monkeypatch, tmp_path):
+    # Execute the real diagnostics and capture entry, not permissive constructor
+    # mocks. The source variant needs CPU Torch but no installed vLLM/NPU stack.
+    pytest.importorskip("torch")
+    from tests.ut.test_dspark_nan_diagnostics import _NAN
+    from tests.ut.test_dspark_replay_diagnostics import bank, replay
+
+    state = capture_api
+    if state.source:
+        core_path = _core_source().parents[3] / "forward_context.py"
+        core_tree = ast.parse(core_path.read_text())
+        core_functions = [
+            n
+            for n in core_tree.body
+            if isinstance(n, ast.FunctionDef) and n.name in ("get_forward_context", "is_forward_context_available")
+        ]
+        context = {"_forward_context": None}
+        future = ast.parse("from __future__ import annotations").body
+        exec(compile(ast.Module(body=[*future, *core_functions], type_ignores=[]), str(core_path), "exec"), context)
+        proxy_path = REPO_ROOT / "vllm_ascend/ascend_forward_context.py"
+        proxy_class = next(
+            n
+            for n in ast.parse(proxy_path.read_text()).body
+            if isinstance(n, ast.ClassDef) and n.name == "_ExtraForwardContextProxy"
+        )
+        exec(compile(ast.Module(body=[*future, proxy_class], type_ignores=[]), str(proxy_path), "exec"), context)
+        proxy = context["_ExtraForwardContextProxy"]()
+        get_context = context["get_forward_context"]
+        available = context["is_forward_context_available"]
+        monkeypatch.setitem(state.plugin_capture.__globals__, "_EXTRA_CTX", proxy)
+    else:
+        from vllm import forward_context
+
+        from vllm_ascend.ascend_forward_context import _EXTRA_CTX
+
+        # No synthetic ForwardContext: exercise the real proxy's unset guard.
+        monkeypatch.setattr(forward_context, "_forward_context", None)
+        proxy, get_context = _EXTRA_CTX, forward_context.get_forward_context
+        available = forward_context.is_forward_context_available
+
+    def assert_no_context():
+        assert not available()
+        with pytest.raises(AssertionError, match="Forward context is not set"):
+            get_context()
+        with pytest.raises(AssertionError, match="Forward context is not set"):
+            _ = proxy.flash_comm_v1_enabled
+
+    state.assert_no_context = assert_no_context
+    state.bank = bank(layers=[])
+    state.inputs[0] = SimpleNamespace(model=SimpleNamespace(_dspark_layer_snapshots=state.bank))
+    state.manager.vllm_config = SimpleNamespace(
+        additional_config={"dspark_nan_replay_window": [60, 80], "dspark_nan_diagnostic_dir": str(tmp_path / "ranks")},
+        parallel_config=SimpleNamespace(data_parallel_size=1),
+    )
+    # This is the resolved AscendConfig field already retained by NPUModelRunner,
+    # including environment-based configuration absent from additional_config.
+    state.manager.model_runner = SimpleNamespace(ascend_config=SimpleNamespace(enable_flashcomm1=False), dp_size=1)
+    state.result = {}  # Parent transport is spied; no NPU capture in this test.
+    state.finished = []
+    finish_capture = replay.ReplaySnapshots.finish_capture
+
+    def finish(self, states):
+        assert state.events == ["enter", "parent", "exit"]
+        state.finished.append((self, states))
+        return finish_capture(self, states)
+
+    monkeypatch.setattr(replay.ReplaySnapshots, "finish_capture", finish)
+    monkeypatch.setitem(sys.modules, "vllm_ascend.diagnostics.dspark_nan", _NAN)
+    monkeypatch.setitem(sys.modules, "vllm_ascend.diagnostics.dspark_replay", replay)
+    state.assert_no_context()
+    yield state
+    state.assert_no_context()
+
+
+@pytest.mark.parametrize("with_hook", [False, True])
+def test_diagnostic_capture_initializes_without_forward_context(diagnostic_capture, with_hook):
+    state = diagnostic_capture
+    hook = (lambda num_loras, num_reqs, num_tokens: None) if with_hook else None
+    result = state.manager.capture(
+        *state.inputs,
+        has_lora=True,
+        use_aux_hidden_state_outputs=True,
+        lora_capture_hook=hook,
+        progress_bar_desc="P08-R9B capture",
+    )
+    assert result is state.result
+    call = state.calls[0]
+    assert call["model"].get_original_model() is state.inputs[0]
+    assert all(
+        call[name] is value
+        for name, value in zip(list(signature(state.parent_capture).parameters)[2:8], state.inputs[1:])
+    )
+    assert call["has_lora"] is True and call["use_aux_hidden_state_outputs"] is True
+    assert call["lora_capture_hook"] is hook
+    assert call["progress_bar_desc"] == "P08-R9B capture"
+    snapshots = call["model"].replay_diagnostics
+    diagnostic = state.manager._dspark_nan_diagnostic
+    assert snapshots.bank is state.bank
+    assert snapshots.diagnostic is diagnostic
+    assert diagnostic.execution_epoch == 0 and diagnostic.current == {}
+    assert diagnostic.phase == "not_started"
+    assert diagnostic.replay_configuration["completed_detailed_replays"] == 0
+    assert state.finished == [(snapshots, result)]
+
+
+@pytest.mark.parametrize("flashcomm1,dp", [(True, 1), (False, 2), (True, 2)])
+def test_diagnostic_capture_rejects_unsupported_static_config(diagnostic_capture, flashcomm1, dp):
+    state = diagnostic_capture
+    state.manager.model_runner.ascend_config.enable_flashcomm1 = flashcomm1
+    state.manager.vllm_config.parallel_config.data_parallel_size = dp
+    state.manager.model_runner.dp_size = dp
+    with pytest.raises(ValueError, match="FlashComm1 off and DP1"):
+        state.manager.capture(*state.inputs)
+    assert state.calls == [] and state.events == [] and state.finished == []
+    assert not hasattr(state.manager, "_dspark_nan_diagnostic")
+
+
+def test_diagnostic_capture_parent_failure_preserves_lifecycle(diagnostic_capture):
+    state = diagnostic_capture
+    state.error = RuntimeError("parent capture failed")
+    with pytest.raises(RuntimeError, match="parent capture failed") as caught:
+        state.manager.capture(*state.inputs)
+    assert caught.value is state.error
+    assert state.events == ["enter", "parent", "exit"]
+    assert state.finished == []
+
+
+def test_diagnostic_disabled_does_not_apply_support_gate(diagnostic_capture):
+    state = diagnostic_capture
+    state.manager.vllm_config.additional_config = {}
+    state.manager.model_runner.ascend_config.enable_flashcomm1 = True
+    state.manager.vllm_config.parallel_config.data_parallel_size = 2
+    state.manager.model_runner.dp_size = 2
+    assert state.manager.capture(*state.inputs) is state.result
+    assert state.calls[0]["model"].replay_diagnostics is None
+    assert not hasattr(state.manager, "_dspark_nan_diagnostic")
+    assert state.finished == []

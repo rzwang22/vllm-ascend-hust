@@ -135,7 +135,9 @@ class ModelAclGraphManager(ModelCudaGraphManager):
             bank = model.model._dspark_layer_snapshots
             if bank is None:
                 raise RuntimeError("DSpark layer snapshots must be installed before target compilation.")
-            if _EXTRA_CTX.flash_comm_v1_enabled or self.model_runner.dp_size != 1:
+            # The parent creates forward contexts inside its forward closure.
+            # Initialization must use the already resolved static configuration.
+            if self.model_runner.ascend_config.enable_flashcomm1 or config.parallel_config.data_parallel_size != 1:
                 raise ValueError("DSpark replay diagnostics currently require FlashComm1 off and DP1.")
             self._dspark_nan_diagnostic = DSparkNaNDiagnostics(additional["dspark_nan_diagnostic_dir"], bank.rank)
             replay_diagnostics = ReplaySnapshots(
