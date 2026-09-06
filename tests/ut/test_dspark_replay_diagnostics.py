@@ -12,7 +12,9 @@ import ast
 import importlib.util
 import json
 import sys
+from contextlib import nullcontext
 from pathlib import Path
+from types import ModuleType
 from types import SimpleNamespace as NS
 from unittest.mock import patch
 
@@ -72,7 +74,65 @@ class CPURecordedGraph(TorchDispatchMode):
 
 @pytest.fixture(autouse=True)
 def cpu_only(monkeypatch):
-    monkeypatch.setattr(torch, "npu", NS(is_current_stream_capturing=lambda: False), raising=False)
+    backend = getattr(torch, "npu", None)
+    if backend is None:
+        monkeypatch.setattr(torch, "npu", NS(is_current_stream_capturing=lambda: False), raising=False)
+    else:
+        # Dynamo queries accelerator availability through the installed module.
+        # Keep that module and its interfaces; only the capture query is mocked.
+        monkeypatch.setattr(backend, "is_current_stream_capturing", lambda: False)
+
+
+@pytest.mark.parametrize("initial_state", ["existing", "module", "missing", "none"])
+@pytest.mark.parametrize("body_raises", [False, True])
+def test_cpu_only_preserves_backend_and_restores_between_scopes(monkeypatch, initial_state, body_raises):
+    # On an NPU host, "existing" uses the installed backend itself. The module
+    # case also exercises its interface/identity contract on a pure CPU host.
+    backend = torch.npu
+    if initial_state == "module":
+        backend = ModuleType("torch.npu")
+        backend.is_available = lambda: True
+        backend.current_stream = lambda: "backend stream"
+        backend.is_current_stream_capturing = lambda: True
+        monkeypatch.setattr(torch, "npu", backend)
+    elif initial_state == "missing":
+        monkeypatch.delattr(torch, "npu")
+        backend = None
+    elif initial_state == "none":
+        monkeypatch.setattr(torch, "npu", None)
+        backend = None
+    original_attributes = dict(vars(backend)) if backend is not None else {}
+    accelerator_query = torch.accelerator.is_available
+
+    # Repeat the complete setup/teardown, including exceptional test bodies,
+    # to detect state leaking into the next test in the same process.
+    for _ in range(2):
+        expectation = pytest.raises(RuntimeError, match="fixture body failed") if body_raises else nullcontext()
+        with expectation, pytest.MonkeyPatch.context() as scoped:
+            cpu_only.__wrapped__(scoped)
+            assert torch.npu.is_current_stream_capturing() is False
+            assert torch.accelerator.is_available is accelerator_query
+            if backend is not None:
+                assert torch.npu is backend
+                assert vars(backend).keys() == original_attributes.keys()
+                for name, value in original_attributes.items():
+                    if name != "is_current_stream_capturing":
+                        assert vars(backend)[name] is value
+                if initial_state == "module":
+                    assert torch.npu.is_available() is True
+                    assert torch.npu.current_stream() == "backend stream"
+            else:
+                assert set(vars(torch.npu)) == {"is_current_stream_capturing"}
+            if body_raises:
+                raise RuntimeError("fixture body failed")
+        assert torch.accelerator.is_available is accelerator_query
+        if initial_state == "missing":
+            assert not hasattr(torch, "npu")
+        else:
+            assert torch.npu is backend
+        if backend is not None:
+            assert vars(backend).keys() == original_attributes.keys()
+            assert all(vars(backend)[name] is value for name, value in original_attributes.items())
 
 
 def bank(rank=0, layers=(0, 1)):
