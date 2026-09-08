@@ -124,6 +124,7 @@ p08_main() {
         tests/ut/test_dspark_graph_rpc.py tests/ut/test_dspark_graph_replay.py \
         tests/ut/test_dspark_acceptance_benchmark.py tests/ut/test_dspark_draft_config.py \
         tests/ut/worker/test_aclgraph_capture.py tests/ut/worker/test_dsa_capture_metadata.py \
+        tests/ut/worker/test_capture_input_aliases.py \
         tests/ut/attention/test_dsa_capture_validation.py tests/ut/attention/test_dsa_padding_contract.py \
         tests/ut/spec_decode/test_dspark_v2_*.py
     P08_FOCUSED_RC=$?

@@ -267,6 +267,7 @@ def inspect_replay_inputs(runner, captured, captured_inputs, size):
         raw_slots = _record_tensor(
             tables.slot_mappings[group_id], source="AscendBlockTables.compute_slot_mappings", rows=size
         )
+        raw_slot_check = {"status": "unavailable", "reason": "CP mapping is outside this diagnostic"}
         if getattr(tables, "cp_size", 1) == 1:
             expected_slots = []
             block_size = tables.kernel_block_sizes[group_id]
@@ -274,11 +275,32 @@ def inspect_replay_inputs(runner, captured, captured_inputs, size):
                 for position in positions[offsets[row] : offsets[row + 1]]:
                     column, offset = divmod(position, block_size)
                     if allocated[row] is None or not 0 <= column < len(allocated[row]):
-                        expected_slots.append("unavailable: position outside allocated table prefix")
+                        expected_slots.append(None)
                     else:
                         expected_slots.append(allocated[row][column] * block_size + offset)
             expected_slots += [-1] * (size - n)
-            compare(f"group.{group_id}.raw_slots (exact -1 padding)", expected_slots, raw_slots.get("values"))
+            known = [i for i, value in enumerate(expected_slots) if value is not None]
+            unknown = [i for i, value in enumerate(expected_slots) if value is None]
+            actual_slots = raw_slots.get("values")
+            raw_slot_check = {
+                "status": "PARTIAL" if unknown and known else "unavailable" if unknown else "CHECKED",
+                "compared_rows": known,
+                "unavailable_rows": unknown,
+                "source": "this KV group's allocated table prefix and kernel_block_size",
+            }
+            if unknown:
+                unavailable.append(
+                    f"group.{group_id}.raw_slots rows {unknown}: logical position outside the observed allocated "
+                    "prefix; compressed-cache raw slots may be unused. No expected physical block inferred."
+                )
+            if known:
+                compare(
+                    f"group.{group_id}.raw_slots (exact -1 padding)",
+                    [expected_slots[i] for i in known],
+                    [actual_slots[i] for i in known]
+                    if isinstance(actual_slots, list) and len(actual_slots) == size
+                    else actual_slots,
+                )
         group_records.append(
             {
                 "group_id": group_id,
@@ -289,6 +311,16 @@ def inspect_replay_inputs(runner, captured, captured_inputs, size):
                 "input_block_table_layout": tensor_layout(input_table),
                 "allocated_block_ids": allocated,
                 "raw_slot_mapping": raw_slots,
+                "raw_slot_check": raw_slot_check,
+                "cache_owners": [
+                    {
+                        "layer_names": list(group.layer_names),
+                        "spec_type": type(group.kv_cache_spec).__name__,
+                        "block_size": group.kv_cache_spec.block_size,
+                        "compress_ratio": getattr(group.kv_cache_spec, "compress_ratio", None),
+                    }
+                    for group in groups
+                ],
             }
         )
         for group in groups:

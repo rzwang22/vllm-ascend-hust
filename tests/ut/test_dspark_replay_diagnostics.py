@@ -635,3 +635,34 @@ def test_cli_window_requires_opt_in_and_preserves_draft_eager(tmp_path, monkeypa
     kwargs = benchmark.build_engine_kwargs(benchmark.parse_args(args))
     assert kwargs["additional_config"]["dspark_nan_replay_window"] == [60, 80]
     assert kwargs["speculative_config"]["enforce_eager"] is True
+
+
+def test_raw_slots_unavailable_is_not_a_physical_block_mismatch():
+    runner, captured = runner_fixture(24, 4)
+    # A compressed-cache group has fewer logical table entries than uncompressed
+    # positions imply. Its unused raw slots must not be treated as SWA writes.
+    runner.block_tables.num_blocks.np.fill(1)
+    runner.block_tables.slot_mappings[0].copy_(runner.input_buffers.positions % 32)
+    result = replay.inspect_replay_inputs(runner, captured, {}, 24)
+    group = result["groups"][0]
+    assert group["raw_slot_check"]["status"] == "unavailable"
+    assert group["raw_slot_check"]["unavailable_rows"] == list(range(24))
+    assert group["cache_owners"][0]["layer_names"] == ["model.layers.0.self_attn.attn"]
+    assert not any("raw_slots" in entry["field"] for entry in result["mismatches"])
+    assert any("raw_slots" in entry for entry in result["unavailable"])
+
+
+def test_raw_slots_known_rows_and_padding_still_reject_errors():
+    runner, captured = runner_fixture(24, 2)
+    request_state_row = runner.input_batch.idx_mapping_np[1]
+    runner.block_tables.num_blocks.np[0, request_state_row] = 1  # request 1 has unknown expected blocks
+    runner.block_tables.slot_mappings[0, 0] += 32  # known physical block is wrong
+    runner.block_tables.slot_mappings[0, -1] = 0  # padding must remain exactly -1
+    result = replay.inspect_replay_inputs(runner, captured, {}, 24)
+    check = result["groups"][0]["raw_slot_check"]
+    assert check["status"] == "PARTIAL"
+    assert check["unavailable_rows"] == list(range(6, 12))
+    assert check["compared_rows"] == list(range(6)) + list(range(12, 24))
+    mismatch = next(entry for entry in result["mismatches"] if "raw_slots" in entry["field"])
+    assert mismatch["expected"][0] != mismatch["actual"][0]
+    assert mismatch["expected"][-1] == -1 and mismatch["actual"][-1] == 0

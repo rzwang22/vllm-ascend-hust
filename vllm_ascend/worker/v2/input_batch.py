@@ -16,7 +16,7 @@
 # limitations under the License.
 # This file is a part of the vllm-ascend project.
 #
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, fields
 
 import numpy as np
 import torch
@@ -103,7 +103,11 @@ class AscendInputBatch(InputBatch):
         input_batch.attn_state = AscendAttentionState.DecodeOnly
         # For mla/sfa, update cos/sin. Here is for _dummy_run.
         update_cos_sin(input_batch.positions)
-        return cls(**asdict(input_batch), seq_lens_np=seq_lens_np)
+        # asdict deep-copies tensors, disconnecting captured attention inputs
+        # from the runner buffers updated before every FULL replay.
+        return cls(
+            **{field.name: getattr(input_batch, field.name) for field in fields(input_batch)}, seq_lens_np=seq_lens_np
+        )
 
 
 @triton.jit
