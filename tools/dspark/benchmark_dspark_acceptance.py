@@ -204,7 +204,7 @@ def load_prompt_sources(
     descriptor["selected_source_records_sha256"] = _sha256_bytes(
         _canonical_json_bytes([record.source_record_sha256 for record in selected])
     )
-    descriptor["scale"] = "pr_scale_400_prompt" if len(selected) >= 400 else f"{len(selected)}-prompt local smoke"
+    descriptor["scale"] = f"{len(selected)} prompts"
     return selected, descriptor
 
 
@@ -1179,6 +1179,9 @@ def run_benchmark(
         snapshot_replays("complete")  # Synchronous generate has returned; timing has stopped.
         metrics_end = capture_spec_metrics(engine.get_metrics())
         elapsed_seconds = measured_finished_at - measured_started_at
+        stream_batch = getattr(engine, "last_batch", None)
+        if stream_batch is not None:
+            elapsed_seconds = stream_batch["elapsed_seconds"]
         if not math.isfinite(elapsed_seconds) or elapsed_seconds <= 0:
             raise RuntimeError(f"Measured generate() duration must be positive, got {elapsed_seconds!r}.")
         output_records = _output_records(outputs, prompt_identities)
@@ -1324,7 +1327,27 @@ def run_benchmark(
             "historical_error_count_provenance": "external merged-log scan required",
             "cleanup": {"engine_shutdown_complete": False},
         }
+        if stream_batch is not None:
+            result["measurement_protocol"] = "async_llm_delta_stream_v1"
+            result["performance_schema_version"] = 1
+            result["benchmark_process_pid"] = os.getpid()
+            result["benchmark"] = "dspark_additional_performance"
+            result["streaming"] = stream_batch
+            result["delivery"] = {
+                "client_outstanding": args.client_outstanding,
+                "policy": "source_order_all_at_once" if args.client_outstanding is None else "source_order_closed_loop",
+            }
+            result["timing"]["boundary"] = "frontend_monotonic_before_admission_to_all_streams_completed"
+            result["metrics"]["api"] = "AsyncLLM StatLogger SchedulerStats.spec_decoding_stats"
+        else:
+            result["measurement_protocol"] = "offline_batch_v1"
+            result["request_latency"] = {
+                "status": "unavailable",
+                "reason": "synchronous generate has no first-output event",
+            }
     except BaseException as primary_error:
+        if getattr(engine, "last_batch", None) is not None:
+            _atomic_write_json(args.result_json.with_name("partial-stream.json"), engine.last_batch)
         try:
             cleanup.shutdown()
         except BaseException as cleanup_error:
@@ -1372,6 +1395,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--model-dir", required=True)
     parser.add_argument("--revision")
+    parser.add_argument("--measurement-protocol", choices=("offline_batch", "async_stream"), default="offline_batch")
+    parser.add_argument(
+        "--client-outstanding", type=int, help="Async stream admission limit; omitted means all-at-once"
+    )
     parser.add_argument("--mode", choices=MODES, required=True)
     parser.add_argument("--num-spec-tokens", type=int, default=5)
     parser.add_argument("--dataset-name", choices=("hf", "jsonl"), required=True)
@@ -1417,6 +1444,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Opt-in compiled target copy snapshots and pre-replay metadata in this inclusive execution window.",
     )
     args = parser.parse_args(argv)
+    if args.client_outstanding is not None and (
+        args.client_outstanding < 1 or args.measurement_protocol != "async_stream"
+    ):
+        parser.error("--client-outstanding requires async_stream and a positive count")
+    if args.measurement_protocol == "async_stream" and args.dspark_nan_diagnostic_dir is not None:
+        parser.error("Performance streaming requires forensic/NaN diagnostics disabled")
     for name in ("num_spec_tokens", "warmup_prompts", "output_len", "tensor_parallel_size"):
         value = getattr(args, name)
         minimum = 0 if name == "warmup_prompts" else 1
@@ -1450,12 +1483,31 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         query_len = args.num_spec_tokens + 1
         if not sizes or sorted(sizes) != list(range(query_len, max(sizes) + 1, query_len)):
             parser.error("--dspark-nan-replay-window requires consecutive uniform-query capture sizes")
+    if args.measurement_protocol == "async_stream" and args.target_execution_mode == "full_decode_only":
+        query_len = args.num_spec_tokens + 1 if args.mode == "dspark" else 1
+        sizes = args.cudagraph_capture_sizes
+        if (
+            not sizes
+            or sizes != sorted(set(sizes))
+            or any(size % query_len for size in sizes)
+            or max(sizes) != args.max_num_seqs * query_len
+            or max(sizes) > args.max_num_batched_tokens
+        ):
+            parser.error(
+                "Streaming graph requires explicit q-aligned capture sizes ending at q*max_num_seqs within token budget"
+            )
     return args
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
-    result = run_benchmark(args)
+    if args.measurement_protocol == "async_stream":
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+        from tools.dspark.performance_stream import StreamingEngine
+
+        result = run_benchmark(args, engine_factory=lambda kwargs: StreamingEngine(kwargs, args))
+    else:
+        result = run_benchmark(args)
     _atomic_write_json(args.result_json.expanduser().resolve(), result)
     if result["graph_execution"].get("replay_evidence_status") == "unavailable":
         print(f"Replay evidence unavailable: {result['graph_execution']['error']}", file=sys.stderr)
@@ -1465,7 +1517,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"DSPARK_NAN_DIAGNOSTIC_COMPLETE={args.result_json}; ROOT_CAUSE_NOT_YET_PROVEN")
         return 0
     _print_summary(result)
-    print(f"DSPARK_PR_STYLE_BENCHMARK_PASS={args.result_json}")
+    if args.measurement_protocol == "async_stream":
+        print(f"DSPARK_PERFORMANCE_GENERATION_COMPLETE={args.result_json}; external artifact/log gates pending")
+    else:
+        print(f"DSPARK_PR_STYLE_BENCHMARK_PASS={args.result_json}")
     return 0
 
 

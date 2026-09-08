@@ -169,7 +169,7 @@ def _validate_result(result: Mapping[str, Any], expected_mode: str) -> None:
         raise ValueError("DSpark NaN diagnostic runs are not eligible for performance comparison.")
     if result.get("schema_version") != benchmark.SCHEMA_VERSION:
         raise ValueError("Unsupported benchmark result schema.")
-    if result.get("benchmark") != "dspark_pr_style_batch_throughput":
+    if result.get("benchmark") not in ("dspark_pr_style_batch_throughput", "dspark_additional_performance"):
         raise ValueError("JSON is not a DSpark PR-style throughput result.")
     if result.get("runner") != benchmark.RUNNER:
         raise ValueError("Only MRV2 benchmark results are accepted.")
@@ -472,6 +472,11 @@ def summarize_results(
     for result in dspark_results:
         _validate_result(result, "dspark")
     all_results = [*target_results, *dspark_results]
+    protocols = {result.get("measurement_protocol", "offline_batch_v1") for result in all_results}
+    if len(protocols) != 1:
+        raise ValueError("Cannot mix offline batch and streaming measurement protocols")
+    if protocols != {"offline_batch_v1"}:
+        raise ValueError("Streaming results require --performance-suite for delivery-aware independent statistics")
     run_ids = [result.get("run_id") for result in all_results]
     if any(not isinstance(run_id, str) or not run_id for run_id in run_ids):
         raise ValueError("Every result requires a non-empty run_id.")
@@ -609,16 +614,30 @@ def _write_run_csv(path: Path, results: Sequence[Mapping[str, Any]]) -> None:
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Summarize independent DSpark PR-style throughput runs.")
-    parser.add_argument("--target-result", action="append", type=Path, required=True)
-    parser.add_argument("--dspark-result", action="append", type=Path, required=True)
+    parser.add_argument("--target-result", action="append", type=Path)
+    parser.add_argument("--dspark-result", action="append", type=Path)
+    parser.add_argument("--performance-suite", type=Path)
+    parser.add_argument("--output-markdown", type=Path)
     parser.add_argument("--min-runs-per-mode", type=int, default=3)
     parser.add_argument("--output-json", type=Path, required=True)
     parser.add_argument("--output-csv", type=Path, required=True)
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.performance_suite:
+        if args.target_result or args.dspark_result or not args.output_markdown:
+            parser.error("--performance-suite requires --output-markdown and cannot mix legacy result arguments")
+    elif not args.target_result or not args.dspark_result:
+        parser.error("Both --target-result and --dspark-result are required without --performance-suite")
+    return args
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.performance_suite:
+        from tools.dspark.performance_report import summarize_suite, write_reports
+
+        summary = summarize_suite(args.performance_suite)
+        write_reports(summary, args.output_json, args.output_csv, args.output_markdown)
+        return 0 if summary["status"] == "valid" else 1
     target_results = [_read_result(path.expanduser().resolve()) for path in args.target_result]
     dspark_results = [_read_result(path.expanduser().resolve()) for path in args.dspark_result]
     summary = summarize_results(
