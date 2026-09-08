@@ -265,7 +265,8 @@ def test_equal_actual_layout_and_invalid_short_input(api, monkeypatch, mode_name
 
 
 def test_invalid_actual_count_is_not_truncated(api):
-    namespace = dict(api.dsa_globals)
+    # _load_functions omits imports; DSA's runtime globals do not supply np.
+    namespace = dict(api.dsa_globals, np=np)
     _load_functions(ROOT / "vllm_ascend/worker/v2/attn_utils.py", namespace, ["build_attn_metadata"])
     with pytest.raises(ValueError, match="Actual attention requests"):
         namespace["build_attn_metadata"](
@@ -282,3 +283,11 @@ def test_invalid_actual_count_is_not_truncated(api):
             slot_mappings=(),
             kv_cache_config=NS(kv_cache_groups=[]),
         )
+
+
+def test_invalid_count_extraction_keeps_dependencies_local():
+    # The runtime DSA module has torch but does not import numpy. The extracted
+    # attn_utils function must supply its own imports without changing DSA globals.
+    shared_globals = {"torch": torch}
+    test_invalid_actual_count_is_not_truncated(NS(dsa_globals=shared_globals))
+    assert shared_globals == {"torch": torch}
