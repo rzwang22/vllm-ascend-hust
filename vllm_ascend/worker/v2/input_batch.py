@@ -73,6 +73,9 @@ class AscendInputBatch(InputBatch):
     seq_lens_np: np.ndarray
     # attn_state is used to build attention metadata.
     attn_state: AscendAttentionState | None = None
+    # Attention uses graph-sized views; sampling/proposal keep the actual views.
+    query_start_loc_padded: torch.Tensor | None = None
+    seq_lens_padded: torch.Tensor | None = None
 
     @classmethod
     def make_dummy(

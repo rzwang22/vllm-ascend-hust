@@ -264,6 +264,7 @@ def build_attn_metadata(
     graph_pad_size: int = -1,
     num_actual_tokens: int | None = None,
     num_input_tokens: int | None = None,
+    num_reqs_actual: int | None = None,
     prefill_context_parallel_metadata: AscendPrefillContextParallelMetadata | None = None,
     model_specific_attn_metadata: ModelSpecificAttnMetadata | None = None,
     for_cudagraph_capture: bool = False,
@@ -285,6 +286,10 @@ def build_attn_metadata(
         num_actual_tokens = num_tokens
     if num_input_tokens is None:
         num_input_tokens = num_tokens
+    if num_reqs_actual is None:
+        num_reqs_actual = num_reqs
+    if not 0 <= num_reqs_actual <= num_reqs:
+        raise ValueError("Actual attention requests must fit the padded request layout.")
 
     attn_metadata: dict[str, Any] = {}
     # DSA cache groups with different compression ratios share request-level
@@ -331,7 +336,7 @@ def build_attn_metadata(
             dsa_metadata_kwargs = {}
             if isinstance(attn_metadata_builder, AscendDSAMetadataBuilder):
                 dsa_metadata_kwargs = dict(
-                    num_reqs_actual=num_reqs,
+                    num_reqs_actual=num_reqs_actual,
                     prefill_ratio_to_sas_metadata=prefill_ratio_to_sas_metadata,
                     decode_ratio_to_sas_metadata=decode_ratio_to_sas_metadata,
                     common_ratio_to_sas_metadata=common_ratio_to_sas_metadata,

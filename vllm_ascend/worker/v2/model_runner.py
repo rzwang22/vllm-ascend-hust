@@ -412,8 +412,9 @@ class NPUModelRunner(GPUModelRunner):
         )
         seq_lens = self.input_buffers.seq_lens[:num_reqs]
 
-        # Pad for full CUDA graph mode.
-        self.input_buffers.seq_lens_np[num_reqs_padded:] = 0
+        # Match prepare_pos_seq_lens: every non-request row is zero, including
+        # the dummy rows inside this graph tier, not only rows beyond the tier.
+        self.input_buffers.seq_lens_np[num_reqs:] = 0
 
         # Some input token ids are directly read from the last sampled tokens
         # and draft tokens. Also, get the logits indices to sample tokens from.
@@ -470,6 +471,8 @@ class NPUModelRunner(GPUModelRunner):
             query_start_loc=query_start_loc,
             query_start_loc_np=query_start_loc_np,
             seq_lens=seq_lens,
+            query_start_loc_padded=self.input_buffers.query_start_loc[: num_reqs_padded + 1],
+            seq_lens_padded=self.input_buffers.seq_lens[:num_reqs_padded],
             seq_lens_cpu_upper_bound=seq_lens_cpu_upper_bound,
             dcp_local_seq_lens=None,  # TODO(Ronald1995): support cp.
             is_prefilling_np=is_prefilling_np,
@@ -588,10 +591,10 @@ class NPUModelRunner(GPUModelRunner):
         """
         # TODO: need refactor later, related to vllm PR #34043 this pr delete func
         # relax_for_mixed_batch_cudagraphs, num_reqs no longer equals the actual number of requests.
-        if cudagraph_runtime_mode == CUDAGraphMode.FULL:
-            num_reqs_padded = num_reqs
-        else:
-            num_reqs_padded = batch_desc_num_reqs if batch_desc_num_reqs is not None else num_reqs
+        # FULL uniform descriptors specify the captured request layout. Keeping
+        # only actual requests would collapse multiple padding rows into one
+        # long query and can incorrectly classify that dummy row as prefill.
+        num_reqs_padded = batch_desc_num_reqs if batch_desc_num_reqs is not None else num_reqs
 
         if num_tokens_padded == num_reqs_padded * self.decode_query_len:
             # Uniform-batch case: num_reqs must be no greater than num_reqs_padded

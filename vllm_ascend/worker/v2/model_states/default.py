@@ -53,15 +53,25 @@ class AscendModelState(DefaultModelState):
         # A failed/new preparation invalidates the previous replay permission,
         # even though the same persistent tensor buffers are being updated.
         self._sharedkv_replay_input = None
+        query_start_loc = input_batch.query_start_loc
+        seq_lens = input_batch.seq_lens
         if cudagraph_mode == CUDAGraphMode.FULL:
             # Use padded sizes - padding is handled by model_runner.prepare_attn.
             num_reqs = input_batch.num_reqs_after_padding
             num_input_tokens = input_batch.num_tokens_after_padding
+            padded_query = getattr(input_batch, "query_start_loc_padded", None)
+            padded_seq = getattr(input_batch, "seq_lens_padded", None)
+            if padded_query is not None:
+                query_start_loc = padded_query
+            if padded_seq is not None:
+                seq_lens = padded_seq
         else:
             # For piecewise cudagraphs and eager, use unpadded sizes.
             num_reqs = input_batch.num_reqs
             num_input_tokens = input_batch.num_tokens
         num_actual_tokens = input_batch.num_tokens
+        if query_start_loc.shape[0] < num_reqs + 1 or seq_lens.shape[0] < num_reqs:
+            raise ValueError("Attention inputs must cover the full request layout, including graph padding.")
         query_start_loc_cpu = torch.from_numpy(input_batch.query_start_loc_np)
         max_query_len = input_batch.num_scheduled_tokens.max().item()
         # attn_metadata is needed when update_full_graph_params, but no way can get it now.
@@ -69,13 +79,14 @@ class AscendModelState(DefaultModelState):
         attn_metadata = build_attn_metadata(
             attn_groups=attn_groups,
             num_reqs=num_reqs,
+            num_reqs_actual=input_batch.num_reqs,
             num_tokens=num_input_tokens,
             num_actual_tokens=num_actual_tokens,
             num_input_tokens=num_input_tokens,
-            query_start_loc_gpu=input_batch.query_start_loc,
+            query_start_loc_gpu=query_start_loc,
             query_start_loc_cpu=query_start_loc_cpu,
             max_query_len=max_query_len,
-            seq_lens=input_batch.seq_lens,
+            seq_lens=seq_lens,
             max_seq_len=self.max_model_len,
             block_tables=block_tables,
             slot_mappings=slot_mappings,
