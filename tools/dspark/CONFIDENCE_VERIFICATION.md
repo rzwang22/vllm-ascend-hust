@@ -277,3 +277,16 @@ including a real CPU Torch logistic calibration fit on explicitly synthetic test
 labels (not a model calibration result). Confidence head calls are counted after
 finite logits are observed. Both head calls and current-epoch budget decisions
 are required for measured learned-policy evidence.
+
+Checkpoint preflight accepts `model.safetensors.index.json` and
+`quant_model_weights.safetensors.index.json`. The standard index has precedence,
+matching frozen `DefaultModelLoader._prepare_weights` and
+`filter_duplicate_safetensors_files`. Without it, the loader scans top-level
+`*.safetensors`; the quantized index is used as an audit manifest and its confidence
+shard must belong to that selection. If both indices exist, their complete
+`weight_map` dictionaries must agree; conflicting maps fail before shard access.
+The receipt records `index_file`, `index_sha256`, `index_selection` and hashes of
+all available supported indices. No model files are renamed or synthesized.
+Cost compilation and compatibility checks do not depend on an index filename;
+they retain loaded-confidence/config/hardware/capture identity checks unchanged.
+The compatibility regression run passed 41 tests with three dependency skips.

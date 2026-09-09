@@ -658,7 +658,8 @@ def test_profile_and_configuration_assets_are_immutable(tmp_path):
         freeze_verification_config(original, frozen.parent)
 
 
-def test_checkpoint_checks_real_safetensor_payload_and_missing_weight(tmp_path):
+@pytest.mark.parametrize("index_kind", ["standard", "quantized", "both"])
+def test_checkpoint_checks_real_safetensor_payload_and_missing_weight(tmp_path, index_kind):
     import struct
 
     from tools.dspark.verification_tools import checkpoint_preflight
@@ -667,7 +668,10 @@ def test_checkpoint_checks_real_safetensor_payload_and_missing_weight(tmp_path):
     config = {"hidden_size": 2, "dspark_markov_rank": 1, "n_mtp_layers": 3}
     (tmp_path / "config.json").write_text(json.dumps(config))
     index = {"weight_map": {name: "model.safetensors"}}
-    (tmp_path / "model.safetensors.index.json").write_text(json.dumps(index))
+    names = {"standard": "model.safetensors.index.json", "quantized": "quant_model_weights.safetensors.index.json"}
+    selected = [names[index_kind]] if index_kind != "both" else list(names.values())
+    for filename in selected:
+        (tmp_path / filename).write_text(json.dumps(index))
     (tmp_path / "quant_model_description.json").write_text(json.dumps({name: "FLOAT"}))
     header = json.dumps({name: {"shape": [1, 3], "dtype": "F32", "data_offsets": [0, 12]}}).encode()
     weight = torch.tensor([1.0, 2.0, 3.0]).numpy().tobytes()
@@ -675,7 +679,16 @@ def test_checkpoint_checks_real_safetensor_payload_and_missing_weight(tmp_path):
     receipt = checkpoint_preflight(tmp_path)
     assert receipt["status"] == "present_not_runtime_loaded"
     assert receipt["shape"] == [1, 3] and receipt["checkpoint_weight_sha256"]
-    (tmp_path / "model.safetensors.index.json").write_text('{"weight_map": {}}')
+    assert receipt["index_file"] == selected[0]
+    import hashlib
+
+    assert receipt["index_sha256"] == hashlib.sha256((tmp_path / selected[0]).read_bytes()).hexdigest()
+    assert set(receipt["available_indices_sha256"]) == set(selected)
+    (tmp_path / "model.safetensors").unlink()
+    with pytest.raises(ValueError, match="Missing confidence checkpoint shard"):
+        checkpoint_preflight(tmp_path)
+    for filename in selected:
+        (tmp_path / filename).write_text(json.dumps({"weight_map": {"unrelated.weight": "model.safetensors"}}))
     with pytest.raises(ValueError, match="lacks real confidence"):
         checkpoint_preflight(tmp_path)
 
@@ -867,3 +880,26 @@ def test_offline_calibration_fit_requires_separate_labeled_split(tmp_path):
     path.write_text(json.dumps(samples))
     with pytest.raises(ValueError, match="separate calibration"):
         calibrate(path, "fixture-weights")
+
+
+@pytest.mark.parametrize("conflict", ["shard", "missing_confidence", "other_weight"])
+def test_checkpoint_index_conflicts_fail_before_shard_selection(tmp_path, conflict):
+    from tools.dspark.verification_tools import checkpoint_preflight
+
+    name = "mtp.2.confidence_head.proj.weight"
+    mapping = {name: "model.safetensors", "other.weight": "other.safetensors"}
+    quantized = dict(mapping)
+    if conflict == "shard":
+        quantized[name] = "quant.safetensors"
+    elif conflict == "missing_confidence":
+        del quantized[name]
+    else:
+        quantized["other.weight"] = "different.safetensors"
+    (tmp_path / "config.json").write_text("{}")
+    for filename, weights in (
+        ("model.safetensors.index.json", mapping),
+        ("quant_model_weights.safetensors.index.json", quantized),
+    ):
+        (tmp_path / filename).write_text(json.dumps({"weight_map": weights}))
+    with pytest.raises(ValueError, match="Conflicting checkpoint index"):
+        checkpoint_preflight(tmp_path)

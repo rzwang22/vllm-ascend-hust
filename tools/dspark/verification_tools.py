@@ -162,18 +162,60 @@ def freeze_verification_config(path, directory):
     return target
 
 
+def _checkpoint_index(model):
+    """Mirror DefaultModelLoader's standard-index precedence, without changing files.
+
+    Without the standard index, the frozen loader scans top-level *.safetensors;
+    the ModelSlim index is then an audit manifest, not a loader filtering override.
+    Ambiguous manifests fail closed even if the loader would pick the standard one.
+    """
+    names = ("model.safetensors.index.json", "quant_model_weights.safetensors.index.json")
+    found = []
+    for name in names:
+        path = model / name
+        if path.is_file():
+            payload = path.read_bytes()
+            index = json.loads(payload)
+            mapping = index.get("weight_map")
+            if (
+                not isinstance(mapping, dict)
+                or not mapping
+                or any(not isinstance(key, str) or not isinstance(value, str) for key, value in mapping.items())
+            ):
+                raise ValueError(f"Invalid weight_map in checkpoint index {name}.")
+            found.append((path, mapping, hashlib.sha256(payload).hexdigest()))
+    if not found:
+        raise ValueError(f"Missing checkpoint index; expected one of {names}.")
+    if len(found) > 1 and found[0][1] != found[1][1]:
+        raise ValueError("Conflicting checkpoint index weight_map entries; refusing ambiguous model files.")
+    path, mapping, digest = found[0]
+    return mapping, {
+        "index_file": path.name,
+        "index_sha256": digest,
+        "index_selection": (
+            "standard index takes loader precedence"
+            if path.name == names[0]
+            else "quantized audit index; loader scans top-level safetensors"
+        ),
+        "available_indices_sha256": {item[0].name: item[2] for item in found},
+    }
+
+
 def checkpoint_preflight(model):
     config = json.loads((model / "config.json").read_text())
-    index_path = model / "model.safetensors.index.json"
-    index = json.loads(index_path.read_text())
+    weight_map, index_receipt = _checkpoint_index(model)
     layers = config.get("n_mtp_layers")
     if layers is None:
         layers = config.get("dspark_num_mtp_layers", 3)
     stage = int(layers or 3) - 1
     name = f"mtp.{stage}.confidence_head.proj.weight"
-    if name not in index["weight_map"]:
+    if name not in weight_map:
         raise ValueError(f"Checkpoint lacks real confidence weight {name}; adaptive mode is unavailable.")
-    shard = model / index["weight_map"][name]
+    shard = model / weight_map[name]
+    if shard.parent != model or shard.suffix != ".safetensors":
+        raise ValueError("Confidence shard must match the loader top-level *.safetensors selection.")
+    if not shard.is_file():
+        raise ValueError(f"Missing confidence checkpoint shard: {shard.name}.")
     if model.resolve() not in shard.resolve().parents:
         raise ValueError("Unsafe checkpoint shard path.")
     with shard.open("rb") as stream:
@@ -201,7 +243,7 @@ def checkpoint_preflight(model):
         "dtype": weight["dtype"],
         "checkpoint_weight_sha256": hashlib.sha256(payload).hexdigest(),
         "config_sha256": hashlib.sha256((model / "config.json").read_bytes()).hexdigest(),
-        "index_sha256": hashlib.sha256(index_path.read_bytes()).hexdigest(),
+        **index_receipt,
     }
 
 
