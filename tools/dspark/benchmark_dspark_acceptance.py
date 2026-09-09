@@ -671,6 +671,15 @@ def build_engine_kwargs(args: argparse.Namespace) -> dict[str, Any]:
         kwargs["additional_config"] = {"dspark_nan_diagnostic_dir": str(args.dspark_nan_diagnostic_dir)}
         if args.dspark_nan_replay_window is not None:
             kwargs["additional_config"]["dspark_nan_replay_window"] = list(args.dspark_nan_replay_window)
+    verification = getattr(args, "confidence_verification", None)
+    if verification is not None:
+        if args.mode != "dspark" or args.target_execution_mode != "full_decode_only" or args.temperature != 0:
+            raise ValueError("Confidence verification benchmark requires greedy DSpark FULL_DECODE_ONLY.")
+        if args.dspark_nan_diagnostic_dir is not None:
+            raise ValueError("Forensic diagnostics cannot enter confidence performance measurement.")
+        kwargs.setdefault("additional_config", {})["dspark_confidence_verification"] = json.loads(
+            verification.read_text()
+        )
     if args.revision:
         kwargs["revision"] = args.revision
     if args.kv_cache_memory_bytes is not None:
@@ -1224,6 +1233,22 @@ def run_benchmark(
                 "worker_capture": graph_worker_runtime,
             }
         graph_execution["boundary_snapshots"] = graph_snapshots
+        confidence_summary = None
+        if getattr(args, "confidence_verification", None) is not None:
+            from tools.dspark.verification_tools import summarize_verification
+
+            try:
+                confidence_summary = summarize_verification(
+                    graph_snapshots[1], graph_snapshots[2], args.tensor_parallel_size
+                )
+            except (ValueError, KeyError, TypeError, IndexError) as error:
+                confidence_summary = {"status": "unavailable", "error": str(error)}
+                graph_execution["replay_evidence_status"] = "unavailable"
+                graph_execution["error"] = f"Verification evidence unavailable: {error}"
+        if confidence_summary is not None and confidence_summary["status"] == "available":
+            from tools.dspark.verification_tools import verification_acceptance
+
+            acceptance = verification_acceptance(confidence_summary)
         sampling = {
             "temperature": args.temperature,
             "top_p": args.top_p,
@@ -1247,9 +1272,12 @@ def run_benchmark(
 
             core_root = Path(vllm.__file__).resolve().parents[1]
         result = {
+            "confidence_verification": confidence_summary,
+            "verification_config": engine_kwargs.get("additional_config", {}).get("dspark_confidence_verification"),
             "schema_version": SCHEMA_VERSION,
             "benchmark": "dspark_pr_style_batch_throughput",
-            "performance_eligible": args.dspark_nan_diagnostic_dir is None,
+            "performance_eligible": args.dspark_nan_diagnostic_dir is None
+            and (confidence_summary is None or confidence_summary.get("mode") == "confidence"),
             "nan_diagnostic": {
                 "enabled": args.dspark_nan_diagnostic_dir is not None,
                 "directory": str(args.dspark_nan_diagnostic_dir) if args.dspark_nan_diagnostic_dir else None,
@@ -1300,6 +1328,9 @@ def run_benchmark(
                 "graph_capture_included": False,
                 "graph_warmup_included": False,
                 "explicit_device_synchronization": args.dspark_nan_diagnostic_dir is not None,
+                "confidence_batch_host_transfer_included": (
+                    confidence_summary is not None and confidence_summary.get("mode") == "confidence"
+                ),
                 "graph_telemetry_rpc_included": False,
                 "elapsed_seconds": elapsed_seconds,
             },
@@ -1408,6 +1439,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--dataset-split", default="test")
     parser.add_argument("--prompt-field", default="question")
     parser.add_argument("--num-prompts", type=int, default=400)
+    parser.add_argument(
+        "--confidence-verification", type=Path, help="Explicit opt-in verification JSON; absent keeps fixed K."
+    )
     parser.add_argument("--warmup-prompts", type=int, default=1)
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top-p", type=float, default=1.0)
@@ -1513,6 +1547,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Replay evidence unavailable: {result['graph_execution']['error']}", file=sys.stderr)
         print(f"Outputs and raw timing diagnostics retained: {args.result_json}", file=sys.stderr)
         return 1
+    if not result["performance_eligible"] and result.get("confidence_verification") is not None:
+        print(f"DSPARK_SPECIFIED_LENGTH_OR_PROFILE_COMPLETE={args.result_json}; NOT_ADAPTIVE_PERFORMANCE")
+        return 0
     if not result["performance_eligible"]:
         print(f"DSPARK_NAN_DIAGNOSTIC_COMPLETE={args.result_json}; ROOT_CAUSE_NOT_YET_PROVEN")
         return 0

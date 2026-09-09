@@ -164,8 +164,18 @@ def _validate_graph_execution(result: Mapping[str, Any], expected_mode: str) -> 
         raise ValueError(f"Unknown target execution mode {requested_mode!r}.")
 
 
-def _validate_result(result: Mapping[str, Any], expected_mode: str) -> None:
-    if result.get("performance_eligible") is False or result.get("nan_diagnostic", {}).get("enabled"):
+def _validate_result(
+    result: Mapping[str, Any], expected_mode: str, *, specified_verification_test: bool = False
+) -> None:
+    test_evidence = result.get("confidence_verification") or {}
+    allowed_test = (
+        specified_verification_test
+        and test_evidence.get("mode") == "specified_lengths"
+        and test_evidence.get("status") == "available"
+    )
+    if (result.get("performance_eligible") is False and not allowed_test) or result.get("nan_diagnostic", {}).get(
+        "enabled"
+    ):
         raise ValueError("DSpark NaN diagnostic runs are not eligible for performance comparison.")
     if result.get("schema_version") != benchmark.SCHEMA_VERSION:
         raise ValueError("Unsupported benchmark result schema.")
@@ -333,7 +343,18 @@ def _validate_result(result: Mapping[str, Any], expected_mode: str) -> None:
         )
         if metrics.get("measured_delta") != recomputed_delta:
             raise ValueError("Saved measured metric delta differs from its snapshots.")
-        recomputed_acceptance = benchmark.acceptance_from_delta(recomputed_delta, k)
+        if result.get("confidence_verification") is not None:
+            from tools.dspark.verification_tools import summarize_verification, verification_acceptance
+
+            snapshots = result["graph_execution"]["boundary_snapshots"]
+            summary = summarize_verification(
+                snapshots[1], snapshots[2], result["effective_config"]["tensor_parallel_size"]
+            )
+            if summary != result["confidence_verification"]:
+                raise ValueError("Saved verification evidence differs from raw worker snapshots.")
+            recomputed_acceptance = verification_acceptance(summary)
+        else:
+            recomputed_acceptance = benchmark.acceptance_from_delta(recomputed_delta, k)
         if acceptance != recomputed_acceptance:
             raise ValueError("Saved acceptance values differ from the measured metric delta.")
     else:

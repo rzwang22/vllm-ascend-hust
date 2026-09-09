@@ -8,6 +8,7 @@ target hidden states are projected into the draft attention context before the
 draft layers emit a complete block.
 """
 
+import hashlib
 import typing
 from collections.abc import Iterable
 from typing import Any
@@ -647,6 +648,24 @@ class DSparkDeepseekV4ForCausalLM(
         missing_params = params_dict.keys() - loaded_params - optional_shared_params
         if missing_params:
             raise ValueError(f"DSpark checkpoint did not initialize required parameters: {sorted(missing_params)}")
+        # Provenance is created only after every required parameter was loaded.
+        confidence_names = sorted(name for name in loaded_params if ".confidence_head." in name)
+        digest = hashlib.sha256()
+        for name in confidence_names:
+            digest.update(name.encode())
+            digest.update(params_dict[name].detach().cpu().contiguous().view(torch.uint8).numpy().tobytes())
+        self.confidence_weight_receipt = {
+            "loaded_parameters": confidence_names,
+            "weights_sha256": digest.hexdigest() if confidence_names else None,
+            "module": (
+                f"{type(self.model.confidence_head).__module__}.{type(self.model.confidence_head).__name__}"
+                if confidence_names
+                else None
+            ),
+            "checkpoint_namespace": (
+                f"mtp.{self.model.num_dspark_layers - 1}.confidence_head" if confidence_names else None
+            ),
+        }
         logger.info_once(
             "DSpark draft model loaded: %d params",
             len(loaded_params),

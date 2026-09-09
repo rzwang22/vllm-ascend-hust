@@ -90,9 +90,21 @@ class AscendInputBatch(InputBatch):
             num_tokens,
             input_buffers,
         )
+        if getattr(input_buffers, "dspark_varlen_capture", False):
+            # Balance the remainder instead of assigning it all to the last
+            # request: the capture query bound must remain <= K+1.
+            counts = np.full(num_reqs, num_tokens // num_reqs, dtype=np.int32)
+            counts[: num_tokens % num_reqs] += 1
+            input_batch.num_scheduled_tokens = counts
+            input_batch.seq_lens_cpu_upper_bound.copy_(torch.from_numpy(counts))
+            input_buffers.seq_lens[:num_reqs].copy_(torch.from_numpy(counts).to(input_buffers.device))
+            np.cumsum(counts, out=input_batch.query_start_loc_np[1:])
+            input_buffers.query_start_loc[: num_reqs + 1].copy_(
+                torch.from_numpy(input_batch.query_start_loc_np).to(input_buffers.device)
+            )
+            input_batch.logits_indices.copy_(input_batch.query_start_loc[1:] - 1)
         # seq_len equals to query_len
-        input_buffers.seq_lens_np[:num_reqs] = num_tokens // num_reqs
-        input_buffers.seq_lens_np[num_reqs - 1] += num_tokens % num_reqs
+        input_buffers.seq_lens_np[:num_reqs] = input_batch.num_scheduled_tokens
         # Pad for full CUDA graph mode.
         input_buffers.seq_lens_np[num_reqs:] = 0
         seq_lens_np = input_buffers.seq_lens_np[:num_reqs]

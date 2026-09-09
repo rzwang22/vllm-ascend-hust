@@ -74,10 +74,10 @@ def latency_summary(result):
     }
 
 
-def validate_stream_result(result, records):
+def validate_stream_result(result, records, *, specified_verification_test=False):
     from tools.dspark.summarize_dspark_acceptance_benchmark import _validate_result
 
-    _validate_result(result, result["mode"])
+    _validate_result(result, result["mode"], specified_verification_test=specified_verification_test)
     if (
         result.get("measurement_protocol") != "async_llm_delta_stream_v1"
         or result.get("performance_schema_version") != 1
@@ -172,6 +172,7 @@ def summarize_suite(root):
                     "scheduler": result["streaming"]["scheduler"],
                     "measured_graph_replay_count": result["measured_graph_replay_count"],
                     "graph": result["graph_execution"],
+                    "confidence_verification": result.get("confidence_verification"),
                     "quality": receipt["quality"],
                     "output_lengths": [output["output_token_count"] for output in result["outputs"]],
                     "finish_reasons": [output["finish_reason"] for output in result["outputs"]],
@@ -215,6 +216,8 @@ def summarize_suite(root):
     for concurrency in plan["max_num_seqs"]:
         for baseline_mode, candidate in (
             ("target_graph", "dspark_graph"),
+            ("target_graph", "dspark_confidence_graph"),
+            ("dspark_graph", "dspark_confidence_graph"),
             ("target_eager", "dspark_eager"),
             ("target_eager", "target_graph"),
             ("dspark_eager", "dspark_graph"),

@@ -50,6 +50,10 @@ class ModelAclGraphManager(ModelCudaGraphManager):
         model_runner: Any,
         lora_capture_cases: list[int] | None = None,
     ):
+        from vllm_ascend.spec_decode.dspark_verification import verification_options
+
+        self.verification_options = verification_options(vllm_config)
+        self.model_runner = model_runner
         super().__init__(
             vllm_config,
             device,
@@ -67,6 +71,34 @@ class ModelAclGraphManager(ModelCudaGraphManager):
         # so we need to set graph params before capture full graph.
         if super().needs_capture():
             set_graph_params(self.capture_sizes)
+
+    def _init_candidates(self):
+        if getattr(self, "verification_options", None) is None:
+            return super()._init_candidates()
+        # TND offsets are data, not a graph key. The fixed descriptor contains
+        # request capacity, not tokens // 6. Empty request rows have zero query.
+        sizes = sorted(self.compilation_config.cudagraph_capture_sizes)
+        descs = []
+        previous = 0
+        for tokens in sizes:
+            if tokens > self.max_num_reqs * self.decode_query_len:
+                raise ValueError("Variable decode capture exceeds max_num_seqs * (K+1).")
+            desc = BatchExecutionDescriptor(CUDAGraphMode.FULL, tokens, min(tokens, self.max_num_reqs))
+            descs.append(desc)
+            for count in range(previous + 1, tokens + 1):
+                self._candidates[(count, 0)] = [desc]
+            previous = tokens
+        self._capture_descs[CUDAGraphMode.FULL] = list(reversed(descs))
+
+    def dispatch(self, num_reqs, num_tokens, uniform_token_count, num_active_loras):
+        if getattr(self, "verification_options", None) is None:
+            return super().dispatch(num_reqs, num_tokens, uniform_token_count, num_active_loras)
+        if not getattr(self.model_runner, "_dspark_varlen_decode", False):
+            return BatchExecutionDescriptor(CUDAGraphMode.NONE, num_tokens, num_reqs)
+        desc = super().dispatch(num_reqs, num_tokens, uniform_token_count, num_active_loras)
+        if desc.cg_mode != CUDAGraphMode.FULL:
+            raise ValueError("Pure DSpark variable decode has no captured FULL capacity; fallback is forbidden.")
+        return desc
 
     def run_fullgraph(self, desc: BatchExecutionDescriptor) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """Override run_fullgraph to update full graph params in run_fullgraph."""
@@ -125,6 +157,23 @@ class ModelAclGraphManager(ModelCudaGraphManager):
         progress_bar_desc: str = "Capturing CUDA graphs",
     ) -> dict[BatchExecutionDescriptor, AttentionStatePair]:
         """Capture CUDA graphs for model forward pass."""
+        if getattr(self, "verification_options", None) is not None:
+            from vllm_ascend.attention.dsa_v1 import AscendDSAMetadataBuilder
+            from vllm_ascend.utils import AscendDeviceType, get_ascend_device_type
+
+            if get_ascend_device_type() != AscendDeviceType.A2:
+                raise ValueError("Variable DSpark verification is scoped to the A2/910B arch32 DSV4 TND kernels.")
+            if self.model_runner.ascend_config.enable_flashcomm1:
+                raise ValueError("Variable DSpark verification requires FlashComm1 off.")
+            if not attn_groups or any(
+                type(group.get_metadata_builder(0)) is not AscendDSAMetadataBuilder
+                for groups in attn_groups
+                for group in groups
+            ):
+                raise ValueError(
+                    "Variable DSpark FULL requires the audited DSA TND metadata builder for every KV group."
+                )
+            input_buffers.dspark_varlen_capture = True
         replay_diagnostics = None
         config = getattr(self, "vllm_config", None)
         additional = getattr(config, "additional_config", None) or {}

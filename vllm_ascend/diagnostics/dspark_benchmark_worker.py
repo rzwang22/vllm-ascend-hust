@@ -46,6 +46,7 @@ class _FullReplayObserver:
         self.observer_id = str(uuid4())
         self.pending: list[Any] | None = None
         self.shapes: dict[tuple[int, int], int] = {}
+        self.query_layouts: dict[tuple[int, tuple[int, ...]], int] = {}
         self.excluded_dummy_replay_count = 0
         self.excluded_unscoped_replay_count = 0
         self.failed_execution_count = 0
@@ -113,6 +114,11 @@ class _FullReplayObserver:
                         raise ValueError("FULL replay descriptor disagrees with the completed input batch.")
                     shape = (unpadded, padded)
                     self.shapes[shape] = self.shapes.get(shape, 0) + 1
+                    adaptive = getattr(getattr(self.runner, "speculator", None), "confidence_verification", None)
+                    if adaptive is not None:
+                        lengths = tuple(int(value) for value in batch.num_scheduled_tokens)
+                        layout = (padded, lengths)
+                        self.query_layouts[layout] = self.query_layouts.get(layout, 0) + 1
                 except (AttributeError, TypeError, ValueError) as error:
                     # Retain output/timing even if the evidence ABI is unavailable.
                     self.error = str(error)
@@ -134,6 +140,10 @@ class _FullReplayObserver:
         if self.pending is not None:
             self.error = "Replay snapshot requested inside execute_model."
         return {
+            "query_layouts": [
+                {"capacity": capacity, "query_lengths": list(lengths), "count": count}
+                for (capacity, lengths), count in sorted(self.query_layouts.items())
+            ],
             "observer_id": self.observer_id,
             "source": "mrv2_successful_execute_model_full_replay",
             "error": self.error,
@@ -164,13 +174,27 @@ class DSparkBenchmarkWorkerExtension:
         runner = self.model_runner
         observer = getattr(runner, "_dspark_benchmark_replay_observer", None)
         if observer is None:
+            adaptive = getattr(getattr(runner, "speculator", None), "confidence_verification", None)
+            if adaptive is not None:
+                adaptive.record_decisions = True
+            if adaptive is not None and adaptive.options.get("profile"):
+                from vllm_ascend.diagnostics.dspark_cost_profile import IsolatedCostProfiler
+
+                runner._dspark_cost_profiler = IsolatedCostProfiler(runner)
             observer = _FullReplayObserver(runner)
             runner._dspark_benchmark_replay_observer = observer
         if diagnostic_phase is not None:
             if diagnostic_phase not in ("warmup", "measured", "complete") or observer.nan_diagnostic is None:
                 raise ValueError("Diagnostic phase requires an installed DSpark NaN observer and a valid phase.")
             observer.nan_diagnostic.phase = diagnostic_phase
-        return {"rank": rank, **observer.snapshot()}
+        result = {"rank": rank, **observer.snapshot()}
+        adaptive = getattr(getattr(runner, "speculator", None), "confidence_verification", None)
+        if adaptive is not None:
+            result["confidence_verification"] = adaptive.snapshot()
+        profiler = getattr(runner, "_dspark_cost_profiler", None)
+        if profiler is not None:
+            result["cost_profile"] = profiler.snapshot()
+        return result
 
     def dspark_benchmark_graph_runtime(self) -> dict[str, Any]:
         """Return JSON-safe target/draft graph state from one real worker."""

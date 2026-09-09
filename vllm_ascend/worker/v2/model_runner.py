@@ -162,6 +162,31 @@ class NPUModelRunner(GPUModelRunner):
         # so we can inherit `execute_model` method.
         self.input_batch: AscendInputBatch | None = None
 
+    def execute_model(
+        self,
+        scheduler_output,
+        intermediate_tensors=None,
+        dummy_run=False,
+        skip_attn_for_dummy_run=False,
+        is_profile=False,
+    ):
+        adaptive = getattr(self.speculator, "confidence_verification", None)
+        if adaptive is not None and not (dummy_run or is_profile):
+            scheduler_output = adaptive.select(self, scheduler_output)
+            # Only pure decode batches may dispatch the variable FULL graph.
+            from vllm_ascend.spec_decode.dspark_verification import is_pure_decode
+
+            self._dspark_varlen_decode = is_pure_decode(self.req_states, scheduler_output)
+        else:
+            self._dspark_varlen_decode = False
+        return super().execute_model(
+            scheduler_output,
+            intermediate_tensors=intermediate_tensors,
+            dummy_run=dummy_run,
+            skip_attn_for_dummy_run=skip_attn_for_dummy_run,
+            is_profile=is_profile,
+        )
+
     def load_model(self, load_dummy_weights: bool = False, *args, **kwargs) -> None:
         with include_ascend_dspark_in_core_load_lifecycle(self.vllm_config):
             super().load_model(load_dummy_weights, *args, **kwargs)
@@ -303,6 +328,14 @@ class NPUModelRunner(GPUModelRunner):
         # Decode first, then prefill.
         # batch_idx -> req_id
         req_ids = sorted(num_tokens_per_req, key=num_tokens_per_req.get)  # type: ignore
+        if getattr(getattr(self, "speculator", None), "confidence_verification", None) is not None:
+            req_ids.sort(
+                key=lambda key: (
+                    self.req_states.num_computed_tokens_np[self.req_states.req_id_to_index[key]]
+                    < self.req_states.prefill_len.np[self.req_states.req_id_to_index[key]],
+                    num_tokens_per_req[key],
+                )
+            )
 
         self._update_seq_lens_cpu(scheduler_output, req_ids)
 
@@ -595,6 +628,10 @@ class NPUModelRunner(GPUModelRunner):
         # only actual requests would collapse multiple padding rows into one
         # long query and can incorrectly classify that dummy row as prefill.
         num_reqs_padded = batch_desc_num_reqs if batch_desc_num_reqs is not None else num_reqs
+        if getattr(self, "_dspark_varlen_decode", False):
+            from vllm_ascend.spec_decode.dspark_verification import fill_varlen_query_padding
+
+            return fill_varlen_query_padding(query_start_loc_np, num_reqs, num_reqs_padded, num_tokens_padded)
 
         if num_tokens_padded == num_reqs_padded * self.decode_query_len:
             # Uniform-batch case: num_reqs must be no greater than num_reqs_padded

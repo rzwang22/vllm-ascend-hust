@@ -257,6 +257,13 @@ class AscendDSparkSpeculator(BaseSpeculator):
                 "additional_config.dspark_continue_after_verification must "
                 f"be a bool, got {continue_after_verification!r}."
             )
+        from vllm_ascend.spec_decode.dspark_verification import verification_options
+        from vllm_ascend.worker.v2.spec_decode.dspark.verification_runtime import ConfidenceVerification
+
+        options = verification_options(vllm_config)
+        self.confidence_verification = ConfidenceVerification(options, vllm_config, device) if options else None
+        if options and not continue_after_verification:
+            raise ValueError("Confidence verification requires the continuing proposal lifecycle.")
         self.continue_after_verification = continue_after_verification
         self._model: torch.nn.Module | None = None
         self._loaded_target_model: torch.nn.Module | None = None
@@ -352,6 +359,9 @@ class AscendDSparkSpeculator(BaseSpeculator):
         )
 
         draft_model = load_dspark_model(target_model, self.vllm_config)
+        adaptive = getattr(self, "confidence_verification", None)
+        if adaptive is not None:
+            adaptive.bind_model(draft_model)
 
         from vllm_ascend.models.deepseek_v4_dspark import (
             DSparkDeepseekV4ForCausalLM,
@@ -1611,6 +1621,7 @@ class AscendDSparkSpeculator(BaseSpeculator):
         )
         steps: list[AscendDSparkMarkovStep] = []
         selected_steps: list[torch.Tensor] = []
+        confidence_embeds = []
         for step_index in range(num_speculative_tokens):
             markov_input = predecessor
             markov_embed = self.model.markov_embed(markov_input)
@@ -1623,6 +1634,8 @@ class AscendDSparkSpeculator(BaseSpeculator):
                 ~torch.isnan(markov_embed).any(),
                 "Ascend DSpark Markov embedding contains NaN.",
             )
+            if getattr(self, "confidence_verification", None) is not None:
+                confidence_embeds.append(markov_embed)
             markov_bias = self.model.markov_bias(markov_embed)
             if not isinstance(markov_bias, torch.Tensor):
                 raise TypeError("Ascend DSpark Markov head must return a tensor bias.")
@@ -1692,8 +1705,23 @@ class AscendDSparkSpeculator(BaseSpeculator):
             markov_parameter_names=module_contract["markov_parameter_names"],
             loaded_module_identity_preserved=True,
             confidence_head_present=module_contract["confidence_head"] is not None,
-            confidence_head_used=False,
+            confidence_head_used=(
+                getattr(self, "confidence_verification", None) is not None
+                and (
+                    self.confidence_verification.options["mode"] == "confidence"
+                    or self.confidence_verification.options.get("profile", False)
+                )
+            ),
         )
+        adaptive = getattr(self, "confidence_verification", None)
+        if adaptive is not None:
+            adaptive.record(
+                tuple(proposal_inputs.request_ids),
+                proposal_inputs.step_epoch,
+                hidden_states,
+                confidence_embeds,
+                self.model,
+            )
         self._markov_result = result
         self._markov_step_epoch = proposal_inputs.step_epoch
         return result
@@ -2013,6 +2041,9 @@ class AscendDSparkSpeculator(BaseSpeculator):
                 raise RuntimeError("Ascend DSpark proposal ownership changed during retirement.")
         for owner in dropped_owners:
             del self._published_proposal_owners[owner.request_id]
+            adaptive = getattr(self, "confidence_verification", None)
+            if adaptive is not None:
+                adaptive.rows.pop(owner.request_id, None)
 
         self._dropped_proposal_lifecycle = dropped
         self._proposal_dropped_count += 1
@@ -2129,7 +2160,8 @@ class AscendDSparkSpeculator(BaseSpeculator):
         invalid_lengths = {
             request_id: length
             for request_id, length in scheduled_lengths_by_request.items()
-            if length <= 0 or length > registry[request_id].published_length
+            if length < (0 if getattr(self, "confidence_verification", None) is not None else 1)
+            or length > registry[request_id].published_length
         }
         if invalid_lengths:
             raise RuntimeError("Ascend DSpark scheduler returned an invalid installed proposal length.")
@@ -2299,7 +2331,12 @@ class AscendDSparkSpeculator(BaseSpeculator):
         # from SchedulerOutput.scheduled_spec_decode_tokens, so a positive
         # length is the authoritative verification-row identity. A zero-length
         # prefill row must neither index nor consume the previous publication.
-        verification_batch_rows = tuple(row for row, length in enumerate(input_scheduled_lengths) if length > 0)
+        adaptive = getattr(self, "confidence_verification", None)
+        verification_batch_rows = tuple(
+            row
+            for row, length in enumerate(input_scheduled_lengths)
+            if length > 0 or (adaptive is not None and input_request_ids[row] in request_ids)
+        )
         verification_request_ids = tuple(input_request_ids[row] for row in verification_batch_rows)
         verification_scheduled_lengths = tuple(input_scheduled_lengths[row] for row in verification_batch_rows)
         # Core may permute equal-length requests between proposal production
@@ -2485,6 +2522,13 @@ class AscendDSparkSpeculator(BaseSpeculator):
             "Ascend DSpark single-round verification supports deterministic greedy sampling only.",
         )
 
+        if adaptive is not None:
+            adaptive.accepted(
+                verification_request_ids,
+                verification_scheduled_lengths,
+                num_sampled,
+                tuple(owner_epochs[row] for row in verification_to_published),
+            )
         consumed_owners: list[_PublishedProposalOwner] = []
         for request_id, owner_epoch, scheduled_length in zip(
             request_ids,
@@ -2943,7 +2987,11 @@ class AscendDSparkSpeculator(BaseSpeculator):
         if self._next_proposal_skipped:
             dspark_runtime_not_wired("M2.4B multi-round DSpark lifecycle")
         if self._published_candidate_tokens is not None:
-            if input_batch.num_draft_tokens == 0:
+            if input_batch.num_draft_tokens == 0 and not (
+                getattr(self, "confidence_verification", None) is not None
+                and self._active_proposal_reconciled
+                and self._active_published_proposal_owner_ids
+            ):
                 # A previous publication may contain only scheduler-proven
                 # delayed owners. Do not consume it from an unrelated target
                 # batch or overwrite its request-owned candidate rows.

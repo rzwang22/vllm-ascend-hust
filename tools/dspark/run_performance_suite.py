@@ -24,7 +24,7 @@ from tools.dspark.prepare_performance_data import read_manifest
 
 CORE_SHA = "897306c43bf800e2480cb5c0f3e2da408d85a2fd"
 MODEL_REVISION = "9e8679a9db7eec11efed9925f7efb96549077545"
-MODES = ("target_graph", "dspark_graph", "target_eager", "dspark_eager")
+MODES = ("target_graph", "dspark_graph", "target_eager", "dspark_eager", "dspark_confidence_graph")
 
 
 def capture_sizes(mode, concurrency, budget, explicit=None):
@@ -129,6 +129,11 @@ def create_plan(args, records_file, root):
                     "--result-json",
                     str(root / directory / "result.json"),
                 ]
+                if mode == "dspark_confidence_graph":
+                    verification = getattr(args, "confidence_verification", None)
+                    if verification is None:
+                        raise ValueError("dspark_confidence_graph requires --confidence-verification JSON.")
+                    command += ["--confidence-verification", str(verification.resolve())]
                 if sizes:
                     command += ["--cudagraph-capture-sizes", *map(str, sizes)]
                 if args.client_outstanding is not None:
@@ -221,6 +226,10 @@ def source_gate(args):
 
 def check_case(result, case, plan, records):
     validate_stream_result(result, records)
+    if case["mode"] == "dspark_confidence_graph":
+        verification = result.get("confidence_verification") or {}
+        if verification.get("status") != "available" or verification.get("mode") != "confidence":
+            raise ValueError("Learned-policy performance requires actual confidence execution evidence.")
     if (
         result["plugin_sha"] != plan["plugin_sha"]
         or result["core_sha"] != CORE_SHA
@@ -257,6 +266,10 @@ def run_suite(args):
     frozen.mkdir()
     shutil.copyfile(args.manifest, frozen / "manifest.json")
     shutil.copyfile(frozen_data, frozen / manifest["records_file"])
+    if getattr(args, "confidence_verification", None) is not None:
+        from tools.dspark.verification_tools import freeze_verification_config
+
+        args.confidence_verification = freeze_verification_config(args.confidence_verification, root / "verification")
     plan = create_plan(args, data, root)
     plan["input_sha256"] = benchmark._sha256_file(data)
     plan["input_manifest_sha256"] = benchmark._sha256_file(args.manifest)
@@ -371,6 +384,7 @@ def parse_args(argv=None):
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--num-prompts", type=int, default=64)
     parser.add_argument("--max-num-seqs", nargs="+", type=int, default=[4])
+    parser.add_argument("--confidence-verification", type=Path)
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--modes", nargs="+", choices=MODES, default=["target_graph", "dspark_graph"])
     parser.add_argument("--output-len", type=int, default=1024)
