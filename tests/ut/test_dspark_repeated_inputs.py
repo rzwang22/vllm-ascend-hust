@@ -235,3 +235,18 @@ def test_repeated_inputs_have_distinct_async_requests(tmp_path, monkeypatch):
     assert engine.peak == 128
     assert [r["request_index"] for r in measured["requests"]] == list(range(400))
     assert not {r["request_id"] for r in warmup["requests"]}.intersection(r["request_id"] for r in measured["requests"])
+
+
+def test_documented_server_sequence_check_executes(tmp_path, monkeypatch, capsys):
+    import sys
+    from pathlib import Path
+
+    path, _, source = import_inputs(tmp_path, monkeypatch)
+    doc = (Path(__file__).parents[2] / "tools/dspark/REPEATED_INPUTS.md").read_text()
+    script = doc.split("<<'PY' | tee \"$DATA_ROOT/check.json\"\n", 1)[1].split("\nPY\n", 1)[0]
+    monkeypatch.setattr(sys, "argv", ["check", str(path), str(source)])
+    capsys.readouterr()
+    exec(compile(script, "documented-server-input-check", "exec"), {})
+    receipt = json.loads(capsys.readouterr().out)
+    assert receipt["status"] == "valid"
+    assert receipt["request_instance_count"] == 400 and receipt["unique_prompt_count"] == 64

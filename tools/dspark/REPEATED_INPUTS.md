@@ -81,9 +81,10 @@ python - "$MANIFEST" "$FROZEN_INPUT" <<'PY' | tee "$DATA_ROOT/check.json"
 import json
 import sys
 from collections import Counter
+from pathlib import Path
 from tools.dspark.prepare_performance_data import read_manifest, _read_jsonl, _sha256_file, input_population
 m, rows, _ = read_manifest(sys.argv[1], 400)
-original = _read_jsonl(sys.argv[2])[:400]
+original = _read_jsonl(Path(sys.argv[2]))[:400]
 expected = [r['prompt_token_ids'] for r in original]
 actual = [r['prompt_token_ids'] for r in rows]
 assert actual == expected
@@ -92,7 +93,7 @@ assert m['request_instance_count'] == len(actual) == 400
 assert m['unique_prompt_count'] == len(set(map(tuple, actual))) == 64
 assert len({r['request_instance_id'] for r in rows}) == 400
 assert max(map(len, actual)) == 116
-assert m['original_source_file_sha256'] == _sha256_file(sys.argv[2])
+assert m['original_source_file_sha256'] == _sha256_file(Path(sys.argv[2]))
 print(json.dumps({'status': 'valid', **input_population(m, rows),
                   'original_source_file_sha256': m['original_source_file_sha256']}, indent=2))
 PY
@@ -135,7 +136,7 @@ and output/NaN/error checks remain intact. Text/EOS differences do not create a
 cross-mode exact-token gate. Same-SHA comparisons are produced per B in
 `summary.json`, `summary.csv` and `summary.md`; failure artifacts are retained.
 
-Local validation: 209 tests passed, 3 installed-vLLM/Ascend tests skipped.
+Local validation: 210 tests passed, 3 installed-vLLM/Ascend tests skipped.
 Scoped manual pre-commit hooks passed. Full `format.sh ci` was run in a disposable
 worktree and encountered existing repository failures (78 unrelated files
 modified there, zero delivery files); those changes were not included.
