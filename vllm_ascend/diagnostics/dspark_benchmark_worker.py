@@ -175,8 +175,8 @@ class DSparkBenchmarkWorkerExtension:
         observer = getattr(runner, "_dspark_benchmark_replay_observer", None)
         if observer is None:
             adaptive = getattr(getattr(runner, "speculator", None), "confidence_verification", None)
-            if adaptive is not None:
-                adaptive.record_decisions = True
+            if adaptive is not None and adaptive.options.get("mode") == "confidence":
+                adaptive.load_costs()
             if adaptive is not None and adaptive.options.get("profile"):
                 from vllm_ascend.diagnostics.dspark_cost_profile import IsolatedCostProfiler
 
@@ -195,6 +195,12 @@ class DSparkBenchmarkWorkerExtension:
         if profiler is not None:
             result["cost_profile"] = profiler.snapshot()
         return result
+
+    def dspark_benchmark_profile_point(self, point: str, lengths: list[int]) -> dict:
+        profiler = getattr(self.model_runner, "_dspark_cost_profiler", None)
+        if profiler is None:
+            raise ValueError("Install isolated profile instrumentation before changing a profile point.")
+        return {"rank": _host_count(self.rank), **profiler.begin_point(point, lengths)}
 
     def dspark_benchmark_graph_runtime(self) -> dict[str, Any]:
         """Return JSON-safe target/draft graph state from one real worker."""

@@ -27,13 +27,14 @@ def cases(stage, batch):
         ]
     if stage == "extend":
         return [(f"confidence-b{batch}", batch, None, False)]
-    # Same configured max_num_seqs and captures across all profile processes;
-    # client outstanding changes the real request count. No production engine
-    # survives a profile trial, and these records cannot be performance PASS.
-    return [(f"profile-n{n}-ell{ell}", n, [ell], True) for n in range(1, batch + 1) for ell in (0, 1, 3, 5)]
+    raise ValueError("Profile points are executed by startup_cost_profile in one engine, not individual cases.")
 
 
 def run(args):
+    if args.stage == "profile":
+        from tools.dspark.startup_cost_profile import run as run_profile
+
+        return run_profile(args)
     args.output_dir.mkdir(parents=True, exist_ok=False)
     suite.source_gate(args)
     benchmark._atomic_write_json(args.output_dir / "checkpoint.json", checkpoint_preflight(args.model))
@@ -155,11 +156,20 @@ def main(argv=None):
     parser.add_argument("--warmup-prompts", type=int, default=1)
     parser.add_argument("--client-outstanding", type=int)
     parser.add_argument("--capture", nargs="+", type=int, default=[6, 12, 18, 24])
+    parser.add_argument("--profile-contexts", nargs="+", type=int, default=[128, 2048])
+    parser.add_argument("--profile-output-tokens", type=int, default=512)
+    parser.add_argument("--profile-warmup", type=int, default=2)
+    parser.add_argument("--profile-samples", type=int, default=5)
     parser.add_argument("--max-model-len", type=int, default=8192)
     parser.add_argument("--max-num-batched-tokens", type=int, default=8192)
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.9)
     args = parser.parse_args(argv)
-    if args.batch < 1 or args.num_prompts < args.batch or args.output_len < 1:
+    if (
+        args.batch < 1
+        or args.num_prompts < 1
+        or args.output_len < 1
+        or (args.stage != "profile" and args.num_prompts < args.batch)
+    ):
         parser.error("Require positive lengths and num_prompts >= batch.")
     try:
         return run(args)

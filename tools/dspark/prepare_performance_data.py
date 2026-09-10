@@ -130,6 +130,49 @@ def read_manifest(path, count=None):
     return manifest, rows[:count] if count is not None else rows, data_path
 
 
+def import_frozen_records(raw, tokenizer, *, count, max_input_tokens, source, revision, token_field, id_field):
+    """Preserve existing token IDs and order; decoded text is labelled, not re-rendered."""
+    if count < 1 or len(raw) < count:
+        raise ValueError("Insufficient frozen requests; no replay")
+    rows = []
+    seen = set()
+    for index, task in enumerate(raw[:count]):
+        tokens = task.get(token_field)
+        if (
+            not isinstance(tokens, list)
+            or not 0 < len(tokens) <= max_input_tokens
+            or any(type(token) is not int or token < 0 for token in tokens)
+        ):
+            raise ValueError("Invalid frozen token IDs or length; no truncation")
+        hashed = digest(tokens)
+        if hashed in seen:
+            raise ValueError("Duplicate frozen token sequence; not independent requests")
+        seen.add(hashed)
+        text = tokenizer.decode(tokens, skip_special_tokens=False)
+        row = {
+            "schema_version": 1,
+            "case_id": str(task.get(id_field, f"{revision}:{index}")),
+            "source_index": index,
+            "source": source,
+            "source_revision": revision,
+            "raw_task": task,
+            "raw_task_sha256": digest(task),
+            "prompt": text,
+            "prompt_sha256": _sha256_bytes(text.encode()),
+            "prompt_token_ids": list(tokens),
+            "prompt_token_sha256": hashed,
+            "prompt_token_count": len(tokens),
+            "prompt_text_origin": "decoded frozen token IDs; not re-rendered or re-tokenized",
+            "tests": None,
+            "tests_sha256": None,
+            "sample_kind": "general",
+            "replay_of": None,
+        }
+        row["record_sha256"] = digest(row)
+        rows.append(row)
+    return rows, []
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     source = parser.add_mutually_exclusive_group(required=True)
@@ -140,6 +183,8 @@ def main(argv=None):
     parser.add_argument("--hf-config")
     parser.add_argument("--split", default="test")
     parser.add_argument("--kind", choices=("general", "code", "humaneval"), required=True)
+    parser.add_argument("--frozen-token-field", help="Import final token IDs verbatim, in source order; general only")
+    parser.add_argument("--expected-source-sha256", help="Required for frozen token import")
     parser.add_argument("--prompt-field", default="prompt")
     parser.add_argument("--id-field", default="task_id")
     parser.add_argument("--num-samples", type=int, required=True)
@@ -157,17 +202,36 @@ def main(argv=None):
 
         dataset = load_dataset(args.hf_repo, name=args.hf_config, split=args.split, revision=args.source_revision)
         raw = [dict(row) for row in dataset]
-    records, dispositions = build_records(
-        raw,
-        _load_tokenizer(args.tokenizer),
-        count=args.num_samples,
-        max_input_tokens=args.max_input_tokens,
-        source=args.source_name,
-        revision=args.source_revision,
-        kind=args.kind,
-        prompt_field=args.prompt_field,
-        id_field=args.id_field,
-    )
+    if args.frozen_token_field:
+        if (
+            args.kind != "general"
+            or not args.input_jsonl
+            or not args.expected_source_sha256
+            or _sha256_file(args.input_jsonl) != args.expected_source_sha256
+        ):
+            parser.error("Frozen import requires general JSONL and matching --expected-source-sha256")
+        records, dispositions = import_frozen_records(
+            raw,
+            _load_tokenizer(args.tokenizer),
+            count=args.num_samples,
+            max_input_tokens=args.max_input_tokens,
+            source=args.source_name,
+            revision=args.source_revision,
+            token_field=args.frozen_token_field,
+            id_field=args.id_field,
+        )
+    else:
+        records, dispositions = build_records(
+            raw,
+            _load_tokenizer(args.tokenizer),
+            count=args.num_samples,
+            max_input_tokens=args.max_input_tokens,
+            source=args.source_name,
+            revision=args.source_revision,
+            kind=args.kind,
+            prompt_field=args.prompt_field,
+            id_field=args.id_field,
+        )
     args.output_dir.mkdir(parents=True, exist_ok=False)
     snapshot = args.output_dir / "source.jsonl"
     snapshot.write_bytes(b"".join(_canonical_json_bytes(row) for row in raw))
@@ -187,12 +251,17 @@ def main(argv=None):
         "source": args.source_name,
         "source_revision": args.source_revision,
         "num_unique_samples": len(records),
-        "selection": "sha256(case_id) order after full-render length filtering; no replay",
+        "selection": "original frozen token order; no replay"
+        if args.frozen_token_field
+        else "sha256(case_id) order after full-render length filtering; no replay",
+        "original_source_file_sha256": _sha256_file(args.input_jsonl) if args.input_jsonl else None,
         "max_input_tokens": args.max_input_tokens,
         "kind": args.kind,
         "tokenizer_revision": args.tokenizer_revision,
         "tokenizer_files_sha256": tokenizer_files,
-        "rendering": "DSV4 chat template, generation prompt, add_special_tokens=False",
+        "rendering": "verbatim frozen token IDs; display text decoded only"
+        if args.frozen_token_field
+        else "DSV4 chat template, generation prompt, add_special_tokens=False",
         "quality_test_tasks": sum(row["tests"] is not None for row in records),
     }
     (args.output_dir / "manifest.json").write_bytes(_canonical_json_bytes(manifest))

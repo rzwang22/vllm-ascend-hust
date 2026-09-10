@@ -278,7 +278,11 @@ def run_suite(args):
         print(f"PLAN_ONLY={root}; no model process launched")
         return 0
     resources_idle(root / "npu-initial.log")
-    reference_quality = evaluate(records, [], root / "reference-quality", args.sandbox_image, reference=True)
+    reference_quality = (
+        {"summary": {"status": "unavailable"}}
+        if getattr(args, "skip_code_evaluation", False)
+        else evaluate(records, [], root / "reference-quality", args.sandbox_image, reference=True)
+    )
     baseline_comparison = {}
     for case in plan["runs"]:
         directory = root / case["directory"]
@@ -327,7 +331,16 @@ def run_suite(args):
                 request["input_length"] = task["prompt_token_count"]
                 request["output_length"] = len(request["output_token_ids"])
             benchmark._atomic_write_json(directory / "requests.json", requests)
-            quality = evaluate(records, requests, directory / "quality", args.sandbox_image)
+            if getattr(args, "skip_code_evaluation", False):
+                (directory / "quality").mkdir()
+                quality = {
+                    "summary": {
+                        "status": "unavailable",
+                        "reason": "performance-only run; code evaluation not requested",
+                    }
+                }
+            else:
+                quality = evaluate(records, requests, directory / "quality", args.sandbox_image)
             if (
                 reference_quality["summary"]["status"] != "available"
                 or reference_quality["summary"]["all_task_pass_fraction"] != 1
@@ -384,6 +397,7 @@ def parse_args(argv=None):
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--num-prompts", type=int, default=64)
     parser.add_argument("--max-num-seqs", nargs="+", type=int, default=[4])
+    parser.add_argument("--skip-code-evaluation", action="store_true")
     parser.add_argument("--confidence-verification", type=Path)
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--modes", nargs="+", choices=MODES, default=["target_graph", "dspark_graph"])

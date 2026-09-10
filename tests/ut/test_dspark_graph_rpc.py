@@ -538,3 +538,26 @@ def test_replay_observer_installs_by_named_rpc_in_fresh_process(monkeypatch, ins
     assert all(state["observer_id"] and state["source"] == benchmark._REPLAY_SOURCE for state in states)
     assert all(state["eager_fallback_count"] is None for state in states)
     assert len(sent) == 1
+
+
+def test_profile_point_named_dispatch_and_safe_payload(monkeypatch):
+    monkeypatch.setenv("VLLM_ALLOW_INSECURE_SERIALIZATION", "0")
+    api = _boundary(monkeypatch)
+    workers = _workers(api, monkeypatch, benchmark._GRAPH_WORKER_EXTENSION)
+
+    class PointReceiver:
+        def begin_point(self, point, lengths):
+            assert point == "ctx128-n4-t24-balanced" and lengths == [5, 2, 0, 4]
+            return {"point": point, "lengths": lengths, "cleanup": "scheduler_owned_unique_request_ids"}
+
+    for worker in workers:
+        worker.model_runner._dspark_cost_profiler = PointReceiver()
+    executor = _executor(api, workers)
+    encoded = api.MsgpackEncoder().encode(
+        ("dspark_benchmark_profile_point", {"point": "ctx128-n4-t24-balanced", "lengths": [5, 2, 0, 4]})
+    )[0]
+    method, kwargs = api.MsgpackDecoder().decode(encoded)
+    result = executor.collective_rpc(method, kwargs=kwargs)
+    _assert_basic(result)
+    assert [row["rank"] for row in result] == list(range(8))
+    assert api.MsgpackDecoder().decode(api.MsgpackEncoder().encode(result)[0]) == result

@@ -88,6 +88,13 @@ def summarize_verification(before, after, ranks):
                 measured.append({**row, "count": count})
         if not measured:
             raise ValueError("No successful measured variable FULL execution.")
+        delta["aggregate"] = {
+            key: value - initial.get("aggregate", {}).get(key, 0) for key, value in final.get("aggregate", {}).items()
+        }
+        delta["confidence_histogram"] = [
+            b - a for a, b in zip(initial.get("confidence_histogram", []), final.get("confidence_histogram", []))
+        ]
+        delta["cost_profile"] = final.get("cost_profile")
         delta["layouts"] = measured
         delta["rank"] = rank
         evidence.append(delta)
@@ -300,7 +307,7 @@ def compile_profile(results):
     }
 
 
-def measured_scheduler_overhead(identity):
+def measured_scheduler_overhead(identity, costs=None):
     # Profile CPU scheduling separately, without touching worker/request state.
     import time
 
@@ -308,7 +315,7 @@ def measured_scheduler_overhead(identity):
 
     count = identity["max_num_seqs"]
     rows = [ConfidenceRow(str(i), 1, (0.9,) * 5) for i in range(count)]
-    table = CostTable({size: 1.0 for size in identity["capture_sizes"]}, {count: 1.0}, 0, (0, 1), {})
+    table = costs or CostTable({size: 1.0 for size in identity["capture_sizes"]}, {count: 1.0}, 0, (0, 1), {})
     values = []
     for _ in range(20):
         start = time.perf_counter()

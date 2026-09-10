@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Request-owned confidence state. Instantiated only for explicit opt-in."""
 
+import importlib.metadata
 import json
 import math
 import time
@@ -29,6 +30,9 @@ def runtime_identity(config, hardware, confidence_sha256=None):
         "revision": model.revision,
         "hf_config": fingerprint(model.hf_config.to_dict()),
         "hardware": hardware,
+        "torch_version": str(torch.__version__),
+        "torch_npu_version": importlib.metadata.version("torch-npu"),
+        "ascend_compilation_config": (config.additional_config or {}).get("ascend_compilation_config", {}),
         "tp": parallel.tensor_parallel_size,
         "ep": parallel.enable_expert_parallel,
         "dtype": str(model.dtype),
@@ -39,6 +43,9 @@ def runtime_identity(config, hardware, confidence_sha256=None):
         "max_num_seqs": config.scheduler_config.max_num_seqs,
         "max_num_batched_tokens": config.scheduler_config.max_num_batched_tokens,
         "K": 5,
+        "max_model_len": model.max_model_len,
+        "block_size": config.cache_config.block_size,
+        "gpu_memory_utilization": config.cache_config.gpu_memory_utilization,
     }
 
 
@@ -69,8 +76,19 @@ class ConfidenceVerification:
         self.policy_seconds = 0.0
         self.selected_epochs = {}
         self.last_selection = None
+        self.confidence_histogram = [0] * 10
         self.record_decisions = False
         self.decisions = []
+        self.aggregate = {
+            "logical_tokens_before": 0,
+            "logical_tokens_after": 0,
+            "selected_capacity_sum": 0,
+            "estimated_seconds_sum": 0.0,
+            "expected_progress_sum": 0.0,
+            "confidence_sum": 0.0,
+            "confidence_count": 0,
+            "all_full_decisions": 0,
+        }
 
     def bind_model(self, model):
         if self.options["mode"] != "confidence" and not self.options.get("profile"):
@@ -119,6 +137,14 @@ class ConfidenceVerification:
         for request_id, values in zip(request_ids, probabilities):
             self.rows[request_id] = ConfidenceRow(request_id, epoch, tuple(values))
 
+    def load_costs(self):
+        """Benchmark calls this at the startup RPC, before warmup/measurement."""
+        if self.costs is None:
+            identity = runtime_identity(
+                self.config, torch.npu.get_device_name(self.device), self.receipt["weights_sha256"]
+            )
+            self.costs = CostTable.load(self.options["cost_profile"], identity)
+
     def select(self, runner, output):
         started = time.perf_counter()
         owners = runner.speculator._published_proposal_owners
@@ -156,11 +182,7 @@ class ConfidenceVerification:
             rows = [self.rows[key] for key in sorted(candidates)]
             if any(row.producer_epoch != epochs[row.request_id] for row in rows):
                 raise ValueError("Stale confidence producer epoch; refusing to schedule another candidate's scores.")
-            if self.costs is None:
-                identity = runtime_identity(
-                    self.config, torch.npu.get_device_name(self.device), self.receipt["weights_sha256"]
-                )
-                self.costs = CostTable.load(self.options["cost_profile"], identity)
+            self.load_costs()
             base_tokens = output.total_num_scheduled_tokens - sum(candidates.values())
             # Only completed-prefill requests earn a sampling benefit.
             states = runner.req_states
@@ -210,6 +232,18 @@ class ConfidenceVerification:
             "expected_progress": decision.expected_progress if decision is not None else None,
             "actual_tokens": result.total_num_scheduled_tokens,
         }
+        if decision is not None:
+            self.aggregate["logical_tokens_before"] += output.total_num_scheduled_tokens
+            self.aggregate["logical_tokens_after"] += result.total_num_scheduled_tokens
+            self.aggregate["selected_capacity_sum"] += decision.capacity
+            self.aggregate["estimated_seconds_sum"] += decision.estimated_seconds
+            self.aggregate["expected_progress_sum"] += decision.expected_progress
+            self.aggregate["all_full_decisions"] += lengths == candidates
+            self.aggregate["confidence_sum"] += sum(sum(row.conditional) for row in rows)
+            self.aggregate["confidence_count"] += len(rows) * 5
+            for row in rows:
+                for probability in row.conditional:
+                    self.confidence_histogram[min(int(probability * 10), 9)] += 1
         if self.record_decisions:
             self.decisions.append(self.last_selection)
         self.scheduled += sum(lengths.values())
@@ -235,6 +269,17 @@ class ConfidenceVerification:
         accepted = self.accepted_by_position.cpu().tolist()  # phase-boundary RPC only
         return {
             "schema_version": 1,
+            "aggregate": dict(self.aggregate),
+            "confidence_histogram": list(self.confidence_histogram),
+            "cost_profile": {
+                "path": self.options.get("cost_profile"),
+                "identity": self.costs.identity,
+                "context_range": list(self.costs.context_range),
+                "capacities": sorted(self.costs.target_seconds),
+                "layout_cells": len(self.costs.cells),
+            }
+            if self.costs is not None
+            else None,
             "mode": self.options["mode"],
             "weights": self.receipt,
             "calibration": self.calibration,

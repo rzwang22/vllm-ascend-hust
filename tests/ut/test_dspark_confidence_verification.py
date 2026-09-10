@@ -741,8 +741,8 @@ def test_explicit_profile_compiles_rank_maxima_and_rejects_failed_source(tmp_pat
     assert table["context_range"] == [32, 128]
     cache = tmp_path / "cache.json"
     cache.write_text(json.dumps(table))
-    loaded = CostTable.load(str(cache), identity)
-    assert loaded.cost(4, 15, 64) == (24, pytest.approx(0.0101))
+    with pytest.raises(ValueError, match="legacy schema 1"):
+        CostTable.load(str(cache), identity)
     rows.pop()
     path.write_text(json.dumps(data))
     with pytest.raises(ValueError, match="Missing profile rank"):

@@ -95,40 +95,98 @@ class CostTable:
     scheduler_seconds: float
     context_range: tuple[int, int]
     identity: dict
+    cells: tuple = ()
+    startup_lookup: dict | None = None
+    context_ceilings: tuple = ()
 
     @classmethod
     def load(cls, path: str, identity: dict) -> CostTable:
         data = json.loads(Path(path).read_text())
-        if data.get("schema_version") != 1 or data.get("source") != "isolated_npu_event_profile":
-            raise ValueError("Cost profile must contain isolated measured NPU event timings.")
-        if data.get("identity") != identity or not data.get("raw_measurements_sha256"):
-            raise ValueError("Cost profile model/hardware/TP/EP/context/capture identity mismatch.")
-        target = {int(k): float(v) for k, v in data["target_seconds"].items()}
-        draft = {int(k): float(v) for k, v in data["draft_seconds"].items()}
-        overhead = float(data["scheduler_seconds"])
+        if data.get("schema_version") == 2:
+            return cls.load_startup(data, identity)
+        raise ValueError("Cost profile requires measured startup schema 2; legacy schema 1 must be re-profiled.")
+
+    @classmethod
+    def load_startup(cls, data: dict, identity: dict) -> CostTable:
         if (
-            not target
-            or not draft
-            or any(k <= 0 or not math.isfinite(v) or v <= 0 for k, v in (*target.items(), *draft.items()))
+            data.get("source") != "startup_npu_event_profile"
+            or data.get("identity") != identity
+            or not data.get("raw_measurements_sha256")
+            or data.get("unit") != "seconds"
+            or data.get("performance_eligible") is not False
+            or data.get("model_initializations") != 1
         ):
-            raise ValueError("Missing or invalid measured graph/draft costs.")
+            raise ValueError("Incompatible startup cost profile identity, units or lifecycle.")
+        cells = data.get("cells", [])
+        contexts = data.get("context_ceilings", [])
+        requests = data.get("request_grid", [])
+        captures = identity["capture_sizes"]
+        if (
+            not cells
+            or not contexts
+            or not requests
+            or contexts != sorted(set(contexts))
+            or requests != sorted(set(requests))
+            or contexts[0] < 1
+            or requests[0] != 1
+            or requests[-1] != identity["max_num_seqs"]
+        ):
+            raise ValueError("Missing startup profile coverage.")
+        expected = {
+            (n, cap, ctx)
+            for ctx in contexts
+            for n in requests
+            for previous, cap in zip([0] + captures[:-1], captures)
+            if n <= cap and 6 * n > previous
+        }
+        actual = {(c["requests"], c["capacity"], c["context_ceiling"]) for c in cells}
+        if actual != expected or len(actual) != len(cells):
+            raise ValueError("Incomplete or duplicate startup layout/context coverage.")
+        for c in cells:
+            if any(not math.isfinite(c[key]) or c[key] <= 0 for key in ("target_seconds", "draft_seconds")):
+                raise ValueError("Invalid measured startup cost.")
+        overhead = data["scheduler_seconds"]
         if not math.isfinite(overhead) or overhead < 0:
-            raise ValueError("Invalid measured scheduling overhead.")
-        context_range = data["context_range"]
-        if (
-            not isinstance(context_range, list)
-            or len(context_range) != 2
-            or any(type(n) is not int for n in context_range)
-            or not 0 <= context_range[0] <= context_range[1]
-        ):
-            raise ValueError("Invalid measured context range.")
-        if sorted(target) != sorted(identity.get("capture_sizes", [])):
-            raise ValueError("Measured costs do not cover the exact capture configuration.")
-        return cls(target, draft, overhead, tuple(context_range), identity)
+            raise ValueError("Invalid scheduling overhead.")
+        lookup = {}
+        # Resolve request bucketing once at startup, not once per candidate
+        # budget. Entries retain measured layout/context costs, no extrapolation.
+        for n in range(1, identity["max_num_seqs"] + 1):
+            for previous, cap in zip([0] + captures[:-1], captures):
+                if n <= cap and 6 * n > previous:
+                    for context in contexts:
+                        candidates = [
+                            c
+                            for c in cells
+                            if c["capacity"] == cap and c["requests"] >= n and c["context_ceiling"] == context
+                        ]
+                        if not candidates:
+                            raise ValueError("Missing bounded startup layout/context cost coverage.")
+                        cell = min(candidates, key=lambda c: c["requests"])
+                        lookup[n, cap, context] = cell["target_seconds"] + cell["draft_seconds"] + overhead
+        return cls(
+            {cap: max(c["target_seconds"] for c in cells if c["capacity"] == cap) for cap in captures},
+            {},
+            overhead,
+            (0, contexts[-1]),
+            identity,
+            tuple(cells),
+            lookup,
+            tuple(contexts),
+        )
 
     def cost(self, requests: int, tokens: int, context: int) -> tuple[int, float]:
         if not self.context_range[0] <= context <= self.context_range[1]:
             raise ValueError("Context outside measured cost profile; run an isolated profile for this context.")
+        if self.cells:
+            if requests <= 0 or not requests <= tokens <= requests * MAX_DRAFTS + requests:
+                raise ValueError("Invalid pure-decode request/token layout.")
+            capacity = next((cap for cap in sorted(self.target_seconds) if cap >= tokens), None)
+            bucket = next((ctx for ctx in self.context_ceilings if ctx >= context), None)
+            value = self.startup_lookup.get((requests, capacity, bucket))
+            if value is None:
+                raise ValueError("Missing bounded startup layout/context cost coverage.")
+            return capacity, value
         if requests not in self.draft_seconds:
             raise ValueError(f"Missing measured eager draft cost for {requests} requests.")
         capacities = sorted(capacity for capacity in self.target_seconds if capacity >= tokens)
