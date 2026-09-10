@@ -4,7 +4,6 @@
 
 import argparse
 import json
-import shutil
 import sys
 from pathlib import Path
 
@@ -14,7 +13,7 @@ if __package__ in (None, ""):
 from tools.dspark import benchmark_dspark_acceptance as benchmark
 from tools.dspark import run_performance_suite as suite
 from tools.dspark.graph64_checks import scan
-from tools.dspark.prepare_performance_data import read_manifest
+from tools.dspark.prepare_performance_data import copy_manifest_assets, input_population, read_manifest
 from tools.dspark.verification_tools import checkpoint_preflight, compile_profile, freeze_verification_config
 
 
@@ -40,7 +39,7 @@ def run(args):
     benchmark._atomic_write_json(args.output_dir / "checkpoint.json", checkpoint_preflight(args.model))
     manifest, records, _ = read_manifest(args.manifest, args.num_prompts)
     if len(records) < args.num_prompts:
-        raise ValueError("Manifest has fewer real requests than --num-prompts; no replay/duplication.")
+        raise ValueError("Manifest has fewer request instances than --num-prompts; no automatic expansion.")
     if manifest["tokenizer_revision"] != suite.MODEL_REVISION:
         raise ValueError("Frozen tokenizer revision differs from the model revision.")
     for relative, expected in manifest["tokenizer_files_sha256"].items():
@@ -50,7 +49,7 @@ def run(args):
         raise ValueError("Prompt/output budget exceeds max_model_len; no truncation.")
     frozen = args.output_dir / "input.jsonl"
     frozen.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in records))
-    shutil.copyfile(args.manifest, args.output_dir / "manifest.json")
+    copy_manifest_assets(args.manifest, args.output_dir / "input")
     benchmark._atomic_write_json(
         args.output_dir / "plan.json",
         {
@@ -61,6 +60,7 @@ def run(args):
             "num_prompts": args.num_prompts,
             "input_sha256": benchmark._sha256_file(frozen),
             "manifest": manifest,
+            "input_population": input_population(manifest, records),
             "cases": cases(args.stage, args.batch),
             "server_status": "NOT_YET_VALIDATED",
         },

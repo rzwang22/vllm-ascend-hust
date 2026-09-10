@@ -91,8 +91,11 @@ no longer enabled by the benchmark. Existing aggregated replay layouts remain.
 ## Frozen input preparation
 
 Reuse an existing compatible performance manifest directly. The driver verifies
-its hashes and at least 400 distinct records. A 64-sample code manifest fails;
-there is no automatic loop expansion. Never pair code results with old GSM8K runs.
+its hashes and at least 400 request instances. A 64-record manifest still fails;
+there is no automatic loop expansion. To preserve a historical file that already
+contains 400 instances / 64 unique prompts, import with explicit
+`--allow-repeated-prompts`; see [historical input commands](REPEATED_INPUTS.md).
+Never pair code results with old GSM8K runs.
 
 If the old frozen file has final token IDs but no performance manifest, import
 those IDs verbatim. Set the actual field name if it differs. No chat template,

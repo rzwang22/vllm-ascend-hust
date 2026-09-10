@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 Huawei Technologies Co., Ltd. All Rights Reserved.
-"""Freeze real, unique tasks and the exact DSV4 rendered inputs; never cycle."""
+"""Freeze rendered tasks or import exact request instances; never synthesize repeats."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -100,13 +101,15 @@ def build_records(
 def read_manifest(path, count=None):
     path = Path(path).resolve()
     manifest = json.loads(path.read_text())
-    if manifest.get("schema_version") != 1:
+    if manifest.get("schema_version") not in (1, 2):
         raise ValueError("Unsupported input manifest")
     data_path = (path.parent / manifest["records_file"]).resolve()
     if data_path.parent != path.parent or _sha256_file(data_path) != manifest["records_sha256"]:
         raise ValueError("Input manifest path/hash mismatch")
     rows = _read_jsonl(data_path)
-    if len(rows) != manifest["num_unique_samples"] or count is not None and not 0 < count <= len(rows):
+    repeated = manifest["schema_version"] == 2
+    declared = manifest["request_instance_count"] if repeated else manifest["num_unique_samples"]
+    if len(rows) != declared or count is not None and not 0 < count <= len(rows):
         raise ValueError("Insufficient data or manifest count mismatch")
     ids, hashes = set(), set()
     for row in rows:
@@ -121,21 +124,121 @@ def read_manifest(path, count=None):
             or any(type(token) is not int or token < 0 for token in row["prompt_token_ids"])
         ):
             raise ValueError("Prompt/token hash or length mismatch")
-        if row["case_id"] in ids or row["prompt_sha256"] in hashes or row["replay_of"] is not None:
+        if row["case_id"] in ids or (not repeated and (row["prompt_sha256"] in hashes or row["replay_of"] is not None)):
             raise ValueError("Repeated samples are not independent; replay unsupported")
         ids.add(row["case_id"])
         hashes.add(row["prompt_sha256"])
         if row["tests_sha256"] != (digest(row["tests"]) if row["tests"] is not None else None):
             raise ValueError("Tests hash mismatch")
+    if repeated:
+        validate_repeated_manifest(path, manifest, rows)
     return manifest, rows[:count] if count is not None else rows, data_path
 
 
-def import_frozen_records(raw, tokenizer, *, count, max_input_tokens, source, revision, token_field, id_field):
+def input_population(manifest, rows):
+    """Selected request population, distinct from independent engine repeats."""
+    unique = len({r["prompt_token_sha256"] for r in rows})
+    return {
+        "request_instance_count": len(rows),
+        "unique_prompt_count": unique,
+        "label": f"{len(rows)} request instances / {unique} unique prompts",
+        "repeated_prompt_policy": manifest.get("repeated_prompt_policy", "reject"),
+        "ordered_token_sequences_sha256": digest([r["prompt_token_ids"] for r in rows]),
+        "quality_scope": "prompt repetitions are not independent quality samples",
+    }
+
+
+def repetition_mapping(rows):
+    groups = {}
+    for row in rows:
+        groups.setdefault(row["prompt_token_sha256"], []).append(row["request_instance_id"])
+    return groups
+
+
+def validate_repeated_manifest(path, manifest, rows):
+    if (
+        manifest.get("repeated_prompt_policy") != "preserve_source_occurrences"
+        or manifest.get("allow_repeated_prompts") is not True
+        or "num_unique_samples" in manifest
+        or manifest.get("kind") != "general"
+        or type(manifest.get("request_instance_count")) is not int
+        or type(manifest.get("unique_prompt_count")) is not int
+    ):
+        raise ValueError("Explicit repeated manifest policy/count schema required")
+    source_path = (path.parent / manifest["source_snapshot_file"]).resolve()
+    if (
+        source_path.parent != path.parent
+        or _sha256_file(source_path) != manifest["source_snapshot_sha256"]
+        or manifest["source_snapshot_sha256"] != manifest["original_source_file_sha256"]
+    ):
+        raise ValueError("Original source snapshot path/hash mismatch")
+    source = _read_jsonl(source_path)
+    if len(source) < len(rows):
+        raise ValueError("Source lacks declared request instances")
+    first, occurrences = {}, {}
+    for index, row in enumerate(rows):
+        instance = f"request:{manifest['original_source_file_sha256']}:{index}"
+        hashed = row["prompt_token_sha256"]
+        expected_case = source[index].get(manifest["source_id_field"])
+        if (
+            row.get("schema_version") != 2
+            or row.get("request_instance_id") != instance
+            or row["case_id"] != instance
+            or row["source_index"] != index
+            or row["source"] != manifest["source"]
+            or row["source_revision"] != manifest["source_revision"]
+            or row["sample_kind"] != "general"
+            or row["tests"] is not None
+            or row["raw_task"] != source[index]
+            or row.get("original_case_id") != expected_case
+            or row["prompt_token_ids"] != source[index][manifest["source_token_field"]]
+            or row["replay_of"] != first.get(hashed)
+            or row.get("prompt_occurrence_index") != occurrences.get(hashed, 0)
+        ):
+            raise ValueError("Invalid request instance identity, source sequence or repetition reference")
+        first.setdefault(hashed, instance)
+        occurrences[hashed] = occurrences.get(hashed, 0) + 1
+    if (
+        manifest["unique_prompt_count"] != len(first)
+        or manifest["repeated_prompt_mapping"] != repetition_mapping(rows)
+        or manifest["ordered_token_sequences_sha256"] != digest([r["prompt_token_ids"] for r in rows])
+    ):
+        raise ValueError("Repeated prompt mapping/count/sequence hash mismatch")
+
+
+def copy_manifest_assets(path, directory):
+    """Copy the full verifiable input, even when a run selects only its prefix."""
+    path = Path(path)
+    manifest, _, records = read_manifest(path)
+    directory.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(path, directory / "manifest.json")
+    shutil.copyfile(records, directory / manifest["records_file"])
+    if manifest["schema_version"] == 2:
+        name = manifest["source_snapshot_file"]
+        shutil.copyfile(path.parent / name, directory / name)
+
+
+def import_frozen_records(
+    raw,
+    tokenizer,
+    *,
+    count,
+    max_input_tokens,
+    source,
+    revision,
+    token_field,
+    id_field,
+    allow_repeated_prompts=False,
+    source_file_sha256=None,
+):
     """Preserve existing token IDs and order; decoded text is labelled, not re-rendered."""
     if count < 1 or len(raw) < count:
         raise ValueError("Insufficient frozen requests; no replay")
+    if allow_repeated_prompts and not re.fullmatch(r"[0-9a-f]{64}", source_file_sha256 or ""):
+        raise ValueError("Repeated input import requires the original file SHA256")
     rows = []
-    seen = set()
+    seen = {}
+    occurrences = {}
     for index, task in enumerate(raw[:count]):
         tokens = task.get(token_field)
         if (
@@ -145,9 +248,8 @@ def import_frozen_records(raw, tokenizer, *, count, max_input_tokens, source, re
         ):
             raise ValueError("Invalid frozen token IDs or length; no truncation")
         hashed = digest(tokens)
-        if hashed in seen:
-            raise ValueError("Duplicate frozen token sequence; not independent requests")
-        seen.add(hashed)
+        if hashed in seen and not allow_repeated_prompts:
+            raise ValueError("Duplicate frozen token sequence; use explicit --allow-repeated-prompts")
         text = tokenizer.decode(tokens, skip_special_tokens=False)
         row = {
             "schema_version": 1,
@@ -168,6 +270,18 @@ def import_frozen_records(raw, tokenizer, *, count, max_input_tokens, source, re
             "sample_kind": "general",
             "replay_of": None,
         }
+        if allow_repeated_prompts:
+            instance = f"request:{source_file_sha256}:{index}"
+            row.update(
+                schema_version=2,
+                case_id=instance,
+                request_instance_id=instance,
+                original_case_id=task.get(id_field),
+                replay_of=seen.get(hashed),
+                prompt_occurrence_index=occurrences.get(hashed, 0),
+            )
+        seen.setdefault(hashed, row["case_id"])
+        occurrences[hashed] = occurrences.get(hashed, 0) + 1
         row["record_sha256"] = digest(row)
         rows.append(row)
     return rows, []
@@ -184,6 +298,11 @@ def main(argv=None):
     parser.add_argument("--split", default="test")
     parser.add_argument("--kind", choices=("general", "code", "humaneval"), required=True)
     parser.add_argument("--frozen-token-field", help="Import final token IDs verbatim, in source order; general only")
+    parser.add_argument(
+        "--allow-repeated-prompts",
+        action="store_true",
+        help="Explicitly preserve existing frozen prompt occurrences; never generate extra requests",
+    )
     parser.add_argument("--expected-source-sha256", help="Required for frozen token import")
     parser.add_argument("--prompt-field", default="prompt")
     parser.add_argument("--id-field", default="task_id")
@@ -195,6 +314,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.kind != "general" and args.max_input_tokens > 2048:
         parser.error("Code workload inputs may not exceed 2048 tokens")
+    if args.allow_repeated_prompts and not args.frozen_token_field:
+        parser.error("--allow-repeated-prompts requires --frozen-token-field")
     if args.input_jsonl:
         raw = _read_jsonl(args.input_jsonl)
     else:
@@ -219,6 +340,8 @@ def main(argv=None):
             revision=args.source_revision,
             token_field=args.frozen_token_field,
             id_field=args.id_field,
+            allow_repeated_prompts=args.allow_repeated_prompts,
+            source_file_sha256=args.expected_source_sha256,
         )
     else:
         records, dispositions = build_records(
@@ -234,7 +357,12 @@ def main(argv=None):
         )
     args.output_dir.mkdir(parents=True, exist_ok=False)
     snapshot = args.output_dir / "source.jsonl"
-    snapshot.write_bytes(b"".join(_canonical_json_bytes(row) for row in raw))
+    if args.allow_repeated_prompts:
+        shutil.copyfile(args.input_jsonl, snapshot)  # Preserve original bytes, including JSONL formatting.
+        if _sha256_file(snapshot) != args.expected_source_sha256:
+            raise ValueError("Source changed during import")
+    else:
+        snapshot.write_bytes(b"".join(_canonical_json_bytes(row) for row in raw))
     data = args.output_dir / "requests.jsonl"
     data.write_bytes(b"".join(_canonical_json_bytes(row) for row in records))
     tokenizer_files = {
@@ -264,6 +392,21 @@ def main(argv=None):
         else "DSV4 chat template, generation prompt, add_special_tokens=False",
         "quality_test_tasks": sum(row["tests"] is not None for row in records),
     }
+    if args.allow_repeated_prompts:
+        manifest.pop("num_unique_samples")
+        manifest.update(
+            schema_version=2,
+            allow_repeated_prompts=True,
+            request_instance_count=len(records),
+            unique_prompt_count=len(repetition_mapping(records)),
+            repeated_prompt_policy="preserve_source_occurrences",
+            repeated_prompt_mapping=repetition_mapping(records),
+            source_snapshot_file=snapshot.name,
+            source_token_field=args.frozen_token_field,
+            source_id_field=args.id_field,
+            ordered_token_sequences_sha256=digest([r["prompt_token_ids"] for r in records]),
+            selection="original first N request instances; existing repetitions preserved",
+        )
     (args.output_dir / "manifest.json").write_bytes(_canonical_json_bytes(manifest))
     (args.output_dir / "dispositions.json").write_bytes(_canonical_json_bytes(dispositions))
     read_manifest(args.output_dir / "manifest.json")

@@ -13,7 +13,7 @@ if __package__ in (None, ""):
 from tools.dspark import benchmark_dspark_acceptance as benchmark
 from tools.dspark import run_performance_suite as suite
 from tools.dspark.graph64_checks import scan
-from tools.dspark.prepare_performance_data import read_manifest
+from tools.dspark.prepare_performance_data import copy_manifest_assets, input_population, read_manifest
 
 
 def captures(batch, explicit=None):
@@ -128,16 +128,19 @@ def run(args):
     suite.source_gate(args)
     manifest, rows, _ = read_manifest(args.manifest, args.num_prompts)
     if len(rows) != args.num_prompts:
-        raise ValueError("Insufficient independent requests; no silent replay of a 64-sample code manifest")
+        raise ValueError(
+            "Insufficient request instances; import existing repetitions explicitly instead of manufacturing requests"
+        )
     benchmark._atomic_write_json(
         args.output_dir / "input-identity.json",
         {
             "manifest_sha256": benchmark._sha256_file(args.manifest),
             "manifest": manifest,
-            "request_instances": len(rows),
-            "unique_samples": len({r["case_id"] for r in rows}),
+            **input_population(manifest, rows),
+            "enable_prefix_caching": False,
         },
     )
+    copy_manifest_assets(args.manifest, args.output_dir / "input")
     statuses = []
     rc = 0
     for batch in args.batches:

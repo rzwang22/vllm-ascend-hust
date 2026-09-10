@@ -7,7 +7,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -20,7 +19,7 @@ if __package__ in (None, ""):
 from tools.dspark import benchmark_dspark_acceptance as benchmark
 from tools.dspark.performance_code_eval import evaluate
 from tools.dspark.performance_report import summarize_suite, validate_stream_result, write_reports
-from tools.dspark.prepare_performance_data import read_manifest
+from tools.dspark.prepare_performance_data import copy_manifest_assets, input_population, read_manifest
 
 CORE_SHA = "897306c43bf800e2480cb5c0f3e2da408d85a2fd"
 MODEL_REVISION = "9e8679a9db7eec11efed9925f7efb96549077545"
@@ -248,7 +247,7 @@ def check_case(result, case, plan, records):
 def run_suite(args):
     root = args.output_dir.resolve()
     root.mkdir(parents=True, exist_ok=False)
-    manifest, records, frozen_data = read_manifest(args.manifest, args.num_prompts)
+    manifest, records, _ = read_manifest(args.manifest, args.num_prompts)
     if manifest["kind"] != "general" and (args.output_len > 1024 or manifest["max_input_tokens"] > 2048):
         raise ValueError("Code workload requires input <=2048 and output <=1024 tokens")
     if max(row["prompt_token_count"] for row in records) + args.output_len > args.max_model_len:
@@ -263,9 +262,7 @@ def run_suite(args):
     data = root / "requests.jsonl"
     data.write_bytes(b"".join(benchmark._canonical_json_bytes(row) for row in records))
     frozen = root / "input"
-    frozen.mkdir()
-    shutil.copyfile(args.manifest, frozen / "manifest.json")
-    shutil.copyfile(frozen_data, frozen / manifest["records_file"])
+    copy_manifest_assets(args.manifest, frozen)
     if getattr(args, "confidence_verification", None) is not None:
         from tools.dspark.verification_tools import freeze_verification_config
 
@@ -273,6 +270,8 @@ def run_suite(args):
     plan = create_plan(args, data, root)
     plan["input_sha256"] = benchmark._sha256_file(data)
     plan["input_manifest_sha256"] = benchmark._sha256_file(args.manifest)
+    plan["input_population"] = input_population(manifest, records)
+    plan["enable_prefix_caching"] = False
     benchmark._atomic_write_json(root / "plan.json", plan)
     if not args.execute:
         print(f"PLAN_ONLY={root}; no model process launched")
@@ -328,6 +327,10 @@ def run_suite(args):
             requests = result["streaming"]["requests"]
             for request, task in zip(requests, records):
                 request["case_id"] = task["case_id"]
+                request["request_instance_id"] = task.get("request_instance_id", task["case_id"])
+                request["original_case_id"] = task.get("original_case_id", task["case_id"])
+                request["prompt_token_sha256"] = task["prompt_token_sha256"]
+                request["replay_of"] = task["replay_of"]
                 request["input_length"] = task["prompt_token_count"]
                 request["output_length"] = len(request["output_token_ids"])
             benchmark._atomic_write_json(directory / "requests.json", requests)

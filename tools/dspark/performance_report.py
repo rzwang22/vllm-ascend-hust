@@ -269,6 +269,9 @@ def summarize_suite(root):
         "benchmark": "dspark_additional_performance",
         "status": "valid" if all(row["status"] == "valid" for row in runs) else "incomplete",
         "protocol": "async_llm_delta_stream_v1",
+        "input_population": plan.get("input_population", {"label": "unavailable in legacy plan"}),
+        "independence_unit": "one fresh engine process per mode/repeat; request instances are not repeats",
+        "enable_prefix_caching": plan.get("enable_prefix_caching"),
         "runs": runs,
         "independent_run_statistics": aggregated,
         "comparisons": pairs,
@@ -317,6 +320,9 @@ def write_reports(summary, json_path, csv_path, markdown_path):
                 "accepted_candidate_length",
                 "effective_advancement",
                 "quality_status",
+                "request_instance_count",
+                "unique_prompt_count",
+                "enable_prefix_caching",
             ]
         )
         for row in summary["runs"]:
@@ -342,12 +348,19 @@ def write_reports(summary, json_path, csv_path, markdown_path):
                     row.get("acceptance", {}).get("accepted_candidate_tokens_per_verification"),
                     row.get("acceptance", {}).get("effective_acceptance_length"),
                     row.get("quality", {}).get("status"),
+                    summary.get("input_population", {}).get("request_instance_count"),
+                    summary.get("input_population", {}).get("unique_prompt_count"),
+                    summary.get("enable_prefix_caching"),
                 ]
             )
     lines = [
         "# DSpark additional performance",
         "",
         f"Status: {summary['status']}. Protocol: {summary['protocol']}.",
+        "",
+        summary.get("input_population", {}).get("label", "Input population unavailable in legacy plan"),
+        "Request repetitions are not independent quality samples. n counts independent engine runs.",
+        f"Prefix caching: {summary.get('enable_prefix_caching')} (None = legacy unavailable).",
         "",
         "| Mode | Concurrency cap | n | Median tok/s | Sample CV |",
         "|---|---:|---:|---:|---:|",
