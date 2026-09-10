@@ -13,6 +13,7 @@ import statistics
 
 from tools.dspark import benchmark_dspark_acceptance as benchmark
 from tools.dspark import run_performance_suite as suite
+from tools.dspark.profile_request_ids import validate_point_request_ids
 from tools.dspark.verification_tools import checkpoint_preflight, measured_scheduler_overhead
 
 UPSTREAM_COMMIT = "e2e335334669d1c94c7351937474c0104dcbfdfb"
@@ -173,28 +174,31 @@ def collect(engine_factory, points, sampling, directory, *, warmup, samples, ran
     records = []
     identity = None
     point = None
+    request_history = {}
+    raw = None
     try:
         engine.collective_rpc("dspark_benchmark_replay_snapshot")  # install after capture
         token = engine.get_tokenizer().encode("x", add_special_tokens=False)[0]
         for point in points:
+            raw = None
             engine.collective_rpc(
                 "dspark_benchmark_profile_point", kwargs={"point": point["id"], "lengths": point["lengths"]}
             )
             prompts = [{"prompt_token_ids": [token] * point["prompt_tokens"]} for _ in range(point["requests"])]
             # generate drains all requests. StreamingEngine gives each call a
             # fresh batch namespace; scheduler retires proposals on next admission.
-            outputs = engine.generate(prompts, sampling, use_tqdm=False)
+            outputs = engine.generate(prompts, sampling, use_tqdm=False, profile_point=point["id"])
             snapshots = engine.collective_rpc("dspark_benchmark_replay_snapshot")
             raw = {"point": point, "ranks": snapshots, "streaming": engine.last_batch, "performance_eligible": False}
             path = directory / f"{point['id']}.json"
             benchmark._atomic_write_json(path, raw)  # keep raw evidence before acceptance
             if len(outputs) != point["requests"] or engine.last_batch["scheduler"].get("corrupted_requests", 0):
                 raise ValueError("Incomplete/corrupted synthetic requests")
-            request_ids = {r["request_id"] for r in engine.last_batch["requests"]}
+            raw["request_identity_validation"] = validate_point_request_ids(
+                point["id"], engine.last_batch, snapshots, request_history
+            )
+            benchmark._atomic_write_json(path, raw)
             for snapshot in snapshots:
-                for measurement in snapshot["cost_profile"]["measurements"]:
-                    if set(measurement["request_ids"]) - request_ids:
-                        raise ValueError("Previous point request metadata leaked into current profile events")
                 current = snapshot["cost_profile"]["identity"]
                 if identity is not None and current != identity:
                     raise ValueError("Profile configuration changed within one engine")
@@ -209,12 +213,31 @@ def collect(engine_factory, points, sampling, directory, *, warmup, samples, ran
             benchmark._atomic_write_json(directory / "retained.json", records)
         return records, identity
     except BaseException as error:
+        if point is not None:
+            if raw is None:
+                raw = {"point": point, "streaming": engine.last_batch, "performance_eligible": False}
+                try:
+                    raw["ranks"] = engine.collective_rpc("dspark_benchmark_replay_snapshot")
+                except Exception as snapshot_error:
+                    raw["snapshot_error"] = f"{type(snapshot_error).__name__}: {snapshot_error}"
+            raw["request_identity_failure"] = getattr(error, "evidence", None)
+            if (
+                raw["request_identity_failure"] is None
+                and raw.get("ranks") is not None
+                and "request_identity_validation" not in raw
+            ):
+                try:
+                    validate_point_request_ids(point["id"], engine.last_batch, raw["ranks"], request_history)
+                except ValueError as identity_error:
+                    raw["request_identity_failure"] = getattr(identity_error, "evidence", None)
+            benchmark._atomic_write_json(directory / f"{point['id']}.json", raw)
         benchmark._atomic_write_json(
             directory / "profile-failure.json",
             {
                 "point": point,
                 "error": f"{type(error).__name__}: {error}",
                 "last_stream": engine.last_batch,
+                "request_identity_failure": (raw or {}).get("request_identity_failure"),
                 "performance_eligible": False,
             },
         )

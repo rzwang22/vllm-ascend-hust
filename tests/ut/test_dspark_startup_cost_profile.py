@@ -13,6 +13,7 @@ import pytest
 from tools.dspark import run_large_batch as large
 from tools.dspark import run_performance_suite as suite
 from tools.dspark import startup_cost_profile as profile
+from tools.dspark.profile_request_ids import MAPPING_SOURCE
 
 POLICY = runpy.run_path(str(Path(__file__).resolve().parents[2] / "vllm_ascend/spec_decode/dspark_verification.py"))
 CostTable = POLICY["CostTable"]
@@ -164,16 +165,29 @@ def test_same_engine_drains_points_and_always_shuts_down(tmp_path):
             result = snapshots(self.current) if self.current else []
             for row in result:
                 for measurement in row["cost_profile"]["measurements"]:
-                    measurement["request_ids"] = [r["request_id"] for r in self.last_batch["requests"]]
+                    measurement["request_ids"] = [
+                        r["internal_id"] for r in self.last_batch["request_id_mapping"]["mappings"]
+                    ]
             return result
 
-        def generate(self, prompts, sampling, use_tqdm):
+        def generate(self, prompts, sampling, use_tqdm, *, profile_point):
             self.active = True
             self.calls += 1
             ids = {f"batch{self.calls}-{i}" for i in range(len(prompts))}
             assert not self.ids.intersection(ids)
             self.ids.update(ids)
-            self.last_batch["requests"] = [{"request_id": key} for key in sorted(ids)]
+            self.last_batch["requests"] = [{"request_id": key, "request_index": i} for i, key in enumerate(sorted(ids))]
+            self.last_batch["request_id_mapping"] = {
+                "source": MAPPING_SOURCE,
+                "point": profile_point,
+                "hook_restored": True,
+                "errors": [],
+                "expected_external_ids": sorted(ids),
+                "mappings": [
+                    {"point": profile_point, "request_index": i, "external_id": key, "internal_id": key + "-bea9330c"}
+                    for i, key in enumerate(sorted(ids))
+                ],
+            }
             assert prompts[0]["prompt_token_ids"] == [10] * self.current["prompt_tokens"]
             self.active = False  # completion drained before next point RPC
             return [None] * len(prompts)

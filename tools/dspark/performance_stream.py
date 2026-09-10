@@ -15,6 +15,7 @@ import time
 from types import SimpleNamespace
 
 from tools.dspark import benchmark_dspark_acceptance as benchmark
+from tools.dspark.profile_request_ids import RequestIdObserver
 
 
 def request_latency(record):
@@ -224,7 +225,7 @@ class StreamingEngine:
     def get_metrics(self):
         return self.collector.metrics()
 
-    def generate(self, prompts, sampling_params, use_tqdm=False):
+    def generate(self, prompts, sampling_params, use_tqdm=False, *, profile_point=None):
         sampling = copy.copy(sampling_params)
         sampling.output_kind = self.delta_kind
         self.batch_number += 1
@@ -236,9 +237,23 @@ class StreamingEngine:
             self.collector.corrupted,
             self.collector.totals[0],
         )
-        self.last_batch = self.loop.run_until_complete(
-            stream_batch(self.engine, prompts, sampling, self.args.client_outstanding, f"batch{self.batch_number}")
-        )
+        batch_id = f"batch{self.batch_number}"
+        if profile_point is None:
+            self.last_batch = self.loop.run_until_complete(
+                stream_batch(self.engine, prompts, sampling, self.args.client_outstanding, batch_id)
+            )
+        else:
+            observer = RequestIdObserver(
+                self.engine, profile_point, {f"{batch_id}-{i}": i for i in range(len(prompts))}
+            )
+            self.last_batch = {}
+            try:
+                with observer:
+                    self.last_batch = self.loop.run_until_complete(
+                        stream_batch(self.engine, prompts, sampling, self.args.client_outstanding, batch_id)
+                    )
+            finally:
+                self.last_batch["request_id_mapping"] = observer.receipt
         self.last_batch["scheduler"] = {
             "observations": self.collector.rows[before[0] :],
             "preemptions": self.collector.preemptions - before[1],
