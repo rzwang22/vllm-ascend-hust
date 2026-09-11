@@ -342,7 +342,7 @@ def diagnostic_points(points, stop):
     return points[: indices[0] + 1]  # keep every predecessor in the same engine
 
 
-def profile_engine_kwargs(parsed, directory, diagnostic):
+def profile_engine_kwargs(parsed, directory, diagnostic, experiment=None):
     kwargs = benchmark.build_engine_kwargs(parsed)
     if diagnostic:
         options = kwargs.get("additional_config", {}).get("dspark_confidence_verification", {})
@@ -351,6 +351,16 @@ def profile_engine_kwargs(parsed, directory, diagnostic):
         kwargs["additional_config"] = {
             **kwargs["additional_config"],
             "dspark_profile_nan_diagnostic_dir": str(directory.resolve()),
+        }
+    if experiment in ("metadata-only", "context-kv-sync"):
+        if diagnostic:
+            raise ValueError("Full diagnostics and low-interference experiments are mutually exclusive")
+        options = kwargs.get("additional_config", {}).get("dspark_confidence_verification", {})
+        if not options.get("profile") or options.get("mode") != "specified_lengths":
+            raise ValueError("Profile observation requires isolated specified-length profiling")
+        kwargs["additional_config"] = {
+            **kwargs["additional_config"],
+            "dspark_profile_observation": {"mode": experiment, "directory": str(directory.resolve())},
         }
     return kwargs
 
@@ -363,18 +373,23 @@ def run(args):
     benchmark._atomic_write_json(root / "checkpoint.json", checkpoint)
     counts, points = grid(args.batch, args.capture, args.profile_contexts, args.profile_output_tokens)
     diagnostic = getattr(args, "profile_nan_diagnostic", False)
-    if diagnostic:
+    experiment = getattr(args, "profile_experiment", None)
+    if diagnostic and experiment:
+        raise ValueError("Full diagnostics and low-interference experiments are mutually exclusive")
+    isolated = diagnostic or experiment is not None
+    if isolated:
         points = diagnostic_points(points, args.profile_stop_after_point)
         benchmark._atomic_write_json(
             root / "diagnostic.json",
             {
                 "performance_eligible": False,
+                "experiment": experiment or "full-diagnostic",
                 "status": "running",
                 "root_cause": "ROOT_CAUSE_NOT_YET_PROVEN",
                 "points": [point["id"] for point in points],
                 "worker_directory": str((root / "worker-first-failure").resolve()),
                 "observation_effect": (
-                    "synchronizing boundary checks may change reproduction; no cost table will be published"
+                    "Any observation/wait may change reproduction; completion is not a repair; no cost table"
                 ),
             },
         )
@@ -400,7 +415,7 @@ def run(args):
     argv = plan["runs"][0]["command"][2:]
     argv[argv.index("--no-ignore-eos")] = "--ignore-eos"  # synthetic profile ONLY
     parsed = benchmark.parse_args(argv)
-    if diagnostic:
+    if isolated:
         receipt = json.loads((root / "diagnostic.json").read_text())
         receipt["effective_benchmark_argv"] = argv
         benchmark._atomic_write_json(root / "diagnostic.json", receipt)
@@ -410,7 +425,9 @@ def run(args):
     sampling = benchmark._sampling_params(parsed)
 
     def initialize():
-        engine = StreamingEngine(profile_engine_kwargs(parsed, root / "worker-first-failure", diagnostic), parsed)
+        engine = StreamingEngine(
+            profile_engine_kwargs(parsed, root / "worker-first-failure", diagnostic, experiment), parsed
+        )
         try:
             runtime = benchmark._collect_worker_graph_runtime(engine, parsed)
             benchmark._atomic_write_json(root / "capture.json", runtime)
@@ -424,12 +441,12 @@ def run(args):
             initialize, points, sampling, root, warmup=args.profile_warmup, samples=args.profile_samples
         )
     except BaseException as error:
-        if diagnostic:
+        if isolated:
             receipt = json.loads((root / "diagnostic.json").read_text())
             receipt.update(status="failed", error=f"{type(error).__name__}: {error}")
             benchmark._atomic_write_json(root / "diagnostic.json", receipt)
         raise
-    if diagnostic:
+    if isolated:
         receipt = json.loads((root / "diagnostic.json").read_text())
         receipt["status"] = "completed_without_observed_failure"
         benchmark._atomic_write_json(root / "diagnostic.json", receipt)

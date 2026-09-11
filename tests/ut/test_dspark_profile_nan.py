@@ -204,7 +204,8 @@ def test_worker_rejects_profile_observer_for_formal_mode(tmp_path):
 
 
 @pytest.mark.parametrize("fails", [False, True])
-def test_diagnostic_run_never_compiles_costs(tmp_path, monkeypatch, fails):
+@pytest.mark.parametrize("mode", ["full", "baseline", "metadata-only", "context-kv-sync"])
+def test_diagnostic_run_never_compiles_costs(tmp_path, monkeypatch, fails, mode):
     args = NS(
         output_dir=tmp_path / "run",
         model=tmp_path / "model",
@@ -215,7 +216,8 @@ def test_diagnostic_run_never_compiles_costs(tmp_path, monkeypatch, fails):
         profile_warmup=2,
         profile_samples=5,
         max_model_len=8192,
-        profile_nan_diagnostic=True,
+        profile_nan_diagnostic=mode == "full",
+        profile_experiment=None if mode == "full" else mode,
         profile_stop_after_point="ctx128-n4-t12-skewed",
     )
     monkeypatch.setattr(profile.suite, "source_gate", lambda _: None)

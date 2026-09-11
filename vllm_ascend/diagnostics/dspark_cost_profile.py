@@ -43,6 +43,12 @@ class IsolatedCostProfiler:
         self.draft = runner.speculator._execute_draft
         runner.cudagraph_manager.run_fullgraph = self.target
         runner.speculator._execute_draft = self.propose
+        self.observation = None
+        options = (runner.vllm_config.additional_config or {}).get("dspark_profile_observation")
+        if options is not None:
+            from vllm_ascend.diagnostics.dspark_profile_observation import ProfileObservation
+
+            self.observation = ProfileObservation(runner, options)
 
     def timed(self, kind, size, function, argument):
         batch = self.runner.input_batch
@@ -72,18 +78,32 @@ class IsolatedCostProfiler:
         return result
 
     def target(self, descriptor):
-        result = self.timed("target", descriptor.num_tokens, self.graph, descriptor)
-        self.last_full_batch = self.runner.input_batch
-        return result
+        try:
+            result = self.timed("target", descriptor.num_tokens, self.graph, descriptor)
+            self.last_full_batch = self.runner.input_batch
+            return result
+        except BaseException as error:
+            if self.observation is not None:
+                self.observation.failed("target", error)
+            raise
 
     def propose(self, inputs):
         try:
             return self.timed("draft", inputs.num_reqs, self.draft, inputs)
+        except BaseException as error:
+            if self.observation is not None:
+                self.observation.failed("draft", error)
+            raise
         finally:
             self.last_full_batch = None
 
     def snapshot(self):
-        torch.npu.synchronize()  # Profile-only phase boundary, not a performance step.
+        try:
+            torch.npu.synchronize()  # Existing profile-only phase boundary.
+        except BaseException as error:
+            if self.observation is not None:
+                self.observation.failed("point_boundary_sync", error)
+            raise
         identity = runtime_identity(
             self.runner.vllm_config,
             torch.npu.get_device_name(self.runner.device),
@@ -91,7 +111,12 @@ class IsolatedCostProfiler:
         )
         if hasattr(getattr(self.runner.speculator, "_nan_diagnostic", None), "profile_runner"):
             identity["diagnostic_only"] = True
+        observation = None
+        if self.observation is not None:
+            identity["diagnostic_only"] = True
+            observation = self.observation.finish_point()
         return {
+            "observation": observation,
             "source": "isolated_npu_event_profile",
             "identity": identity,
             "measurements": [
@@ -117,6 +142,8 @@ class IsolatedCostProfiler:
         self.events.clear()
         self.last_full_batch = None
         self.point = point
+        if self.observation is not None:
+            self.observation.begin_point(point)
         diagnostic = getattr(self.runner.speculator, "_nan_diagnostic", None)
         if diagnostic is not None and hasattr(diagnostic, "profile_runner"):
             diagnostic.profile_point = {"id": point, "specified_lengths": list(lengths)}

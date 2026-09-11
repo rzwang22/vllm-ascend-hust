@@ -163,10 +163,16 @@ def main(argv=None):
     parser.add_argument("--max-model-len", type=int, default=8192)
     parser.add_argument("--max-num-batched-tokens", type=int, default=8192)
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.9)
-    parser.add_argument("--profile-nan-diagnostic", action="store_true")
+    observer = parser.add_mutually_exclusive_group()
+    observer.add_argument("--profile-nan-diagnostic", action="store_true")
+    observer.add_argument(
+        "--profile-experiment",
+        choices=("baseline", "metadata-only", "context-kv-sync"),
+        help="Replay the original point prefix; never publish costs or performance",
+    )
     parser.add_argument("--profile-stop-after-point", default="ctx128-n4-t12-skewed")
     args = parser.parse_args(argv)
-    if args.profile_nan_diagnostic and (args.stage != "profile" or args.batch != 64):
+    if (args.profile_nan_diagnostic or args.profile_experiment) and (args.stage != "profile" or args.batch != 64):
         parser.error("NaN diagnostics require the isolated B64 profile stage")
     if (
         args.batch < 1

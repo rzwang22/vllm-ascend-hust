@@ -279,7 +279,7 @@ def test_profile_wrapper_does_not_reset_production_state(monkeypatch):
         is_prefilling_np=np.array([False]),
     )
     runner = NS(
-        vllm_config=NS(model_config=NS(max_model_len=8192)),
+        vllm_config=NS(model_config=NS(max_model_len=8192), additional_config={}),
         input_batch=batch,
         slots=slots,
         speculator=NS(
