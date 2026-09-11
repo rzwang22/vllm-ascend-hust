@@ -54,6 +54,17 @@ class _FullReplayObserver:
         self.nan_diagnostic = None
         additional = getattr(getattr(runner, "vllm_config", None), "additional_config", None) or {}
         directory = additional.get("dspark_nan_diagnostic_dir")
+        profile_directory = additional.get("dspark_profile_nan_diagnostic_dir")
+        if profile_directory is not None:
+            adaptive = getattr(runner.speculator, "confidence_verification", None)
+            if (
+                directory is not None
+                or adaptive is None
+                or not adaptive.options.get("profile")
+                or adaptive.options.get("mode") != "specified_lengths"
+            ):
+                raise ValueError("Profile NaN observer requires isolated specified-length profiling")
+            directory = profile_directory
         if directory is not None:
             # Explicit benchmark-only instrumentation, installed after capture.
             from vllm_ascend.diagnostics.dspark_nan import DSparkNaNDiagnostics
@@ -63,6 +74,9 @@ class _FullReplayObserver:
             if self.nan_diagnostic is None:
                 self.nan_diagnostic = DSparkNaNDiagnostics(directory, speculator.rank)
             speculator._nan_diagnostic = self.nan_diagnostic
+            if profile_directory is not None:
+                self.nan_diagnostic.profile_runner = runner
+                self.nan_diagnostic.phase = "startup_profile"
         runner.execute_model = self.execute_model
         self.manager.run_fullgraph = self.run_fullgraph
 

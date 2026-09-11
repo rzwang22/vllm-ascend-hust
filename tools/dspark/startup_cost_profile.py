@@ -8,6 +8,7 @@ calibration workload, never a performance or quality result.
 """
 
 import argparse
+import json
 import math
 import statistics
 
@@ -185,6 +186,8 @@ def point_samples(point, snapshots, warmup, samples, ranks):
 
 
 def compile_startup(records, identity, request_grid, *, checkpoint, plugin_sha, raw_hashes, overhead):
+    if identity.get("diagnostic_only"):
+        raise ValueError("Diagnostic profile samples cannot produce a cost table")
     cells = {}
     for record in records:
         p = record["point"]
@@ -332,6 +335,26 @@ def collect(engine_factory, points, sampling, directory, *, warmup, samples, ran
         benchmark._atomic_write_json(directory / "lifecycle.json", lifecycle)
 
 
+def diagnostic_points(points, stop):
+    indices = [i for i, point in enumerate(points) if point["id"] == stop]
+    if len(indices) != 1:
+        raise ValueError("Diagnostic stop point must exist exactly once in the configured grid")
+    return points[: indices[0] + 1]  # keep every predecessor in the same engine
+
+
+def profile_engine_kwargs(parsed, directory, diagnostic):
+    kwargs = benchmark.build_engine_kwargs(parsed)
+    if diagnostic:
+        options = kwargs.get("additional_config", {}).get("dspark_confidence_verification", {})
+        if not options.get("profile") or options.get("mode") != "specified_lengths":
+            raise ValueError("NaN observer requires isolated specified-length profiling")
+        kwargs["additional_config"] = {
+            **kwargs["additional_config"],
+            "dspark_profile_nan_diagnostic_dir": str(directory.resolve()),
+        }
+    return kwargs
+
+
 def run(args):
     root = args.output_dir
     root.mkdir(parents=True, exist_ok=False)
@@ -339,6 +362,22 @@ def run(args):
     checkpoint = checkpoint_preflight(args.model)
     benchmark._atomic_write_json(root / "checkpoint.json", checkpoint)
     counts, points = grid(args.batch, args.capture, args.profile_contexts, args.profile_output_tokens)
+    diagnostic = getattr(args, "profile_nan_diagnostic", False)
+    if diagnostic:
+        points = diagnostic_points(points, args.profile_stop_after_point)
+        benchmark._atomic_write_json(
+            root / "diagnostic.json",
+            {
+                "performance_eligible": False,
+                "status": "running",
+                "root_cause": "ROOT_CAUSE_NOT_YET_PROVEN",
+                "points": [point["id"] for point in points],
+                "worker_directory": str((root / "worker-first-failure").resolve()),
+                "observation_effect": (
+                    "synchronizing boundary checks may change reproduction; no cost table will be published"
+                ),
+            },
+        )
     if max(args.profile_contexts) + args.profile_output_tokens > args.max_model_len:
         raise ValueError("Synthetic context/output budget exceeds max_model_len; no truncation")
     if args.profile_output_tokens < 6 * (args.profile_warmup + args.profile_samples + 2):
@@ -361,13 +400,17 @@ def run(args):
     argv = plan["runs"][0]["command"][2:]
     argv[argv.index("--no-ignore-eos")] = "--ignore-eos"  # synthetic profile ONLY
     parsed = benchmark.parse_args(argv)
+    if diagnostic:
+        receipt = json.loads((root / "diagnostic.json").read_text())
+        receipt["effective_benchmark_argv"] = argv
+        benchmark._atomic_write_json(root / "diagnostic.json", receipt)
     suite.resources_idle(root / "npu-before.log")
     from tools.dspark.performance_stream import StreamingEngine
 
     sampling = benchmark._sampling_params(parsed)
 
     def initialize():
-        engine = StreamingEngine(benchmark.build_engine_kwargs(parsed), parsed)
+        engine = StreamingEngine(profile_engine_kwargs(parsed, root / "worker-first-failure", diagnostic), parsed)
         try:
             runtime = benchmark._collect_worker_graph_runtime(engine, parsed)
             benchmark._atomic_write_json(root / "capture.json", runtime)
@@ -376,9 +419,21 @@ def run(args):
             raise
         return engine
 
-    records, identity = collect(
-        initialize, points, sampling, root, warmup=args.profile_warmup, samples=args.profile_samples
-    )
+    try:
+        records, identity = collect(
+            initialize, points, sampling, root, warmup=args.profile_warmup, samples=args.profile_samples
+        )
+    except BaseException as error:
+        if diagnostic:
+            receipt = json.loads((root / "diagnostic.json").read_text())
+            receipt.update(status="failed", error=f"{type(error).__name__}: {error}")
+            benchmark._atomic_write_json(root / "diagnostic.json", receipt)
+        raise
+    if diagnostic:
+        receipt = json.loads((root / "diagnostic.json").read_text())
+        receipt["status"] = "completed_without_observed_failure"
+        benchmark._atomic_write_json(root / "diagnostic.json", receipt)
+        return 0  # diagnostic timings must never become a usable cost table
     suite.resources_idle(root / "npu-after.log")
     table = compile_startup(
         records,

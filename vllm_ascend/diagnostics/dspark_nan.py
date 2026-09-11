@@ -8,6 +8,7 @@ synchronize diagnostic runs; those runs must not publish performance results.
 No logits, hidden values, weights or KV contents are written to disk.
 """
 
+import copy
 import json
 from collections import deque
 from pathlib import Path
@@ -40,6 +41,34 @@ class DSparkNaNDiagnostics:
             raise RuntimeError("DSpark NaN diagnostics must run outside ACLGraph capture.")
 
     def _write(self, *, first_failure: bool = False, window_snapshot: bool = False) -> None:
+        if hasattr(self, "profile_runner"):
+            self.current["profile_point"] = copy.deepcopy(getattr(self, "profile_point", None))
+            spec = self.profile_runner.speculator
+            self.current["profile_lifecycle"] = {
+                "selection": copy.deepcopy(spec.confidence_verification.last_selection),
+                "epochs": {
+                    name: getattr(spec, name, None)
+                    for name in (
+                        "_proposal_step_epoch",
+                        "_prepared_step_epoch",
+                        "_context_kv_step_epoch",
+                        "_draft_forward_step_epoch",
+                        "_markov_attempt_step_epoch",
+                        "_markov_step_epoch",
+                        "_published_proposal_step_epoch",
+                        "_proposal_consumer_step_epoch",
+                    )
+                },
+                "owners": {
+                    key: {
+                        "producer_epoch": owner.producer_epoch,
+                        "publication_row": owner.publication_row,
+                        "published_length": owner.published_length,
+                        "request_state_indices": self._integer_record(owner.request_state_indices),
+                    }
+                    for key, owner in spec._published_proposal_owners.items()
+                },
+            }
         report = {
             "status": "ROOT_CAUSE_NOT_YET_PROVEN",
             "performance_eligible": False,
@@ -72,6 +101,8 @@ class DSparkNaNDiagnostics:
             "scheduler_request_ids": list(scheduler_output.num_scheduled_tokens),
             "scheduled_tokens": dict(scheduler_output.num_scheduled_tokens),
             "scheduled_total_tokens": int(scheduler_output.total_num_scheduled_tokens),
+            "finished_request_ids": list(getattr(scheduler_output, "finished_req_ids", ())),
+            "preempted_request_ids": list(getattr(scheduler_output, "preempted_req_ids", ()) or ()),
             "stage": "target_execute_started",
             "checks": [],
         }
@@ -152,6 +183,35 @@ class DSparkNaNDiagnostics:
             sequence_lengths=batch.seq_lens[: batch.num_reqs].detach().cpu().tolist(),
             positions=batch.positions[: batch.num_tokens].detach().cpu().tolist(),
         )
+        if hasattr(self, "profile_runner"):
+            self.current["actual_row_mapping"] = {
+                "state_indices": [int(v) for v in batch.idx_mapping_np],
+                "query_lengths": [int(v) for v in batch.num_scheduled_tokens[: batch.num_reqs]],
+                "corrected_seq_lens_cpu": [int(v) for v in batch.seq_lens_np[: batch.num_reqs]],
+                "scheduler_computed_upper_bounds": [int(v) for v in batch.num_computed_tokens_np[: batch.num_reqs]],
+                "logits_indices": self._integer_record(batch.logits_indices),
+                "cu_num_logits": self._integer_record(batch.cu_num_logits[: batch.num_reqs + 1]),
+                "query_start_loc": self._integer_record(batch.query_start_loc[: batch.num_reqs + 1]),
+                "positions": self._integer_record(batch.positions[: batch.num_tokens]),
+                "seq_lens": self._integer_record(batch.seq_lens[: batch.num_reqs]),
+            }
+            self.current["target_slots"] = {
+                name: self._integer_record(value[: batch.num_tokens_after_padding])
+                for name, value in state.slot_mappings_by_layer.items()
+            }
+            tables = runner.block_tables
+            self.current["target_block_groups"] = [
+                {
+                    "group": group,
+                    "block_size": tables.block_sizes[group],
+                    "kernel_block_size": tables.kernel_block_sizes[group],
+                    "rows": [
+                        self._integer_record(table[row, : int(tables.num_blocks.np[group, index])])
+                        for row, index in enumerate(batch.idx_mapping_np)
+                    ],
+                }
+                for group, table in enumerate(tables.input_block_tables)
+            ]
         tensors = {"target_hidden": state.hidden_states}
         for index, tensor in enumerate(state.aux_hidden_states or []):
             tensors[f"target_aux_{index}"] = tensor
@@ -164,6 +224,19 @@ class DSparkNaNDiagnostics:
                 self._write(first_failure=True)
                 raise RuntimeError("DSpark NaN diagnostic detected non-finite target replay snapshots.")
 
+    @staticmethod
+    def _integer_record(value):
+        if value.dtype.is_floating_point:
+            raise TypeError("Profile metadata must be an integer tensor")
+        return {
+            "shape": list(value.shape),
+            "stride": list(value.stride()),
+            "data_ptr": value.data_ptr(),
+            "storage_data_ptr": value.untyped_storage().data_ptr(),
+            "storage_offset": value.storage_offset(),
+            "values": value.detach().cpu().tolist(),
+        }
+
     def proposal_inputs(self, proposal: Any) -> None:
         self._outside_capture()
         self.current.update(
@@ -175,6 +248,25 @@ class DSparkNaNDiagnostics:
             draft_sequence_lengths=proposal.draft_sequence_lengths.detach().cpu().tolist(),
             draft_layer_group_ids=dict(proposal.draft_layer_group_ids),
         )
+        if hasattr(self, "profile_runner"):
+            self.current["proposal_row_mapping"] = {
+                name: self._integer_record(getattr(proposal, name))
+                for name in (
+                    "request_state_indices",
+                    "target_query_start_loc",
+                    "target_sequence_lengths",
+                    "num_sampled",
+                    "num_rejected",
+                    "target_positions",
+                )
+            }
+            self.current["draft_query_slots"] = {
+                name: self._integer_record(value) for name, value in proposal.draft_query_slot_mappings.items()
+            }
+            self.current["draft_block_tables"] = {
+                name: self._integer_record(value[: len(proposal.request_ids)])
+                for name, value in proposal.draft_block_tables.items()
+            }
         tensors = {"proposal_last_hidden": proposal.last_hidden_states}
         tensors.update({f"proposal_aux_{i}": tensor for i, tensor in enumerate(proposal.auxiliary_hidden_states)})
         self.check("proposal_inputs", tensors, proposal.num_target_tokens)

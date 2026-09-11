@@ -84,13 +84,16 @@ class IsolatedCostProfiler:
 
     def snapshot(self):
         torch.npu.synchronize()  # Profile-only phase boundary, not a performance step.
+        identity = runtime_identity(
+            self.runner.vllm_config,
+            torch.npu.get_device_name(self.runner.device),
+            self.runner.speculator.confidence_verification.receipt["weights_sha256"],
+        )
+        if hasattr(getattr(self.runner.speculator, "_nan_diagnostic", None), "profile_runner"):
+            identity["diagnostic_only"] = True
         return {
             "source": "isolated_npu_event_profile",
-            "identity": runtime_identity(
-                self.runner.vllm_config,
-                torch.npu.get_device_name(self.runner.device),
-                self.runner.speculator.confidence_verification.receipt["weights_sha256"],
-            ),
+            "identity": identity,
             "measurements": [
                 {**metadata, "seconds": start.elapsed_time(end) / 1000} for metadata, start, end in self.events
             ],
@@ -114,5 +117,8 @@ class IsolatedCostProfiler:
         self.events.clear()
         self.last_full_batch = None
         self.point = point
+        diagnostic = getattr(self.runner.speculator, "_nan_diagnostic", None)
+        if diagnostic is not None and hasattr(diagnostic, "profile_runner"):
+            diagnostic.profile_point = {"id": point, "specified_lengths": list(lengths)}
         adaptive.options["lengths"] = list(lengths)
         return {"point": point, "lengths": list(lengths), "cleanup": "scheduler_owned_unique_request_ids"}

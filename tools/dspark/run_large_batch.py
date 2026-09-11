@@ -72,6 +72,11 @@ def command(args, batch, root):
             *map(str, sizes),
             "--output-dir",
             str(root),
+            *(
+                ["--profile-nan-diagnostic", "--profile-stop-after-point", args.profile_stop_after_point]
+                if getattr(args, "profile_nan_diagnostic", False)
+                else []
+            ),
             "--profile-contexts",
             *map(str, args.profile_contexts),
             "--profile-output-tokens",
@@ -154,7 +159,7 @@ def run(args):
             if row["rc"]:
                 raise RuntimeError("Child failed; stopping subsequent concurrency stages")
             scan(args.output_dir / f"b{batch}.log")
-            row["status"] = "valid"
+            row["status"] = "diagnostic_completed" if getattr(args, "profile_nan_diagnostic", False) else "valid"
         except Exception as error:
             row["error"] = f"{type(error).__name__}: {error}"
             rc = 1
@@ -167,10 +172,17 @@ def run(args):
     benchmark._atomic_write_json(
         args.output_dir / "summary.json",
         {
-            "status": "failed" if rc else "valid",
+            "status": "failed"
+            if rc
+            else "diagnostic_completed"
+            if getattr(args, "profile_nan_diagnostic", False)
+            else "valid",
+            "performance_eligible": False if getattr(args, "profile_nan_diagnostic", False) else None,
             "stage": args.stage,
             "stages": statuses,
-            "primary_result": "confidence / fixed K end-to-end output tok/s, paired by B and repeat",
+            "primary_result": "ROOT_CAUSE_NOT_YET_PROVEN; isolated diagnostic, not performance"
+            if getattr(args, "profile_nan_diagnostic", False)
+            else "confidence / fixed K end-to-end output tok/s, paired by B and repeat",
             "reports": [f"b{row['batch']}/summary.json" for row in statuses] if args.stage != "profile" else [],
             "model_initializations": sum(
                 json.loads((args.output_dir / f"b{r['batch']}" / "lifecycle.json").read_text())[
@@ -216,7 +228,11 @@ def main(argv=None):
     parser.add_argument("--max-model-len", type=int, default=8192)
     parser.add_argument("--max-num-batched-tokens", type=int, default=8192)
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.9)
+    parser.add_argument("--profile-nan-diagnostic", action="store_true")
+    parser.add_argument("--profile-stop-after-point", default="ctx128-n4-t12-skewed")
     args = parser.parse_args(argv)
+    if args.profile_nan_diagnostic and (args.stage != "profile" or args.batches != [64]):
+        parser.error("NaN diagnostics require the isolated B64 profile stage")
     args.repeats = args.repeats if args.repeats is not None else (3 if args.stage == "repeat" else 1)
     if (
         not args.batches
