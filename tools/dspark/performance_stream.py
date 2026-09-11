@@ -15,6 +15,7 @@ import time
 from types import SimpleNamespace
 
 from tools.dspark import benchmark_dspark_acceptance as benchmark
+from tools.dspark.profile_failure import CANCEL_TIMEOUT_SECONDS, RPC_TIMEOUT_SECONDS, ProfileFailureGuard
 from tools.dspark.profile_request_ids import RequestIdObserver
 
 
@@ -36,13 +37,17 @@ def request_latency(record):
     }
 
 
-async def stream_batch(engine, prompts, sampling, outstanding, batch_id, *, clock=time.monotonic):
+async def stream_batch(
+    engine, prompts, sampling, outstanding, batch_id, *, clock=time.monotonic, progress=None, bounded_cancel=False
+):
     """Closed-loop admission in source order, or all-at-once when limit is None."""
     if outstanding is not None and outstanding <= 0:
         raise ValueError("client outstanding must be positive or None")
     semaphore = asyncio.Semaphore(outstanding or len(prompts))
     started = clock()
     records = [None] * len(prompts)
+    result = progress if progress is not None else {}
+    result.update(started_monotonic=started, requests=records, error=None)
 
     async def consume(index, prompt):
         queued = clock()
@@ -97,11 +102,17 @@ async def stream_batch(engine, prompts, sampling, outstanding, batch_id, *, cloc
     error = None
     try:
         await asyncio.gather(*tasks)
-    except Exception as exc:
+    except (Exception, asyncio.CancelledError) as exc:
         error = f"{type(exc).__name__}: {exc}"
         for task in tasks:
             task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        if bounded_cancel:
+            _, pending = await asyncio.wait(tasks, timeout=CANCEL_TIMEOUT_SECONDS)
+            result["pending_cancelled_requests"] = len(pending)
+        else:
+            await asyncio.gather(*tasks, return_exceptions=True)
+            if isinstance(exc, asyncio.CancelledError):
+                raise
     finished = clock()
     # Text joins and latency calculations occur after the measured boundary.
     for record in records:
@@ -109,13 +120,8 @@ async def stream_batch(engine, prompts, sampling, outstanding, batch_id, *, cloc
             record["text"] = "".join(record.pop("text_parts"))
             if record["completed_monotonic"] is not None:
                 record.update(request_latency(record))
-    return {
-        "started_monotonic": started,
-        "finished_monotonic": finished,
-        "elapsed_seconds": finished - started,
-        "requests": records,
-        "error": error,
-    }
+    result.update(finished_monotonic=finished, elapsed_seconds=finished - started, error=error)
+    return result
 
 
 class SchedulerCollector:
@@ -192,6 +198,8 @@ class StreamingEngine:
         self.batch_number = 0
         self.last_batch = None
         self.delta_kind = RequestOutputKind.DELTA
+        self.profile_guard = None
+        self.cleanup_result = None
 
         def logger_factory(vllm_config, engine_index=0):
             if engine_index != 0:
@@ -206,18 +214,39 @@ class StreamingEngine:
         except BaseException:
             self.loop.close()
             raise
+        failure_directory = (kwargs.get("additional_config") or {}).get("dspark_profile_failure_dir")
+        if failure_directory is not None:
+            self.profile_guard = ProfileFailureGuard(self.engine, failure_directory)
         # Adapt only the read-only config/utility interface used by the existing benchmark.
         self.llm_engine = SimpleNamespace(
             vllm_config=self.engine.vllm_config, engine_core=SimpleNamespace(call_utility=self.call_utility)
         )
 
+    def _run(self, operation, awaitable, timeout=None):
+        if self.profile_guard is None:
+            return self.loop.run_until_complete(awaitable)
+        try:
+            return self.loop.run_until_complete(self.profile_guard.run(operation, awaitable, timeout))
+        except BaseException as error:
+            self.profile_guard.remember(error)
+            raise
+
     def call_utility(self, method):
-        return self.loop.run_until_complete(self.engine.engine_core.call_utility_async(method))
+        return self._run(method, self.engine.engine_core.call_utility_async(method), RPC_TIMEOUT_SECONDS)
 
     def collective_rpc(self, method, kwargs=None):
         if not isinstance(method, str):
             raise TypeError("Only named RPC methods are permitted")
-        return self.loop.run_until_complete(self.engine.collective_rpc(method, kwargs=kwargs))
+        options = {}
+        if self.profile_guard is not None:
+            options["timeout"] = RPC_TIMEOUT_SECONDS
+            if method == "dspark_benchmark_profile_point":
+                self.profile_guard.point = (kwargs or {}).get("point")
+        return self._run(
+            "collective_rpc:" + method,
+            self.engine.collective_rpc(method, kwargs=kwargs, **options),
+            RPC_TIMEOUT_SECONDS,
+        )
 
     def get_tokenizer(self):
         return self.engine.get_tokenizer()
@@ -249,8 +278,17 @@ class StreamingEngine:
             self.last_batch = {}
             try:
                 with observer:
-                    self.last_batch = self.loop.run_until_complete(
-                        stream_batch(self.engine, prompts, sampling, self.args.client_outstanding, batch_id)
+                    self.last_batch = self._run(
+                        "generate",
+                        stream_batch(
+                            self.engine,
+                            prompts,
+                            sampling,
+                            self.args.client_outstanding,
+                            batch_id,
+                            progress=self.last_batch,
+                            bounded_cancel=self.profile_guard is not None,
+                        ),
                     )
             finally:
                 self.last_batch["request_id_mapping"] = observer.receipt
@@ -289,11 +327,18 @@ class StreamingEngine:
 
     def shutdown(self):
         async def close():
-            self.engine.shutdown()
+            if self.profile_guard is None:
+                self.engine.shutdown()
+            else:
+                self.cleanup_result = await self.profile_guard.shutdown()
             pending = [task for task in asyncio.all_tasks() if task is not asyncio.current_task()]
             for task in pending:
                 task.cancel()
-            await asyncio.gather(*pending, return_exceptions=True)
+            if pending:
+                if self.profile_guard is None:
+                    await asyncio.gather(*pending, return_exceptions=True)
+                else:
+                    await asyncio.wait(pending, timeout=CANCEL_TIMEOUT_SECONDS)
 
         try:
             self.loop.run_until_complete(close())

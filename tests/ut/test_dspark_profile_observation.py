@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Real CPU tensors/arrays; no claim of NPU execution or numerical repair."""
 
+import hashlib
 import importlib.util
 import json
 import runpy
@@ -162,7 +163,8 @@ def test_metadata_only_no_device_reads_waits_or_hot_path_writes(tmp_path, monkey
         execute(runner, {"r3": 1, "r2": 4, "r1": 6})
         assert json.dumps(first) == before  # not numpy/tensor views
     assert list(tmp_path.iterdir()) == []
-    records = observer.finish_point()["records"]
+    receipt = observer.finish_point()
+    records = json.loads(Path(receipt["local_evidence"]["path"]).read_text())["records"]
     prepared = [r for r in records if r["stage"] == "proposal_prepare.return"]
     assert prepared[0]["batch"]["query_start_loc_np"] == [0, 1, 2, 6, 12]
     assert prepared[1]["batch"]["query_start_loc_np"] == [0, 1, 5, 11]
@@ -228,7 +230,7 @@ def test_sync_control_changes_only_context_return_and_counts(tmp_path, monkeypat
     for _ in range(2):
         execute(runner, {"instance-a": 1, "instance-b": 6})
     snapshot = observer.finish_point()
-    assert snapshot["records"] == []
+    assert snapshot["records_count"] == 0
     assert snapshot["sync"]["calls"] == snapshot["sync"]["completed"] == 2
     assert snapshot["sync"]["stream_handle"] == "17"
     observer.begin_point("two")
@@ -251,6 +253,10 @@ def test_prefix_controls_and_cli_do_not_enable_full_diagnostic(tmp_path, monkeyp
     kwargs = profile.profile_engine_kwargs(None, tmp_path, False, mode)
     assert "dspark_profile_nan_diagnostic_dir" not in kwargs["additional_config"]
     assert ("dspark_profile_observation" in kwargs["additional_config"]) == (mode != "baseline")
+    assert ("distributed_executor_backend" in kwargs) == (mode == "metadata-only")
+    assert ("dspark_profile_failure_dir" in kwargs["additional_config"]) == (mode == "metadata-only")
+    if mode == "metadata-only":
+        assert kwargs["distributed_executor_backend"].endswith("dspark_profile_executor.ProfileMultiprocExecutor")
     base = ["--plugin-sha", "abc", "--manifest", str(tmp_path / "manifest"), "--output-dir", str(tmp_path)]
     observed = []
     monkeypatch.setattr(large, "run", lambda args: observed.append(args) or 0)
@@ -392,3 +398,39 @@ def test_installs_through_real_profile_wrapper_and_replay_observer(tmp_path, mon
     # Exactly the original timer events and point-boundary synchronizations.
     assert recorded == ["boundary", "record", "record", "record", "record", "boundary"]
     profiler.observation.close()
+
+
+def test_point_rpc_is_compact_hashed_and_safe_with_full_history_local(tmp_path, monkeypatch):
+    msgspec = pytest.importorskip("msgspec")
+    monkeypatch.setenv("VLLM_ALLOW_INSECURE_SERIALIZATION", "0")
+    runner, observer = installed(tmp_path)
+    observer.begin_point("point-two")
+    for _ in range(15):
+        execute(runner, {"r3": 1, "r2": 4, "r1": 6})
+    receipt = observer.finish_point()
+    raw = Path(receipt["local_evidence"]["path"]).read_bytes()
+    data = json.loads(raw)
+    assert receipt["local_evidence"]["sha256"] == hashlib.sha256(raw).hexdigest()
+    assert receipt["local_evidence"]["bytes"] == len(raw)
+    assert receipt["records_count"] == len(data["records"]) == OBS.RING_RECORDS
+    assert data["point"] == "point-two" and data["pid"] > 0
+    assert data["observed_utc"] and data["recording_error"] is None
+    wire = msgspec.msgpack.encode(receipt)
+    assert len(wire) < 4096 and msgspec.msgpack.decode(wire) == receipt
+    observer.begin_point("point-three")
+    assert not observer.records and not observer.counts
+    assert json.loads(raw)["point"] == "point-two"
+    observer.close()
+
+
+def test_descriptors_limit_total_expansion_and_represent_aliases():
+    leaf = {str(i): torch.zeros(1) for i in range(128)}
+    # Many layers can share one metadata object. Record the identity link once
+    # instead of recursively multiplying the same payload for every layer.
+    aliases = OBS.describe({str(i): leaf for i in range(128)})
+    assert aliases["0"]["object_id"] == aliases["127"]["object_id"]
+    assert aliases["127"]["fields"] == "already_described"
+    nested = {str(i): {str(j): {str(k): k for k in range(128)} for j in range(128)} for i in range(10)}
+    described = OBS.describe(nested)
+    assert described["truncated_fields"] > 0
+    assert len(json.dumps(described)) < 20000

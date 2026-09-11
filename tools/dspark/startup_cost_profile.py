@@ -304,10 +304,14 @@ def collect(engine_factory, points, sampling, directory, *, warmup, samples, ran
             if raw is None:
                 raw = {"point": point, "streaming": engine.last_batch, "performance_eligible": False}
                 try:
+                    if getattr(getattr(engine, "profile_guard", None), "first", None) is not None:
+                        raise RuntimeError("Engine failed; post-mortem RPC not retried")
                     raw["ranks"] = engine.collective_rpc("dspark_benchmark_replay_snapshot")
                 except Exception as snapshot_error:
                     raw["snapshot_error"] = f"{type(snapshot_error).__name__}: {snapshot_error}"
             raw["request_identity_failure"] = getattr(error, "evidence", None)
+            if raw.get("ranks") is None:
+                raw["request_identity_status"] = "unavailable: worker snapshots were not returned"
             if (
                 raw["request_identity_failure"] is None
                 and raw.get("ranks") is not None
@@ -318,11 +322,14 @@ def collect(engine_factory, points, sampling, directory, *, warmup, samples, ran
                 except ValueError as identity_error:
                     raw["request_identity_failure"] = getattr(identity_error, "evidence", None)
             benchmark._atomic_write_json(directory / f"{point['id']}.json", raw)
+        first = getattr(getattr(engine, "profile_guard", None), "first", None)
         benchmark._atomic_write_json(
             directory / "profile-failure.json",
             {
                 "point": point,
-                "error": f"{type(error).__name__}: {error}",
+                "error": first["error"] if first else f"{type(error).__name__}: {error}",
+                "first_failure": first,
+                "propagated_error": f"{type(error).__name__}: {error}",
                 "last_stream": engine.last_batch,
                 "request_identity_failure": (raw or {}).get("request_identity_failure"),
                 "performance_eligible": False,
@@ -330,9 +337,23 @@ def collect(engine_factory, points, sampling, directory, *, warmup, samples, ran
         )
         raise
     finally:
-        engine.shutdown()
-        lifecycle["shutdown"] = True
-        benchmark._atomic_write_json(directory / "lifecycle.json", lifecycle)
+        try:
+            engine.shutdown()
+            cleanup = getattr(engine, "cleanup_result", None)
+            if cleanup is not None and not cleanup["shutdown_completed"]:
+                raise RuntimeError("Profile engine cleanup did not complete")
+        except BaseException as cleanup_error:
+            lifecycle["cleanup_error"] = f"{type(cleanup_error).__name__}: {cleanup_error}"
+            if not (directory / "profile-failure.json").exists():
+                raise
+        finally:
+            cleanup = getattr(engine, "cleanup_result", None)
+            lifecycle["shutdown"] = (
+                cleanup.get("shutdown_completed", False) if cleanup else "cleanup_error" not in lifecycle
+            )
+            if cleanup is not None:
+                lifecycle["cleanup"] = cleanup
+            benchmark._atomic_write_json(directory / "lifecycle.json", lifecycle)
 
 
 def diagnostic_points(points, stop):
@@ -362,6 +383,11 @@ def profile_engine_kwargs(parsed, directory, diagnostic, experiment=None):
             **kwargs["additional_config"],
             "dspark_profile_observation": {"mode": experiment, "directory": str(directory.resolve())},
         }
+    if experiment == "metadata-only":
+        kwargs["distributed_executor_backend"] = (
+            "vllm_ascend.diagnostics.dspark_profile_executor.ProfileMultiprocExecutor"
+        )
+        kwargs["additional_config"]["dspark_profile_failure_dir"] = str(directory.parent.resolve())
     return kwargs
 
 
@@ -431,8 +457,21 @@ def run(args):
         try:
             runtime = benchmark._collect_worker_graph_runtime(engine, parsed)
             benchmark._atomic_write_json(root / "capture.json", runtime)
-        except BaseException:
-            engine.shutdown()
+        except BaseException as error:
+            guard = getattr(engine, "profile_guard", None)
+            if guard is not None:
+                guard.remember(error)
+            try:
+                engine.shutdown()
+            except BaseException as cleanup_error:
+                benchmark._atomic_write_json(
+                    root / "initialization-cleanup-error.json",
+                    {
+                        "error": f"{type(error).__name__}: {error}",
+                        "cleanup_error": f"{type(cleanup_error).__name__}: {cleanup_error}",
+                        "performance_eligible": False,
+                    },
+                )
             raise
         return engine
 
@@ -443,7 +482,14 @@ def run(args):
     except BaseException as error:
         if isolated:
             receipt = json.loads((root / "diagnostic.json").read_text())
-            receipt.update(status="failed", error=f"{type(error).__name__}: {error}")
+            failure_path = root / "engine-failure.json"
+            first = json.loads(failure_path.read_text()) if failure_path.exists() else None
+            receipt.update(
+                status="failed",
+                error=first["error"] if first else f"{type(error).__name__}: {error}",
+                first_failure=first,
+                propagated_error=f"{type(error).__name__}: {error}",
+            )
             benchmark._atomic_write_json(root / "diagnostic.json", receipt)
         raise
     if isolated:

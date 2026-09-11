@@ -7,11 +7,15 @@ Host arrays are copied to Python values, never retained as views. Device fields
 are descriptors ONLY: they cannot establish numerical finiteness or KV contents.
 """
 
+import hashlib
 import json
+import os
 from collections import Counter, deque
 from collections.abc import Mapping
 from dataclasses import fields, is_dataclass
+from datetime import datetime, timezone
 from functools import wraps
+from itertools import islice
 from pathlib import Path
 
 import numpy as np
@@ -19,6 +23,7 @@ import torch
 
 RING_RECORDS = 128
 MAX_FIELDS = 128
+MAX_DESCRIPTOR_NODES = 512
 EPOCH_FIELDS = (
     "_proposal_step_epoch",
     "_prepared_step_epoch",
@@ -52,8 +57,13 @@ BATCH_TENSOR_FIELDS = (
 )
 
 
-def describe(value, depth=0):
-    """Bounded host-only descriptors. No repr/tolist/item on a tensor."""
+def describe(value, depth=0, budget=None, seen=None):
+    """Host descriptors with a total node bound, not just a per-container limit."""
+    if budget is None:
+        budget, seen = [MAX_DESCRIPTOR_NODES], set()
+    if budget[0] <= 0:
+        return {"fields": "node_limit"}
+    budget[0] -= 1
     if isinstance(value, torch.Tensor):
         return {
             "shape": list(value.shape),
@@ -72,17 +82,34 @@ def describe(value, depth=0):
         return value.tolist()
     if depth >= 4:
         return {"type": type(value).__name__, "fields": "depth_limit"}
+    if id(value) in seen:
+        return {"object_id": id(value), "fields": "already_described"}
+    seen.add(id(value))
     if isinstance(value, Mapping):
-        items = list(value.items())
+        count, items = len(value), value.items()
     elif is_dataclass(value) and not isinstance(value, type):
-        items = [(field.name, getattr(value, field.name)) for field in fields(value)]
+        names = fields(value)
+        count, items = len(names), ((field.name, getattr(value, field.name)) for field in names)
     elif isinstance(value, (list, tuple)):
-        return [describe(v, depth + 1) for v in value[:MAX_FIELDS]]
+        result = []
+        for entry in value[:MAX_FIELDS]:
+            if budget[0] <= 0:
+                break
+            result.append(describe(entry, depth + 1, budget, seen))
+        if len(result) < len(value):
+            result.append({"truncated_fields": len(value) - len(result)})
+        return result
     else:
         return {"type": type(value).__name__}
-    result = {str(k): describe(v, depth + 1) for k, v in items[:MAX_FIELDS]}
-    if len(items) > MAX_FIELDS:
-        result["truncated_fields"] = len(items) - MAX_FIELDS
+    result = {"object_id": id(value)}
+    used = 0
+    for key, entry in islice(items, MAX_FIELDS):
+        if budget[0] <= 0:
+            break
+        result[str(key)] = describe(entry, depth + 1, budget, seen)
+        used += 1
+    if used < count:
+        result["truncated_fields"] = count - used
     return result
 
 
@@ -265,7 +292,10 @@ class ProfileObservation:
 
     def snapshot(self):
         return {
-            "schema_version": 1,
+            "schema_version": 2,
+            "pid": os.getpid(),
+            "observed_utc": datetime.now(timezone.utc).isoformat(),
+            "descriptor_node_limit": MAX_DESCRIPTOR_NODES,
             "performance_eligible": False,
             "mode": self.mode,
             "rank": self.rank,
@@ -300,20 +330,28 @@ class ProfileObservation:
 
     def write(self, suffix, data, exclusive=False):
         path = self.directory / f"rank-{self.rank}-{suffix}.json"
+        encoded = json.dumps(data, allow_nan=False).encode("utf-8")
         if exclusive:
-            with path.open("x") as stream:
-                json.dump(data, stream, allow_nan=False)
+            with path.open("xb") as stream:
+                stream.write(encoded)
         else:
             temporary = path.with_suffix(".tmp")
-            temporary.write_text(json.dumps(data, allow_nan=False))
+            temporary.write_bytes(encoded)
             temporary.replace(path)
+        return {"path": str(path), "sha256": hashlib.sha256(encoded).hexdigest(), "bytes": len(encoded)}
 
     def finish_point(self):
-        # Existing point-boundary RPC only, never called from a generation step.
-        self.write("latest", self.snapshot())
+        # Full history is worker-local. Do not fan it out through two RPC
+        # serializers (8 ranks previously returned ~122 MB per point).
+        data = self.snapshot()
+        receipt = self.write("latest", data)
         if self.recording_error is not None:
             raise RuntimeError(f"Profile metadata evidence unavailable: {self.recording_error}")
-        return self.snapshot()
+        return {key: value for key, value in data.items() if key != "records"} | {
+            "records_count": len(data["records"]),
+            "local_evidence": receipt,
+            "records": "worker-local; latest file is replaced at the next point boundary",
+        }
 
     def begin_point(self, point):
         self.point = point

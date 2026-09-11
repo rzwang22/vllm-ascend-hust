@@ -160,6 +160,19 @@ def run(args):
         try:
             cmd = command(args, batch, args.output_dir / f"b{batch}")
             row["command"] = cmd
+            if args.stage == "profile" and getattr(args, "profile_experiment", None) == "metadata-only":
+                cmd = [
+                    sys.executable,
+                    "-m",
+                    "tools.dspark.profile_process_guard",
+                    "--directory",
+                    str(args.output_dir / f"b{batch}"),
+                    "--receipt",
+                    str(args.output_dir / f"b{batch}-supervisor.json"),
+                    "--",
+                    *cmd,
+                ]
+                row["supervised_command"] = cmd
             benchmark._atomic_write_json(args.output_dir / f"b{batch}-command.json", row)
             suite.resources_idle(args.output_dir / f"b{batch}-npu.log")
             row["rc"] = suite.logged(cmd, args.output_dir / f"b{batch}.log")

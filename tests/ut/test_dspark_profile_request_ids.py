@@ -116,6 +116,7 @@ def facade(engine):
     result.delta_kind = "delta"
     result.batch_number = 0
     result.last_batch = None
+    result.profile_guard = None
     return result
 
 
