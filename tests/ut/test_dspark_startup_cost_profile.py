@@ -36,6 +36,11 @@ def snapshots(point, *, count=8, ranks=2):
                         "request_capacity": min(4, point["capacity"]),
                         "query_lengths": [ell + 1 for ell in point["lengths"]],
                         "context": 20,
+                        "context_semantics": POLICY["COST_CONTEXT_SEMANTICS"],
+                        "scheduler_computed_upper_bounds": [20] * point["requests"],
+                        "effective_kv_before_query": [16] * point["requests"],
+                        "attention_seq_lens": [16 + ell + 1 for ell in point["lengths"]],
+                        "max_model_len": 8192,
                         "seconds": (100 if index < 2 else index + 1) / 1000,
                         "request_ids": [f"batch1-{i}" for i in range(point["requests"])],
                         "size": point["capacity"] if kind == "target" else point["requests"],
@@ -48,7 +53,13 @@ def snapshots(point, *, count=8, ranks=2):
                 "cost_profile": {
                     "source": "isolated_npu_event_profile",
                     "measurements": rows,
-                    "identity": {"tp": ranks},
+                    "identity": {
+                        "tp": ranks,
+                        "cost_context_semantics": POLICY["COST_CONTEXT_SEMANTICS"],
+                        "max_model_len": 8192,
+                        "max_num_batched_tokens": 8192,
+                        "capture_sizes": [6, 12, 24],
+                    },
                 },
             }
         )
@@ -58,7 +69,12 @@ def snapshots(point, *, count=8, ranks=2):
 def table_data():
     counts, points = profile.grid(4, [6, 12, 24], [16, 128], 64)
     records = [{"point": p, "retained": profile.point_samples(p, snapshots(p), 2, 5, 2)} for p in points]
-    identity = {"max_num_seqs": 4, "capture_sizes": [6, 12, 24], "tp": 2}
+    identity = {
+        "max_num_seqs": 4,
+        "capture_sizes": [6, 12, 24],
+        "tp": 2,
+        "cost_context_semantics": POLICY["COST_CONTEXT_SEMANTICS"],
+    }
     return profile.compile_startup(
         records,
         identity,
@@ -257,11 +273,13 @@ def test_profile_wrapper_does_not_reset_production_state(monkeypatch):
         num_tokens=6,
         num_reqs_after_padding=4,
         num_tokens_after_padding=6,
-        num_computed_tokens_np=np.array([32]),
+        num_computed_tokens_np=np.array([32, 9999]),
+        seq_lens_np=np.array([34, 9999]),
         num_scheduled_tokens=np.array([6]),
         is_prefilling_np=np.array([False]),
     )
     runner = NS(
+        vllm_config=NS(model_config=NS(max_model_len=8192)),
         input_batch=batch,
         slots=slots,
         speculator=NS(
@@ -274,11 +292,17 @@ def test_profile_wrapper_does_not_reset_production_state(monkeypatch):
     assert profiler.target(NS(num_tokens=6)) == "target"
     assert profiler.propose(NS(num_reqs=1)) == "draft"
     assert all(r[0]["full_decode"] for r in profiler.events)
+    assert all(r[0]["context"] == 32 and r[0]["effective_kv_before_query"] == [28] for r in profiler.events)
+    assert all(r[0]["attention_seq_lens"] == [34] for r in profiler.events)
     profiler.begin_point("b", [0])
     assert not profiler.events
     assert runner.slots is slots and owners == {"old": 2}  # scheduler alone retires it
+    batch.num_computed_tokens_np[0] = 18
+    batch.seq_lens_np[0] = 20
     profiler.propose(NS(num_reqs=1))  # no adjacent real FULL target
     assert not profiler.events[0][0]["full_decode"]
+    assert profiler.events[0][0]["context"] == 18
+    assert profiler.events[0][0]["effective_kv_before_query"] == [14]
     with pytest.raises(ValueError):
         profiler.begin_point("bad", [-1])
 

@@ -14,6 +14,7 @@ from typing import Any
 
 MAX_DRAFTS = 5
 CONFIG_KEY = "dspark_confidence_verification"
+COST_CONTEXT_SEMANTICS = "scheduler_pre_query_computed_upper_bound_v1"
 
 
 def fingerprint(value: Any) -> str:
@@ -117,6 +118,11 @@ class CostTable:
             or data.get("model_initializations") != 1
         ):
             raise ValueError("Incompatible startup cost profile identity, units or lifecycle.")
+        if (
+            identity.get("cost_context_semantics") != COST_CONTEXT_SEMANTICS
+            or data.get("context_semantics") != COST_CONTEXT_SEMANTICS
+        ):
+            raise ValueError("Incompatible cost context semantics; re-profile with explicit scheduler upper bounds.")
         cells = data.get("cells", [])
         contexts = data.get("context_ceilings", [])
         requests = data.get("request_grid", [])
@@ -294,7 +300,11 @@ def fill_varlen_query_padding(query_start_loc: Any, actual_requests: int, capaci
 
 
 def current_host_contexts(states: Any, output: Any) -> dict[str, int]:
-    """Current scheduler upper bounds, before runner.update_requests executes."""
+    """Scheduler pre-query computed upper bounds, before update_requests.
+
+    These include unresolved async speculation, not rejection-corrected KV or
+    attention lengths. Startup profiles use the same cost context semantics.
+    """
     contexts = {key: int(states.num_computed_tokens_np[index]) for key, index in states.req_id_to_index.items()}
     cached = getattr(output, "scheduled_cached_reqs", None)
     if cached is not None:

@@ -49,7 +49,7 @@ query length 6. Request capacity remains the actual graph descriptor's capacity;
 it is never reconstructed from `tokens // 6`.
 
 Defaults are prompt contexts 128 and 2048, synthetic output budget 512,
-two discarded matching warmup executions and five retained matching samples
+two discarded eligible warmup executions and five retained eligible samples
 per rank, kind and point. Generation uses natural allocator-owned KV and unique
 `batchN-request` IDs. Synthetic profile requests alone use ignore-EOS to obtain
 samples; formal performance retains natural EOS. Every call is drained before
@@ -59,20 +59,26 @@ Profile events record request IDs, actual requests/tokens, padded token/request
 capacities, query lengths and host context. Failed, prefill, nonmatching or
 non-FULL-adjacent draft samples cannot price a cell. Insufficient samples fail
 with raw evidence retained; increasing the profile output budget is explicit.
+All events are integrity-checked before domain selection. Legal context/layout
+exclusions remain annotated in raw evidence. See [context semantics and domain
+selection](PROFILE_CONTEXT.md) for the physical-length checks and B64-first retry.
 
 Schema 2 records source SHAs, checkpoint preflight (including actual index hash),
 loaded confidence fingerprint, model revision/config, hardware, TP/EP, dtype,
 quantization, Torch/torch-npu versions, Ascend compilation options, K, capture
 sizes, model/token/memory budgets, block size, seconds,
 raw sample hashes, medians, context/request grids and processing method.
-Schema 1 is rejected for policy loading; regenerate it without rewriting metadata.
+Schema 1 is rejected for policy loading. Schema 2 now also requires explicit
+`context_semantics` and `identity.cost_context_semantics` markers; older tables
+must be regenerated without rewriting metadata.
 
 Lookup first rounds actual target tokens up to graph capacity, then uses ceiling
 request/context buckets. Raw per-layout/rank curves remain in the artifacts;
 processed costs use max of rank medians and layout medians, then a monotone upper
 envelope. Draft curves use request count and context, across FULL-adjacent target
 capacities. Target retains capacity, request bucket and context dimensions.
-The default context buckets end at 640 and 2560 computed tokens. Intermediate
+The default context buckets end at 640 and 2560 scheduler pre-query computed
+upper-bound tokens, not rejection-corrected KV lengths. Intermediate
 contexts and request counts use a **fitted ceiling estimate**, not an assertion
 that they were all measured. Balanced/skewed envelopes are not a proven bound
 for every possible mixture or context distribution. This limitation is explicit;

@@ -11,6 +11,7 @@ from pathlib import Path
 import torch
 
 from vllm_ascend.spec_decode.dspark_verification import (
+    COST_CONTEXT_SEMANTICS,
     ConfidenceRow,
     CostTable,
     allocate_prefixes,
@@ -25,6 +26,7 @@ def runtime_identity(config, hardware, confidence_sha256=None):
     model = config.model_config
     parallel = config.parallel_config
     return {
+        "cost_context_semantics": COST_CONTEXT_SEMANTICS,
         "confidence_weights_sha256": confidence_sha256,
         "model": model.model,
         "revision": model.revision,

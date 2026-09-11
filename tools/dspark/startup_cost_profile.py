@@ -54,6 +54,54 @@ def grid(maximum, captures, contexts, output_tokens):
     return sorted(counts), points
 
 
+def _validate_event(row, point, identity):
+    """Check execution integrity before any sampling-domain/window filtering."""
+    n = row["requests"]
+    q = row["query_lengths"]
+    upper = row["scheduler_computed_upper_bounds"]
+    kv = row["effective_kv_before_query"]
+    attention = row["attention_seq_lens"]
+    integers = [
+        n,
+        row["request_capacity"],
+        row["capacity"],
+        row["actual_tokens"],
+        row["size"],
+        row["context"],
+        row["max_model_len"],
+        *q,
+        *upper,
+        *kv,
+        *attention,
+    ]
+    if (
+        any(type(value) is not int for value in integers)
+        or row["point"] != point["id"]
+        or row["kind"] not in ("target", "draft")
+        or row["context_semantics"] != identity["cost_context_semantics"]
+        or not math.isfinite(row["seconds"])
+        or row["seconds"] <= 0
+        or not 0 < n <= row["request_capacity"] <= row["capacity"]
+        or not 0 < row["actual_tokens"] <= row["capacity"]
+        or any(len(values) != n for values in (q, upper, kv, attention))
+        or any(value < 0 for value in (*upper, *kv))
+        or any(value <= 0 or (row["full_decode"] and value > 6) for value in q)
+        or sum(q) != row["actual_tokens"]
+        or row["context"] != max(upper)
+        or row["max_model_len"] <= 0
+        or row["max_model_len"] != identity["max_model_len"]
+        or any(
+            length != previous + query or length > row["max_model_len"]
+            for previous, query, length in zip(kv, q, attention)
+        )
+        or (row["kind"] == "target" and row["size"] != row["capacity"])
+        or (row["kind"] == "draft" and not 0 < row["size"] <= n)
+        or row["capacity"] > identity["max_num_batched_tokens"]
+        or (row["full_decode"] and row["capacity"] not in identity["capture_sizes"])
+    ):
+        raise ValueError("Invalid NPU timing/context/layout sample")
+
+
 def point_samples(point, snapshots, warmup, samples, ranks):
     if warmup < 1 or samples < 5:
         raise ValueError("Each point requires warmup and at least five valid samples")
@@ -68,40 +116,69 @@ def point_samples(point, snapshots, warmup, samples, ranks):
             or snapshot["cost_profile"].get("source") != "isolated_npu_event_profile"
         ):
             raise ValueError("Failed profile execution or missing event producer")
+        events = snapshot["cost_profile"]["measurements"]
+        identity = snapshot["cost_profile"]["identity"]
+        # All events, including nonmatching layouts and extra records, must be
+        # structurally valid. No timing threshold is used to choose samples.
+        for index, row in enumerate(events):
+            row["sample_selection"] = {"raw_index": index, "classification": "invalid"}
+            try:
+                _validate_event(row, point, identity)
+            except (ValueError, KeyError, TypeError) as error:
+                row["sample_selection"]["reason"] = str(error)
+                raise ValueError(f"Invalid profile event: rank={rank}, raw_index={index}: {error}") from error
+            row["sample_selection"]["classification"] = "validated"
         for kind in ("target", "draft"):
-            rows = [
-                r
-                for r in snapshot["cost_profile"]["measurements"]
-                if r["point"] == point["id"]
-                and r["kind"] == kind
-                and r["full_decode"]
-                and r["requests"] == point["requests"]
-                and r["size"] == (point["capacity"] if kind == "target" else point["requests"])
-                and r["capacity"] == point["capacity"]
-                and r["actual_tokens"] == point["actual_tokens"]
-                and sorted(r["query_lengths"]) == sorted(x + 1 for x in point["lengths"])
-            ]
-            if len(rows) < warmup + samples:
-                raise ValueError(f"Insufficient real FULL samples for {point['id']}, rank {rank}, {kind}: {len(rows)}")
-            if any(
-                not math.isfinite(r["seconds"])
-                or r["seconds"] <= 0
-                or not 0 <= r["context"] <= point["context_ceiling"]
-                or not r["requests"] <= r["request_capacity"] <= r["capacity"]
-                or len(r["query_lengths"]) != r["requests"]
-                or sum(r["query_lengths"]) != r["actual_tokens"]
-                for r in rows
-            ):
-                raise ValueError("Invalid NPU timing/context sample")
-            measured = rows[warmup : warmup + samples]
+            eligible, excluded = [], []
+            for index, row in enumerate(events):
+                if row["kind"] != kind:
+                    continue
+                reason = None
+                if not (
+                    row["full_decode"]
+                    and row["requests"] == point["requests"]
+                    and row["size"] == (point["capacity"] if kind == "target" else point["requests"])
+                    and row["capacity"] == point["capacity"]
+                    and row["actual_tokens"] == point["actual_tokens"]
+                    and sorted(row["query_lengths"]) == sorted(x + 1 for x in point["lengths"])
+                ):
+                    reason = "outside_layout_domain"
+                elif row["context"] > point["context_ceiling"]:
+                    reason = "outside_context_domain"
+                if reason:
+                    row["sample_selection"].update(classification="out_of_domain", reason=reason)
+                    excluded.append({"raw_index": index, "reason": reason, "context": row["context"]})
+                else:
+                    ordinal = len(eligible)
+                    window = "warmup" if ordinal < warmup else "retained" if ordinal < warmup + samples else "extra"
+                    row["sample_selection"].update(classification=window, eligible_index=ordinal)
+                    eligible.append(row)
+            if len(eligible) < warmup + samples:
+                raise ValueError(
+                    f"Insufficient real FULL samples for {point['id']}, rank {rank}, {kind}: {len(eligible)}"
+                )
+            measured = eligible[warmup : warmup + samples]
             retained.append(
                 {
                     "rank": rank,
                     "kind": kind,
-                    "warmup": rows[:warmup],
+                    "context_semantics": identity["cost_context_semantics"],
+                    "sampling_context_domain": [0, point["context_ceiling"]],
+                    "selected_context_range": [
+                        min(r["context"] for r in measured),
+                        max(r["context"] for r in measured),
+                    ],
+                    "selected_raw_indices": [r["sample_selection"]["raw_index"] for r in measured],
+                    "warmup": eligible[:warmup],
                     "samples": measured,
                     "median_seconds": statistics.median(r["seconds"] for r in measured),
-                    "extra_sample_count": len(rows) - warmup - samples,
+                    "extra_sample_count": len(eligible) - warmup - samples,
+                    "excluded_sample_count": len(excluded),
+                    "excluded_counts_by_reason": {
+                        reason: sum(item["reason"] == reason for item in excluded)
+                        for reason in ("outside_context_domain", "outside_layout_domain")
+                    },
+                    "excluded_samples": excluded,
                 }
             )
     return retained
@@ -115,6 +192,9 @@ def compile_startup(records, identity, request_grid, *, checkpoint, plugin_sha, 
         cell = cells.setdefault(
             key, {"requests": key[0], "capacity": key[1], "context_ceiling": key[2], "raw_layout_medians": {}}
         )
+        cell.setdefault("selected_context_ranges", {})[p["layout"]] = [
+            {"rank": r["rank"], "kind": r["kind"], "range": r["selected_context_range"]} for r in record["retained"]
+        ]
         cell["raw_layout_medians"][p["layout"]] = {
             kind: max(r["median_seconds"] for r in record["retained"] if r["kind"] == kind)
             for kind in ("target", "draft")
@@ -149,6 +229,7 @@ def compile_startup(records, identity, request_grid, *, checkpoint, plugin_sha, 
         "worker_replicas": identity["tp"],
         "raw_measurements_sha256": raw_hashes,
         "request_grid": request_grid,
+        "context_semantics": identity["cost_context_semantics"],
         "context_ceilings": sorted({c["context_ceiling"] for c in cells.values()}),
         "cells": list(cells.values()),
         "scheduler_seconds": overhead,
@@ -157,7 +238,8 @@ def compile_startup(records, identity, request_grid, *, checkpoint, plugin_sha, 
             "processing": "per-rank median; max across ranks/layouts; monotone upper envelope",
             "lookup": "ceil graph token capacity, then ceil context and request grid; no extrapolation",
             "layout_scope": "balanced/skewed prefixes; envelope estimate, not an arbitrary-layout bound",
-            "context_scope": "max host computed length; ceil sampled prompt+output bucket",
+            "context_scope": "scheduler pre-query upper bound; ceil prompt+output bucket, not corrected KV",
+            "context_estimate": "bucket envelope from selected ranges; bucket ceiling is not a measured length",
             "cleanup": "normal scheduler terminal cleanup, unique request IDs; separate engine",
             "synchronization": "profile-only phase boundaries; not performance eligible",
         },
@@ -203,10 +285,12 @@ def collect(engine_factory, points, sampling, directory, *, warmup, samples, ran
                 if identity is not None and current != identity:
                     raise ValueError("Profile configuration changed within one engine")
                 identity = current
+            selected = point_samples(point, snapshots, warmup, samples, ranks)
+            benchmark._atomic_write_json(path, raw)  # include classifications, preserve original values
             records.append(
                 {
                     "point": point,
-                    "retained": point_samples(point, snapshots, warmup, samples, ranks),
+                    "retained": selected,
                     "raw_sha256": benchmark._sha256_file(path),
                 }
             )

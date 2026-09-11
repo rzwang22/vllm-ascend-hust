@@ -4,7 +4,33 @@
 
 import torch
 
+from vllm_ascend.spec_decode.dspark_verification import COST_CONTEXT_SEMANTICS
 from vllm_ascend.worker.v2.spec_decode.dspark.verification_runtime import runtime_identity
+
+
+def profile_context(batch, max_model_len):
+    """Snapshot existing host metadata, only actual rows, before the timed call.
+
+    seq_lens_np was prepared by Ascend's existing _update_seq_lens_cpu wait and
+    rejection-corrected copy. No tensor transfer/synchronization is added here.
+    Both target and adjacent draft are indexed by the target's pre-query
+    scheduler upper bound, matching the pre-admission policy lookup.
+    """
+    n = batch.num_reqs
+    scheduled = [int(v) for v in batch.num_scheduled_tokens[:n]]
+    upper = [int(v) for v in batch.num_computed_tokens_np[:n]]
+    attention = [int(v) for v in batch.seq_lens_np[:n]]
+    if n <= 0 or len(scheduled) != n or len(upper) != n or len(attention) != n:
+        raise ValueError("Incomplete actual-request profile context")
+    return {
+        "context": max(upper),
+        "context_semantics": COST_CONTEXT_SEMANTICS,
+        "scheduler_computed_upper_bounds": upper,
+        "effective_kv_before_query": [length - q for length, q in zip(attention, scheduled)],
+        "attention_seq_lens": attention,
+        "max_model_len": int(max_model_len),
+        "effective_length_source": "AscendInputBatch.seq_lens_np minus current query; existing corrected CPU copy",
+    }
 
 
 class IsolatedCostProfiler:
@@ -19,6 +45,8 @@ class IsolatedCostProfiler:
         runner.speculator._execute_draft = self.propose
 
     def timed(self, kind, size, function, argument):
+        batch = self.runner.input_batch
+        context = profile_context(batch, self.runner.vllm_config.model_config.max_model_len)
         start = torch.npu.Event(enable_timing=True)
         end = torch.npu.Event(enable_timing=True)
         start.record()
@@ -26,13 +54,11 @@ class IsolatedCostProfiler:
         end.record()
         # Failed launches are not recorded. Synchronization/errors are checked
         # at the boundary before any profile cache can be written.
-        batch = self.runner.input_batch
-        context = int(batch.num_computed_tokens_np.max())
         metadata = {
             "request_ids": list(batch.req_ids),
             "kind": kind,
             "size": size,
-            "context": context,
+            **context,
             "requests": int(batch.num_reqs),
             "actual_tokens": int(batch.num_tokens),
             "capacity": int(batch.num_tokens_after_padding),
