@@ -436,7 +436,9 @@ def diagnostic_points(points, stop):
     return points[: indices[0] + 1]  # keep every predecessor in the same engine
 
 
-def profile_engine_kwargs(parsed, directory, diagnostic, experiment=None, target_layer=None):
+def profile_engine_kwargs(parsed, directory, diagnostic, experiment=None, target_layer=None, worker_exit=False):
+    if worker_exit and experiment != "target-boundaries":
+        raise ValueError("Worker exit tracing requires target-boundaries")
     if target_layer is not None and (
         experiment != "target-boundaries" or type(target_layer) is not int or target_layer < 0
     ):
@@ -480,6 +482,9 @@ def profile_engine_kwargs(parsed, directory, diagnostic, experiment=None, target
             "vllm_ascend.diagnostics.dspark_profile_executor.ProfileMultiprocExecutor"
         )
         kwargs["additional_config"]["dspark_profile_failure_dir"] = str(directory.parent.resolve())
+    if worker_exit:
+        kwargs["worker_cls"] = "vllm_ascend.diagnostics.dspark_profile_worker.ProfileNPUWorker"
+        kwargs["additional_config"]["dspark_profile_worker_exit"] = True
     return kwargs
 
 
@@ -504,6 +509,7 @@ def run(args):
                 "performance_eligible": False,
                 "experiment": experiment or "full-diagnostic",
                 "target_layer": target_layer,
+                "worker_exit_trace": getattr(args, "profile_worker_exit", False),
                 "status": "running",
                 "root_cause": "ROOT_CAUSE_NOT_YET_PROVEN",
                 "points": [point["id"] for point in points],
@@ -546,7 +552,15 @@ def run(args):
 
     def initialize():
         engine = StreamingEngine(
-            profile_engine_kwargs(parsed, root / "worker-first-failure", diagnostic, experiment, target_layer), parsed
+            profile_engine_kwargs(
+                parsed,
+                root / "worker-first-failure",
+                diagnostic,
+                experiment,
+                target_layer,
+                getattr(args, "profile_worker_exit", False),
+            ),
+            parsed,
         )
         try:
             runtime = benchmark._collect_worker_graph_runtime(engine, parsed)

@@ -1,5 +1,8 @@
 # Metadata-only worker exit and bounded failure propagation
 
+Later po6aUaSP shutdown-stage evidence and the opt-in observer are documented in
+[PROFILE_WORKER_SHUTDOWN.md](PROFILE_WORKER_SHUTDOWN.md). This document preserves the earlier worker-death audit.
+
 Status: **SERVER_NOT_REVALIDATED / ROOT_CAUSE_NOT_YET_PROVEN**.
 This repair preserves exit evidence, bounds failed profile teardown and removes
 large metadata histories from RPC responses. It does not establish why worker 5

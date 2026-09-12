@@ -59,7 +59,7 @@ main() {
         tests/ut/test_dspark_profile_numerics.py tests/ut/test_dspark_profile_upstream.py \
         tests/ut/test_dspark_profile_auxiliary.py tests/ut/test_dspark_profile_target.py \
         tests/ut/test_dspark_replay_diagnostics.py \
-        tests/ut/test_dspark_nan_diagnostics.py tests/ut/test_dspark_profile_failure.py \
+        tests/ut/test_dspark_nan_diagnostics.py tests/ut/test_dspark_profile_failure.py tests/ut/test_dspark_worker_exit.py \
         tests/ut/test_dspark_confidence_verification.py tests/ut/worker/test_dsa_padded_requests.py \
         tests/ut/worker/test_capture_input_aliases.py tests/ut/worker/test_dsa_capture_metadata.py \
         tests/ut/attention/test_dsa_padding_contract.py tests/ut/attention/test_dsa_capture_validation.py \

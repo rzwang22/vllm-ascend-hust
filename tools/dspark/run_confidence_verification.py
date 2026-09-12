@@ -180,7 +180,12 @@ def main(argv=None):
     )
     parser.add_argument("--profile-stop-after-point", default="ctx128-n4-t12-skewed")
     parser.add_argument("--profile-target-layer", type=int, help="Opt-in local target-boundaries decoder index")
+    parser.add_argument(
+        "--profile-worker-exit", action="store_true", help="Opt-in exit-only steps and pre-escalation stacks"
+    )
     args = parser.parse_args(argv)
+    if args.profile_worker_exit and args.profile_experiment != "target-boundaries":
+        parser.error("--profile-worker-exit requires target-boundaries")
     if args.profile_target_layer is not None and (
         args.profile_experiment != "target-boundaries" or args.profile_target_layer < 0
     ):

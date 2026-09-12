@@ -1,5 +1,8 @@
 # DSpark profile：数值未复现与退出失败分开记录
 
+后续 po6aUaSP 运行确认外层正常记录返回、无 timeout 且 loop 关闭，但 worker 仍被强制
+清理。阶段审计与默认关闭的退出观测见 [PROFILE_WORKER_SHUTDOWN.md](PROFILE_WORKER_SHUTDOWN.md)。
+
 本轮是 **profile 退出计时与状态记录修复**。没有修改模型计算或新增数值观测。
 原 Target NaN 根因仍为 **UNKNOWN**；这次 layer 1 诊断中数值故障**未复现**，
 不能称为 NaN 修复成功。本次清理改动的真实服务器复验为 **PENDING**。

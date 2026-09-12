@@ -49,6 +49,7 @@ class ProfileMultiprocExecutor(MultiprocExecutor):
         self._profile_point = None
         self._profile_operation = None
         self._profile_cleanup_observed = False
+        self._profile_worker_exit = vllm_config.additional_config.get("dspark_profile_worker_exit", False)
         super().__init__(vllm_config, monitor_workers=monitor_workers)
 
     def collective_rpc(
@@ -118,6 +119,24 @@ class ProfileMultiprocExecutor(MultiprocExecutor):
         started = time.monotonic()
         logger = logging.getLogger("vllm.v1.executor.multiproc_executor")
         workers = tuple(getattr(self, "workers", ()))
+        watch = None
+        if self._profile_worker_exit:
+            # Isolation-process import; default profile modes do not load this
+            # observer or create a watcher thread / send diagnostic signals.
+            from vllm import envs
+
+            from vllm_ascend.diagnostics.dspark_worker_exit import ExitWatch
+
+            try:
+                watch = ExitWatch(
+                    self._profile_directory / "worker-exit",
+                    workers,
+                    self._profile_point,
+                    envs.VLLM_WORKER_SHUTDOWN_TIMEOUT_SECONDS,
+                )
+                watch.thread.start()
+            except Exception as error:
+                print(f"PROFILE_EXIT_WATCH_UNAVAILABLE: {type(error).__name__}: {error}", flush=True)
         state = {
             "performance_eligible": False,
             "parent_pid": os.getpid(),
@@ -143,6 +162,11 @@ class ProfileMultiprocExecutor(MultiprocExecutor):
         def publish(events):
             state.update(force_events=events, forced_cleanup=True)
             save()  # retain escalation even if EngineCore is killed before return
+            if watch is not None:
+                try:
+                    watch.snapshot(f"before-escalation-{len(events)}")
+                except Exception as error:
+                    state["exit_watch_error"] = f"{type(error).__name__}: {error}"
 
         observer = ShutdownForceObserver(EXECUTOR_FORCE_MESSAGES, publish)
         save()
@@ -155,6 +179,8 @@ class ProfileMultiprocExecutor(MultiprocExecutor):
             state.update(status="error", error=f"{type(error).__name__}: {error}")
             raise
         finally:
+            if watch is not None:
+                watch.close()
             logger.removeHandler(observer)
             state.update(
                 elapsed_seconds=time.monotonic() - started, finished_utc=datetime.now(timezone.utc).isoformat()

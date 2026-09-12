@@ -1,0 +1,2219 @@
+{
+  "archive": "dspark-large-batch.po6aUaSP-evidence.tar.gz",
+  "sha256": "0a36fc1e0de998bd7abe200a6563e9868bfcff691d8998af1d4afc408b82ca89",
+  "members": 61,
+  "expanded_bytes": 49557417,
+  "assertion_kind": "offline original archive verification, not a new NPU test",
+  "points": [
+    {
+      "id": "ctx128-n1-t6-balanced",
+      "raw_sha256": "67fb275d213844b33b171e579031a1ae7d3b340b85aed7f8d6767c4eacbc36ec",
+      "requests": 1,
+      "output_tokens_each": 512,
+      "stream_error": null,
+      "all_eight_rank_observation_counters_checked": true
+    },
+    {
+      "id": "ctx128-n1-t6-skewed",
+      "raw_sha256": "e68ca1f1578fed310da7c8c4c1299d208ab468e1cb9015178c7ed2bcd9d63a0e",
+      "requests": 1,
+      "output_tokens_each": 512,
+      "stream_error": null,
+      "all_eight_rank_observation_counters_checked": true
+    },
+    {
+      "id": "ctx128-n2-t6-balanced",
+      "raw_sha256": "144d335a4cfaf9d7a277d8e7c73918213718192a0ff2dacbfe463d2deda3efdc",
+      "requests": 2,
+      "output_tokens_each": 512,
+      "stream_error": null,
+      "all_eight_rank_observation_counters_checked": true
+    },
+    {
+      "id": "ctx128-n2-t6-skewed",
+      "raw_sha256": "c5f972938ffca35f4eed937b75baf43fdf2c0ea86ad0a7e9d3b9d2966ccaf38c",
+      "requests": 2,
+      "output_tokens_each": 512,
+      "stream_error": null,
+      "all_eight_rank_observation_counters_checked": true
+    },
+    {
+      "id": "ctx128-n2-t12-balanced",
+      "raw_sha256": "137e4427180ab9d1ee2db57d502040313241b5a4dfd50a7e6d6cb5175b8c3834",
+      "requests": 2,
+      "output_tokens_each": 512,
+      "stream_error": null,
+      "all_eight_rank_observation_counters_checked": true
+    },
+    {
+      "id": "ctx128-n2-t12-skewed",
+      "raw_sha256": "45759cf94ab08e740e1417f9eee98b9c538bee94cc4adcaedd431cd25c7dd3cc",
+      "requests": 2,
+      "output_tokens_each": 512,
+      "stream_error": null,
+      "all_eight_rank_observation_counters_checked": true
+    },
+    {
+      "id": "ctx128-n4-t6-balanced",
+      "raw_sha256": "4f40130818269b881e2b279048ee1647c9fcdf16ce16296d1828a1c48587d008",
+      "requests": 4,
+      "output_tokens_each": 512,
+      "stream_error": null,
+      "all_eight_rank_observation_counters_checked": true
+    },
+    {
+      "id": "ctx128-n4-t6-skewed",
+      "raw_sha256": "5eae93e8c824170b0231b3cd1313886c341f1bb0d387433e78c9ec0722c1e62e",
+      "requests": 4,
+      "output_tokens_each": 512,
+      "stream_error": null,
+      "all_eight_rank_observation_counters_checked": true
+    },
+    {
+      "id": "ctx128-n4-t12-balanced",
+      "raw_sha256": "8a1b0db37b56c38a20a2f622ad37f6ff2f1164253fefd4864f378926516fb1e2",
+      "requests": 4,
+      "output_tokens_each": 512,
+      "stream_error": null,
+      "all_eight_rank_observation_counters_checked": true
+    },
+    {
+      "id": "ctx128-n4-t12-skewed",
+      "raw_sha256": "8630806ba9c8b600973312e0ac796ca8964ba62bb1192834eb06f12b3c80411e",
+      "requests": 4,
+      "output_tokens_each": 512,
+      "stream_error": null,
+      "all_eight_rank_observation_counters_checked": true
+    }
+  ],
+  "ranks": [
+    {
+      "rank": 0,
+      "latest_sha256": "b2ef1199f34ec5fbcfc5b6ac23502330b8d45150a2bea382212793c160c6e120",
+      "counts": {
+        "NON_FULL_UNOBSERVED": 3,
+        "nonfinite_rounds": 0,
+        "FULL": 200
+      },
+      "numeric_counts": {
+        "both_finite": 203
+      },
+      "rounds": [
+        {
+          "execution": 1907,
+          "proposal_epoch": 1893,
+          "request_ids": [
+            "batch10-3-8065fc77"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1907,
+              1907,
+              1907
+            ],
+            "consume_receipts": [
+              1907,
+              1907,
+              1907
+            ],
+            "target_internal.receipts": [
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1908,
+          "proposal_epoch": 1894,
+          "request_ids": [
+            "batch10-3-8065fc77"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "consume_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "target_internal.receipts": [
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1909,
+          "proposal_epoch": 1895,
+          "request_ids": [
+            "batch10-3-8065fc77"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "consume_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "target_internal.receipts": [
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909
+            ]
+          },
+          "all_recorded_rows_finite": true
+        }
+      ]
+    },
+    {
+      "rank": 1,
+      "latest_sha256": "f6c9aecaed9d9622c0e79c85da7e944af0c548646a249643f4bd3a9b66603959",
+      "counts": {
+        "NON_FULL_UNOBSERVED": 3,
+        "nonfinite_rounds": 0,
+        "FULL": 200
+      },
+      "numeric_counts": {
+        "both_finite": 203
+      },
+      "rounds": [
+        {
+          "execution": 1907,
+          "proposal_epoch": 1893,
+          "request_ids": [
+            "batch10-3-8065fc77"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1907,
+              1907,
+              1907
+            ],
+            "consume_receipts": [
+              1907,
+              1907,
+              1907
+            ],
+            "target_internal.receipts": [
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1908,
+          "proposal_epoch": 1894,
+          "request_ids": [
+            "batch10-3-8065fc77"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "consume_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "target_internal.receipts": [
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1909,
+          "proposal_epoch": 1895,
+          "request_ids": [
+            "batch10-3-8065fc77"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "consume_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "target_internal.receipts": [
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909
+            ]
+          },
+          "all_recorded_rows_finite": true
+        }
+      ]
+    },
+    {
+      "rank": 2,
+      "latest_sha256": "de65d7afd63b63a1ed6e2e27cbb58b114e6b992b882415269c92da099b21c253",
+      "counts": {
+        "NON_FULL_UNOBSERVED": 3,
+        "nonfinite_rounds": 0,
+        "FULL": 200
+      },
+      "numeric_counts": {
+        "both_finite": 203
+      },
+      "rounds": [
+        {
+          "execution": 1907,
+          "proposal_epoch": 1893,
+          "request_ids": [
+            "batch10-3-8065fc77"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1907,
+              1907,
+              1907
+            ],
+            "consume_receipts": [
+              1907,
+              1907,
+              1907
+            ],
+            "target_internal.receipts": [
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1908,
+          "proposal_epoch": 1894,
+          "request_ids": [
+            "batch10-3-8065fc77"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "consume_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "target_internal.receipts": [
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1909,
+          "proposal_epoch": 1895,
+          "request_ids": [
+            "batch10-3-8065fc77"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "consume_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "target_internal.receipts": [
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909
+            ]
+          },
+          "all_recorded_rows_finite": true
+        }
+      ]
+    },
+    {
+      "rank": 3,
+      "latest_sha256": "715a06688d5c053d75ce2e72e0f61a6e73bce7e8e3d92e51383213771ab403b5",
+      "counts": {
+        "NON_FULL_UNOBSERVED": 3,
+        "nonfinite_rounds": 0,
+        "FULL": 200
+      },
+      "numeric_counts": {
+        "both_finite": 203
+      },
+      "rounds": [
+        {
+          "execution": 1907,
+          "proposal_epoch": 1893,
+          "request_ids": [
+            "batch10-3-8065fc77"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1907,
+              1907,
+              1907
+            ],
+            "consume_receipts": [
+              1907,
+              1907,
+              1907
+            ],
+            "target_internal.receipts": [
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1908,
+          "proposal_epoch": 1894,
+          "request_ids": [
+            "batch10-3-8065fc77"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "consume_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "target_internal.receipts": [
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1909,
+          "proposal_epoch": 1895,
+          "request_ids": [
+            "batch10-3-8065fc77"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "consume_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "target_internal.receipts": [
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909
+            ]
+          },
+          "all_recorded_rows_finite": true
+        }
+      ]
+    },
+    {
+      "rank": 4,
+      "latest_sha256": "38443a07984d729749f8ff5af0d59d892a75f43ad7ca49b8d069fbb0cfe17187",
+      "counts": {
+        "NON_FULL_UNOBSERVED": 3,
+        "nonfinite_rounds": 0,
+        "FULL": 200
+      },
+      "numeric_counts": {
+        "both_finite": 203
+      },
+      "rounds": [
+        {
+          "execution": 1907,
+          "proposal_epoch": 1893,
+          "request_ids": [
+            "batch10-3-8065fc77"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1907,
+              1907,
+              1907
+            ],
+            "consume_receipts": [
+              1907,
+              1907,
+              1907
+            ],
+            "target_internal.receipts": [
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1908,
+          "proposal_epoch": 1894,
+          "request_ids": [
+            "batch10-3-8065fc77"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "consume_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "target_internal.receipts": [
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1909,
+          "proposal_epoch": 1895,
+          "request_ids": [
+            "batch10-3-8065fc77"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "consume_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "target_internal.receipts": [
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909
+            ]
+          },
+          "all_recorded_rows_finite": true
+        }
+      ]
+    },
+    {
+      "rank": 5,
+      "latest_sha256": "52836e5ffec41c76b1721e7119a9f8bba53bdb63a1ffe324af3af2d29e3a373d",
+      "counts": {
+        "NON_FULL_UNOBSERVED": 3,
+        "nonfinite_rounds": 0,
+        "FULL": 200
+      },
+      "numeric_counts": {
+        "both_finite": 203
+      },
+      "rounds": [
+        {
+          "execution": 1907,
+          "proposal_epoch": 1893,
+          "request_ids": [
+            "batch10-3-8065fc77"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1907,
+              1907,
+              1907
+            ],
+            "consume_receipts": [
+              1907,
+              1907,
+              1907
+            ],
+            "target_internal.receipts": [
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1908,
+          "proposal_epoch": 1894,
+          "request_ids": [
+            "batch10-3-8065fc77"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "consume_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "target_internal.receipts": [
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1909,
+          "proposal_epoch": 1895,
+          "request_ids": [
+            "batch10-3-8065fc77"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "consume_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "target_internal.receipts": [
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909
+            ]
+          },
+          "all_recorded_rows_finite": true
+        }
+      ]
+    },
+    {
+      "rank": 6,
+      "latest_sha256": "7f802a41b042a78e6517294d4ed9b15a9847aa5d34aac7a991bfbdffde5d3466",
+      "counts": {
+        "NON_FULL_UNOBSERVED": 3,
+        "nonfinite_rounds": 0,
+        "FULL": 200
+      },
+      "numeric_counts": {
+        "both_finite": 203
+      },
+      "rounds": [
+        {
+          "execution": 1907,
+          "proposal_epoch": 1893,
+          "request_ids": [
+            "batch10-3-8065fc77"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1907,
+              1907,
+              1907
+            ],
+            "consume_receipts": [
+              1907,
+              1907,
+              1907
+            ],
+            "target_internal.receipts": [
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1908,
+          "proposal_epoch": 1894,
+          "request_ids": [
+            "batch10-3-8065fc77"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "consume_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "target_internal.receipts": [
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1909,
+          "proposal_epoch": 1895,
+          "request_ids": [
+            "batch10-3-8065fc77"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "consume_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "target_internal.receipts": [
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909
+            ]
+          },
+          "all_recorded_rows_finite": true
+        }
+      ]
+    },
+    {
+      "rank": 7,
+      "latest_sha256": "aac835b668fd386d0ba2b23c7fd27cbfd0e46c3de4a8d102fbfa9bda232382b3",
+      "counts": {
+        "NON_FULL_UNOBSERVED": 3,
+        "nonfinite_rounds": 0,
+        "FULL": 200
+      },
+      "numeric_counts": {
+        "both_finite": 203
+      },
+      "rounds": [
+        {
+          "execution": 1907,
+          "proposal_epoch": 1893,
+          "request_ids": [
+            "batch10-3-8065fc77"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1907,
+              1907,
+              1907
+            ],
+            "consume_receipts": [
+              1907,
+              1907,
+              1907
+            ],
+            "target_internal.receipts": [
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907,
+              1907
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1908,
+          "proposal_epoch": 1894,
+          "request_ids": [
+            "batch10-3-8065fc77"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "consume_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "target_internal.receipts": [
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1909,
+          "proposal_epoch": 1895,
+          "request_ids": [
+            "batch10-3-8065fc77"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "consume_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "target_internal.receipts": [
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909
+            ]
+          },
+          "all_recorded_rows_finite": true
+        }
+      ]
+    }
+  ],
+  "versions": {
+    "plugin_sha": "c44d97b13f3348645b10770baf1a08502a34df58",
+    "core_sha": "897306c43bf800e2480cb5c0f3e2da408d85a2fd"
+  },
+  "runs/b64/cleanup.json": {
+    "schema_version": 2,
+    "performance_eligible": false,
+    "started_utc": "2026-09-12T14:00:58.604400+00:00",
+    "timeout_seconds": 12,
+    "finalize_timeout_seconds": 4,
+    "outer_timeout_seconds": 16,
+    "supervisor_failure_grace_seconds": 24,
+    "status": "forced_cleanup",
+    "shutdown_completed": true,
+    "engine_returned": true,
+    "thread_completed": true,
+    "timed_out": false,
+    "success": false,
+    "force_events": [
+      {
+        "observed_utc": "2026-09-12T14:01:10.616630+00:00",
+        "message": "[shutdown] Process manager: force killing remaining processes count=1"
+      }
+    ],
+    "forced_cleanup": true,
+    "force_observation_scope": "frontend Core process-manager warning on cleanup thread; not descendant logs",
+    "graceful_worker_exit": false,
+    "event_loop": "closed",
+    "error": null,
+    "recording_error": null,
+    "returned_utc": "2026-09-12T14:01:10.622342+00:00",
+    "engine_started_utc": "2026-09-12T14:00:58.605070+00:00",
+    "engine_finished_utc": "2026-09-12T14:01:10.622365+00:00",
+    "engine_elapsed_seconds": 12.017296227626503,
+    "returned_after_outer_deadline": false,
+    "elapsed_seconds": 12.03006630204618,
+    "observed_utc": "2026-09-12T14:01:10.634462+00:00",
+    "worker_cleanup": {
+      "performance_eligible": false,
+      "parent_pid": 106449,
+      "point": "ctx128-n4-t12-skewed",
+      "started_utc": "2026-09-12T14:00:58.607394+00:00",
+      "status": "returned",
+      "force_events": [
+        {
+          "observed_utc": "2026-09-12T14:01:03.613242+00:00",
+          "message": "[shutdown] Executor: workers still running after grace period; sending SIGTERM count=8"
+        },
+        {
+          "observed_utc": "2026-09-12T14:01:07.623354+00:00",
+          "message": "[shutdown] Executor: workers still running after SIGTERM; sending SIGKILL count=4"
+        }
+      ],
+      "forced_cleanup": true,
+      "error": null,
+      "recording_error": null,
+      "elapsed_seconds": 9.030721178278327,
+      "finished_utc": "2026-09-12T14:01:07.638089+00:00",
+      "workers": [
+        {
+          "pid": 106510,
+          "rank": 0,
+          "name": "VllmWorker-0",
+          "raw_exitcode": null,
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "unavailable: not reaped/exited"
+        },
+        {
+          "pid": 106560,
+          "rank": 1,
+          "name": "VllmWorker-1",
+          "raw_exitcode": null,
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "unavailable: not reaped/exited"
+        },
+        {
+          "pid": 106637,
+          "rank": 2,
+          "name": "VllmWorker-2",
+          "raw_exitcode": -15,
+          "signal": 15,
+          "signal_name": "SIGTERM",
+          "exit_status": "available"
+        },
+        {
+          "pid": 106712,
+          "rank": 3,
+          "name": "VllmWorker-3",
+          "raw_exitcode": -15,
+          "signal": 15,
+          "signal_name": "SIGTERM",
+          "exit_status": "available"
+        },
+        {
+          "pid": 106795,
+          "rank": 4,
+          "name": "VllmWorker-4",
+          "raw_exitcode": -15,
+          "signal": 15,
+          "signal_name": "SIGTERM",
+          "exit_status": "available"
+        },
+        {
+          "pid": 106868,
+          "rank": 5,
+          "name": "VllmWorker-5",
+          "raw_exitcode": null,
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "unavailable: not reaped/exited"
+        },
+        {
+          "pid": 106945,
+          "rank": 6,
+          "name": "VllmWorker-6",
+          "raw_exitcode": -15,
+          "signal": 15,
+          "signal_name": "SIGTERM",
+          "exit_status": "available"
+        },
+        {
+          "pid": 107022,
+          "rank": 7,
+          "name": "VllmWorker-7",
+          "raw_exitcode": null,
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "unavailable: not reaped/exited"
+        }
+      ]
+    }
+  },
+  "runs/b64/lifecycle.json": {
+    "cleanup": {
+      "elapsed_seconds": 12.03006630204618,
+      "engine_elapsed_seconds": 12.017296227626503,
+      "engine_finished_utc": "2026-09-12T14:01:10.622365+00:00",
+      "engine_returned": true,
+      "engine_started_utc": "2026-09-12T14:00:58.605070+00:00",
+      "error": null,
+      "event_loop": "closed",
+      "finalize_timeout_seconds": 4,
+      "force_events": [
+        {
+          "message": "[shutdown] Process manager: force killing remaining processes count=1",
+          "observed_utc": "2026-09-12T14:01:10.616630+00:00"
+        }
+      ],
+      "force_observation_scope": "frontend Core process-manager warning on cleanup thread; not descendant logs",
+      "forced_cleanup": true,
+      "graceful_worker_exit": false,
+      "observed_utc": "2026-09-12T14:01:10.634462+00:00",
+      "outer_timeout_seconds": 16,
+      "performance_eligible": false,
+      "recording_error": null,
+      "returned_after_outer_deadline": false,
+      "returned_utc": "2026-09-12T14:01:10.622342+00:00",
+      "schema_version": 2,
+      "shutdown_completed": true,
+      "started_utc": "2026-09-12T14:00:58.604400+00:00",
+      "status": "forced_cleanup",
+      "success": false,
+      "supervisor_failure_grace_seconds": 24,
+      "thread_completed": true,
+      "timed_out": false,
+      "timeout_seconds": 12,
+      "worker_cleanup": {
+        "elapsed_seconds": 9.030721178278327,
+        "error": null,
+        "finished_utc": "2026-09-12T14:01:07.638089+00:00",
+        "force_events": [
+          {
+            "message": "[shutdown] Executor: workers still running after grace period; sending SIGTERM count=8",
+            "observed_utc": "2026-09-12T14:01:03.613242+00:00"
+          },
+          {
+            "message": "[shutdown] Executor: workers still running after SIGTERM; sending SIGKILL count=4",
+            "observed_utc": "2026-09-12T14:01:07.623354+00:00"
+          }
+        ],
+        "forced_cleanup": true,
+        "parent_pid": 106449,
+        "performance_eligible": false,
+        "point": "ctx128-n4-t12-skewed",
+        "recording_error": null,
+        "started_utc": "2026-09-12T14:00:58.607394+00:00",
+        "status": "returned",
+        "workers": [
+          {
+            "exit_status": "unavailable: not reaped/exited",
+            "name": "VllmWorker-0",
+            "pid": 106510,
+            "rank": 0,
+            "raw_exitcode": null,
+            "signal": null,
+            "signal_name": null
+          },
+          {
+            "exit_status": "unavailable: not reaped/exited",
+            "name": "VllmWorker-1",
+            "pid": 106560,
+            "rank": 1,
+            "raw_exitcode": null,
+            "signal": null,
+            "signal_name": null
+          },
+          {
+            "exit_status": "available",
+            "name": "VllmWorker-2",
+            "pid": 106637,
+            "rank": 2,
+            "raw_exitcode": -15,
+            "signal": 15,
+            "signal_name": "SIGTERM"
+          },
+          {
+            "exit_status": "available",
+            "name": "VllmWorker-3",
+            "pid": 106712,
+            "rank": 3,
+            "raw_exitcode": -15,
+            "signal": 15,
+            "signal_name": "SIGTERM"
+          },
+          {
+            "exit_status": "available",
+            "name": "VllmWorker-4",
+            "pid": 106795,
+            "rank": 4,
+            "raw_exitcode": -15,
+            "signal": 15,
+            "signal_name": "SIGTERM"
+          },
+          {
+            "exit_status": "unavailable: not reaped/exited",
+            "name": "VllmWorker-5",
+            "pid": 106868,
+            "rank": 5,
+            "raw_exitcode": null,
+            "signal": null,
+            "signal_name": null
+          },
+          {
+            "exit_status": "available",
+            "name": "VllmWorker-6",
+            "pid": 106945,
+            "rank": 6,
+            "raw_exitcode": -15,
+            "signal": 15,
+            "signal_name": "SIGTERM"
+          },
+          {
+            "exit_status": "unavailable: not reaped/exited",
+            "name": "VllmWorker-7",
+            "pid": 107022,
+            "rank": 7,
+            "raw_exitcode": null,
+            "signal": null,
+            "signal_name": null
+          }
+        ]
+      }
+    },
+    "cleanup_error": "RuntimeError: Profile engine cleanup failed: forced_cleanup",
+    "completed_points": 10,
+    "engine_initialization_attempts": 1,
+    "engine_initializations": 1,
+    "points_status": "completed",
+    "shutdown": false
+  },
+  "runs/b64/engine-failure.json": {
+    "schema_version": 1,
+    "phase": "cleanup",
+    "performance_eligible": false,
+    "observed_utc": "2026-09-12T14:01:10.634756+00:00",
+    "point": "ctx128-n4-t12-skewed",
+    "pending_operation": null,
+    "error": "RuntimeError: Profile cleanup forced_cleanup: see cleanup receipt",
+    "observed_frontend_error": "RuntimeError: Profile cleanup forced_cleanup: see cleanup receipt"
+  },
+  "runs/b64/diagnostic.json": {
+    "cleanup": {
+      "elapsed_seconds": 12.03006630204618,
+      "engine_elapsed_seconds": 12.017296227626503,
+      "engine_finished_utc": "2026-09-12T14:01:10.622365+00:00",
+      "engine_returned": true,
+      "engine_started_utc": "2026-09-12T14:00:58.605070+00:00",
+      "error": null,
+      "event_loop": "closed",
+      "finalize_timeout_seconds": 4,
+      "force_events": [
+        {
+          "message": "[shutdown] Process manager: force killing remaining processes count=1",
+          "observed_utc": "2026-09-12T14:01:10.616630+00:00"
+        }
+      ],
+      "force_observation_scope": "frontend Core process-manager warning on cleanup thread; not descendant logs",
+      "forced_cleanup": true,
+      "graceful_worker_exit": false,
+      "observed_utc": "2026-09-12T14:01:10.634462+00:00",
+      "outer_timeout_seconds": 16,
+      "performance_eligible": false,
+      "recording_error": null,
+      "returned_after_outer_deadline": false,
+      "returned_utc": "2026-09-12T14:01:10.622342+00:00",
+      "schema_version": 2,
+      "shutdown_completed": true,
+      "started_utc": "2026-09-12T14:00:58.604400+00:00",
+      "status": "forced_cleanup",
+      "success": false,
+      "supervisor_failure_grace_seconds": 24,
+      "thread_completed": true,
+      "timed_out": false,
+      "timeout_seconds": 12,
+      "worker_cleanup": {
+        "elapsed_seconds": 9.030721178278327,
+        "error": null,
+        "finished_utc": "2026-09-12T14:01:07.638089+00:00",
+        "force_events": [
+          {
+            "message": "[shutdown] Executor: workers still running after grace period; sending SIGTERM count=8",
+            "observed_utc": "2026-09-12T14:01:03.613242+00:00"
+          },
+          {
+            "message": "[shutdown] Executor: workers still running after SIGTERM; sending SIGKILL count=4",
+            "observed_utc": "2026-09-12T14:01:07.623354+00:00"
+          }
+        ],
+        "forced_cleanup": true,
+        "parent_pid": 106449,
+        "performance_eligible": false,
+        "point": "ctx128-n4-t12-skewed",
+        "recording_error": null,
+        "started_utc": "2026-09-12T14:00:58.607394+00:00",
+        "status": "returned",
+        "workers": [
+          {
+            "exit_status": "unavailable: not reaped/exited",
+            "name": "VllmWorker-0",
+            "pid": 106510,
+            "rank": 0,
+            "raw_exitcode": null,
+            "signal": null,
+            "signal_name": null
+          },
+          {
+            "exit_status": "unavailable: not reaped/exited",
+            "name": "VllmWorker-1",
+            "pid": 106560,
+            "rank": 1,
+            "raw_exitcode": null,
+            "signal": null,
+            "signal_name": null
+          },
+          {
+            "exit_status": "available",
+            "name": "VllmWorker-2",
+            "pid": 106637,
+            "rank": 2,
+            "raw_exitcode": -15,
+            "signal": 15,
+            "signal_name": "SIGTERM"
+          },
+          {
+            "exit_status": "available",
+            "name": "VllmWorker-3",
+            "pid": 106712,
+            "rank": 3,
+            "raw_exitcode": -15,
+            "signal": 15,
+            "signal_name": "SIGTERM"
+          },
+          {
+            "exit_status": "available",
+            "name": "VllmWorker-4",
+            "pid": 106795,
+            "rank": 4,
+            "raw_exitcode": -15,
+            "signal": 15,
+            "signal_name": "SIGTERM"
+          },
+          {
+            "exit_status": "unavailable: not reaped/exited",
+            "name": "VllmWorker-5",
+            "pid": 106868,
+            "rank": 5,
+            "raw_exitcode": null,
+            "signal": null,
+            "signal_name": null
+          },
+          {
+            "exit_status": "available",
+            "name": "VllmWorker-6",
+            "pid": 106945,
+            "rank": 6,
+            "raw_exitcode": -15,
+            "signal": 15,
+            "signal_name": "SIGTERM"
+          },
+          {
+            "exit_status": "unavailable: not reaped/exited",
+            "name": "VllmWorker-7",
+            "pid": 107022,
+            "rank": 7,
+            "raw_exitcode": null,
+            "signal": null,
+            "signal_name": null
+          }
+        ]
+      }
+    },
+    "effective_benchmark_argv": [
+      "--model-dir",
+      "/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8",
+      "--revision",
+      "9e8679a9db7eec11efed9925f7efb96549077545",
+      "--mode",
+      "dspark",
+      "--num-spec-tokens",
+      "5",
+      "--measurement-protocol",
+      "async_stream",
+      "--dataset-name",
+      "jsonl",
+      "--dataset-path",
+      "/workspace/dspark-results/dspark-large-batch.po6aUaSP/runs/b64/synthetic.jsonl",
+      "--prompt-field",
+      "prompt_token_ids",
+      "--num-prompts",
+      "64",
+      "--warmup-prompts",
+      "0",
+      "--output-len",
+      "512",
+      "--ignore-eos",
+      "--temperature",
+      "0",
+      "--top-p",
+      "1",
+      "--top-k",
+      "-1",
+      "--seed",
+      "0",
+      "--tensor-parallel-size",
+      "8",
+      "--enable-expert-parallel",
+      "--async-scheduling",
+      "--dtype",
+      "bfloat16",
+      "--quantization",
+      "ascend",
+      "--max-num-seqs",
+      "64",
+      "--max-num-batched-tokens",
+      "8192",
+      "--max-model-len",
+      "8192",
+      "--gpu-memory-utilization",
+      "0.9",
+      "--block-size",
+      "32",
+      "--target-execution-mode",
+      "full_decode_only",
+      "--result-json",
+      "/workspace/dspark-results/dspark-large-batch.po6aUaSP/runs/b64/s64-dspark_confidence_graph-r1/result.json",
+      "--confidence-verification",
+      "/workspace/dspark-results/dspark-large-batch.po6aUaSP/runs/b64/verification.json",
+      "--cudagraph-capture-sizes",
+      "6",
+      "12",
+      "24",
+      "48",
+      "96",
+      "192",
+      "384"
+    ],
+    "error": "RuntimeError: Profile cleanup forced_cleanup: see cleanup receipt",
+    "experiment": "target-boundaries",
+    "first_failure": {
+      "error": "RuntimeError: Profile cleanup forced_cleanup: see cleanup receipt",
+      "observed_frontend_error": "RuntimeError: Profile cleanup forced_cleanup: see cleanup receipt",
+      "observed_utc": "2026-09-12T14:01:10.634756+00:00",
+      "pending_operation": null,
+      "performance_eligible": false,
+      "phase": "cleanup",
+      "point": "ctx128-n4-t12-skewed",
+      "schema_version": 1
+    },
+    "observation_effect": "Any observation/wait may change reproduction; completion is not a repair; no cost table",
+    "performance_eligible": false,
+    "point-completion": {
+      "completed_points": [
+        {
+          "generated_tokens": [
+            512
+          ],
+          "numeric_result": "no_nan_observed_at_enabled_boundaries",
+          "point": "ctx128-n1-t6-balanced",
+          "raw_sha256": "67fb275d213844b33b171e579031a1ae7d3b340b85aed7f8d6767c4eacbc36ec",
+          "stream_error": null
+        },
+        {
+          "generated_tokens": [
+            512
+          ],
+          "numeric_result": "no_nan_observed_at_enabled_boundaries",
+          "point": "ctx128-n1-t6-skewed",
+          "raw_sha256": "e68ca1f1578fed310da7c8c4c1299d208ab468e1cb9015178c7ed2bcd9d63a0e",
+          "stream_error": null
+        },
+        {
+          "generated_tokens": [
+            512,
+            512
+          ],
+          "numeric_result": "no_nan_observed_at_enabled_boundaries",
+          "point": "ctx128-n2-t6-balanced",
+          "raw_sha256": "144d335a4cfaf9d7a277d8e7c73918213718192a0ff2dacbfe463d2deda3efdc",
+          "stream_error": null
+        },
+        {
+          "generated_tokens": [
+            512,
+            512
+          ],
+          "numeric_result": "no_nan_observed_at_enabled_boundaries",
+          "point": "ctx128-n2-t6-skewed",
+          "raw_sha256": "c5f972938ffca35f4eed937b75baf43fdf2c0ea86ad0a7e9d3b9d2966ccaf38c",
+          "stream_error": null
+        },
+        {
+          "generated_tokens": [
+            512,
+            512
+          ],
+          "numeric_result": "no_nan_observed_at_enabled_boundaries",
+          "point": "ctx128-n2-t12-balanced",
+          "raw_sha256": "137e4427180ab9d1ee2db57d502040313241b5a4dfd50a7e6d6cb5175b8c3834",
+          "stream_error": null
+        },
+        {
+          "generated_tokens": [
+            512,
+            512
+          ],
+          "numeric_result": "no_nan_observed_at_enabled_boundaries",
+          "point": "ctx128-n2-t12-skewed",
+          "raw_sha256": "45759cf94ab08e740e1417f9eee98b9c538bee94cc4adcaedd431cd25c7dd3cc",
+          "stream_error": null
+        },
+        {
+          "generated_tokens": [
+            512,
+            512,
+            512,
+            512
+          ],
+          "numeric_result": "no_nan_observed_at_enabled_boundaries",
+          "point": "ctx128-n4-t6-balanced",
+          "raw_sha256": "4f40130818269b881e2b279048ee1647c9fcdf16ce16296d1828a1c48587d008",
+          "stream_error": null
+        },
+        {
+          "generated_tokens": [
+            512,
+            512,
+            512,
+            512
+          ],
+          "numeric_result": "no_nan_observed_at_enabled_boundaries",
+          "point": "ctx128-n4-t6-skewed",
+          "raw_sha256": "5eae93e8c824170b0231b3cd1313886c341f1bb0d387433e78c9ec0722c1e62e",
+          "stream_error": null
+        },
+        {
+          "generated_tokens": [
+            512,
+            512,
+            512,
+            512
+          ],
+          "numeric_result": "no_nan_observed_at_enabled_boundaries",
+          "point": "ctx128-n4-t12-balanced",
+          "raw_sha256": "8a1b0db37b56c38a20a2f622ad37f6ff2f1164253fefd4864f378926516fb1e2",
+          "stream_error": null
+        },
+        {
+          "generated_tokens": [
+            512,
+            512,
+            512,
+            512
+          ],
+          "numeric_result": "no_nan_observed_at_enabled_boundaries",
+          "point": "ctx128-n4-t12-skewed",
+          "raw_sha256": "8630806ba9c8b600973312e0ac796ca8964ba62bb1192834eb06f12b3c80411e",
+          "stream_error": null
+        }
+      ],
+      "performance_eligible": false,
+      "planned_points": 10,
+      "status": "completed"
+    },
+    "points": [
+      "ctx128-n1-t6-balanced",
+      "ctx128-n1-t6-skewed",
+      "ctx128-n2-t6-balanced",
+      "ctx128-n2-t6-skewed",
+      "ctx128-n2-t12-balanced",
+      "ctx128-n2-t12-skewed",
+      "ctx128-n4-t6-balanced",
+      "ctx128-n4-t6-skewed",
+      "ctx128-n4-t12-balanced",
+      "ctx128-n4-t12-skewed"
+    ],
+    "propagated_error": "RuntimeError: Profile engine cleanup failed: forced_cleanup",
+    "root_cause": "ROOT_CAUSE_NOT_YET_PROVEN",
+    "status": "failed",
+    "target_layer": 1,
+    "worker_directory": "/workspace/dspark-results/dspark-large-batch.po6aUaSP/runs/b64/worker-first-failure"
+  },
+  "runs/b64-supervisor.json": {
+    "schema_version": 1,
+    "performance_eligible": false,
+    "child_pid": 106326,
+    "owned_process_group": 106326,
+    "command": [
+      "/usr/local/python3.12.13/bin/python",
+      "/workspace/vllm-ascend-hust/tools/dspark/run_confidence_verification.py",
+      "--plugin",
+      "/workspace/vllm-ascend-hust",
+      "--core",
+      "/workspace/vllm-hust",
+      "--plugin-sha",
+      "c44d97b13f3348645b10770baf1a08502a34df58",
+      "--model",
+      "/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8",
+      "--manifest",
+      "/workspace/dspark-results/dspark-repeated-input.WSJur2Ev/input/manifest.json",
+      "--num-prompts",
+      "400",
+      "--output-len",
+      "256",
+      "--warmup-prompts",
+      "4",
+      "--max-model-len",
+      "8192",
+      "--max-num-batched-tokens",
+      "8192",
+      "--gpu-memory-utilization",
+      "0.9",
+      "--stage",
+      "profile",
+      "--batch",
+      "64",
+      "--capture",
+      "6",
+      "12",
+      "24",
+      "48",
+      "96",
+      "192",
+      "384",
+      "--output-dir",
+      "/workspace/dspark-results/dspark-large-batch.po6aUaSP/runs/b64",
+      "--profile-experiment",
+      "target-boundaries",
+      "--profile-stop-after-point",
+      "ctx128-n4-t12-skewed",
+      "--profile-target-layer",
+      "1",
+      "--profile-contexts",
+      "128",
+      "2048",
+      "--profile-output-tokens",
+      "512",
+      "--profile-warmup",
+      "2",
+      "--profile-samples",
+      "5"
+    ],
+    "first_failure": {
+      "source": "engine-failure.json",
+      "receipt": {
+        "schema_version": 1,
+        "phase": "cleanup",
+        "performance_eligible": false,
+        "observed_utc": "2026-09-12T14:01:10.634756+00:00",
+        "point": "ctx128-n4-t12-skewed",
+        "pending_operation": null,
+        "error": "RuntimeError: Profile cleanup forced_cleanup: see cleanup receipt",
+        "observed_frontend_error": "RuntimeError: Profile cleanup forced_cleanup: see cleanup receipt"
+      }
+    },
+    "signals_sent": [],
+    "raw_returncode": 1,
+    "failure_grace_seconds": 24,
+    "term_grace_seconds": 5,
+    "max_runtime_seconds": 3600.0,
+    "stop_file": "/workspace/dspark-results/dspark-large-batch.po6aUaSP/STOP",
+    "started_utc": "2026-09-12T13:46:06.544431+00:00",
+    "observed_utc": "2026-09-12T14:01:10.671257+00:00",
+    "completed_utc": "2026-09-12T14:01:13.579626+00:00"
+  },
+  "runs/b64/worker-cleanup.json": {
+    "performance_eligible": false,
+    "parent_pid": 106449,
+    "point": "ctx128-n4-t12-skewed",
+    "started_utc": "2026-09-12T14:00:58.607394+00:00",
+    "status": "returned",
+    "force_events": [
+      {
+        "observed_utc": "2026-09-12T14:01:03.613242+00:00",
+        "message": "[shutdown] Executor: workers still running after grace period; sending SIGTERM count=8"
+      },
+      {
+        "observed_utc": "2026-09-12T14:01:07.623354+00:00",
+        "message": "[shutdown] Executor: workers still running after SIGTERM; sending SIGKILL count=4"
+      }
+    ],
+    "forced_cleanup": true,
+    "error": null,
+    "recording_error": null,
+    "elapsed_seconds": 9.030721178278327,
+    "finished_utc": "2026-09-12T14:01:07.638089+00:00",
+    "workers": [
+      {
+        "pid": 106510,
+        "rank": 0,
+        "name": "VllmWorker-0",
+        "raw_exitcode": null,
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "unavailable: not reaped/exited"
+      },
+      {
+        "pid": 106560,
+        "rank": 1,
+        "name": "VllmWorker-1",
+        "raw_exitcode": null,
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "unavailable: not reaped/exited"
+      },
+      {
+        "pid": 106637,
+        "rank": 2,
+        "name": "VllmWorker-2",
+        "raw_exitcode": -15,
+        "signal": 15,
+        "signal_name": "SIGTERM",
+        "exit_status": "available"
+      },
+      {
+        "pid": 106712,
+        "rank": 3,
+        "name": "VllmWorker-3",
+        "raw_exitcode": -15,
+        "signal": 15,
+        "signal_name": "SIGTERM",
+        "exit_status": "available"
+      },
+      {
+        "pid": 106795,
+        "rank": 4,
+        "name": "VllmWorker-4",
+        "raw_exitcode": -15,
+        "signal": 15,
+        "signal_name": "SIGTERM",
+        "exit_status": "available"
+      },
+      {
+        "pid": 106868,
+        "rank": 5,
+        "name": "VllmWorker-5",
+        "raw_exitcode": null,
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "unavailable: not reaped/exited"
+      },
+      {
+        "pid": 106945,
+        "rank": 6,
+        "name": "VllmWorker-6",
+        "raw_exitcode": -15,
+        "signal": 15,
+        "signal_name": "SIGTERM",
+        "exit_status": "available"
+      },
+      {
+        "pid": 107022,
+        "rank": 7,
+        "name": "VllmWorker-7",
+        "raw_exitcode": null,
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "unavailable: not reaped/exited"
+      }
+    ]
+  },
+  "runs/b64/cleanup-thread.json": {
+    "schema_version": 2,
+    "performance_eligible": false,
+    "engine_started_utc": "2026-09-12T14:00:58.605070+00:00",
+    "engine_returned": true,
+    "returned_utc": "2026-09-12T14:01:10.622342+00:00",
+    "engine_finished_utc": "2026-09-12T14:01:10.622365+00:00",
+    "engine_elapsed_seconds": 12.017296227626503,
+    "error": null,
+    "returned_after_outer_deadline": false,
+    "force_events": [
+      {
+        "observed_utc": "2026-09-12T14:01:10.616630+00:00",
+        "message": "[shutdown] Process manager: force killing remaining processes count=1"
+      }
+    ],
+    "forced_cleanup": true,
+    "force_observation_scope": "frontend Core process-manager warning on cleanup thread; not descendant logs"
+  },
+  "runs/b64/cleanup-failure.json": {
+    "completed_points": 10,
+    "error": "RuntimeError: Profile engine cleanup failed: forced_cleanup",
+    "performance_eligible": false,
+    "phase": "cleanup",
+    "points_status": "completed",
+    "prior_error": null
+  },
+  "runs/b64/point-completion.json": {
+    "completed_points": [
+      {
+        "generated_tokens": [
+          512
+        ],
+        "numeric_result": "no_nan_observed_at_enabled_boundaries",
+        "point": "ctx128-n1-t6-balanced",
+        "raw_sha256": "67fb275d213844b33b171e579031a1ae7d3b340b85aed7f8d6767c4eacbc36ec",
+        "stream_error": null
+      },
+      {
+        "generated_tokens": [
+          512
+        ],
+        "numeric_result": "no_nan_observed_at_enabled_boundaries",
+        "point": "ctx128-n1-t6-skewed",
+        "raw_sha256": "e68ca1f1578fed310da7c8c4c1299d208ab468e1cb9015178c7ed2bcd9d63a0e",
+        "stream_error": null
+      },
+      {
+        "generated_tokens": [
+          512,
+          512
+        ],
+        "numeric_result": "no_nan_observed_at_enabled_boundaries",
+        "point": "ctx128-n2-t6-balanced",
+        "raw_sha256": "144d335a4cfaf9d7a277d8e7c73918213718192a0ff2dacbfe463d2deda3efdc",
+        "stream_error": null
+      },
+      {
+        "generated_tokens": [
+          512,
+          512
+        ],
+        "numeric_result": "no_nan_observed_at_enabled_boundaries",
+        "point": "ctx128-n2-t6-skewed",
+        "raw_sha256": "c5f972938ffca35f4eed937b75baf43fdf2c0ea86ad0a7e9d3b9d2966ccaf38c",
+        "stream_error": null
+      },
+      {
+        "generated_tokens": [
+          512,
+          512
+        ],
+        "numeric_result": "no_nan_observed_at_enabled_boundaries",
+        "point": "ctx128-n2-t12-balanced",
+        "raw_sha256": "137e4427180ab9d1ee2db57d502040313241b5a4dfd50a7e6d6cb5175b8c3834",
+        "stream_error": null
+      },
+      {
+        "generated_tokens": [
+          512,
+          512
+        ],
+        "numeric_result": "no_nan_observed_at_enabled_boundaries",
+        "point": "ctx128-n2-t12-skewed",
+        "raw_sha256": "45759cf94ab08e740e1417f9eee98b9c538bee94cc4adcaedd431cd25c7dd3cc",
+        "stream_error": null
+      },
+      {
+        "generated_tokens": [
+          512,
+          512,
+          512,
+          512
+        ],
+        "numeric_result": "no_nan_observed_at_enabled_boundaries",
+        "point": "ctx128-n4-t6-balanced",
+        "raw_sha256": "4f40130818269b881e2b279048ee1647c9fcdf16ce16296d1828a1c48587d008",
+        "stream_error": null
+      },
+      {
+        "generated_tokens": [
+          512,
+          512,
+          512,
+          512
+        ],
+        "numeric_result": "no_nan_observed_at_enabled_boundaries",
+        "point": "ctx128-n4-t6-skewed",
+        "raw_sha256": "5eae93e8c824170b0231b3cd1313886c341f1bb0d387433e78c9ec0722c1e62e",
+        "stream_error": null
+      },
+      {
+        "generated_tokens": [
+          512,
+          512,
+          512,
+          512
+        ],
+        "numeric_result": "no_nan_observed_at_enabled_boundaries",
+        "point": "ctx128-n4-t12-balanced",
+        "raw_sha256": "8a1b0db37b56c38a20a2f622ad37f6ff2f1164253fefd4864f378926516fb1e2",
+        "stream_error": null
+      },
+      {
+        "generated_tokens": [
+          512,
+          512,
+          512,
+          512
+        ],
+        "numeric_result": "no_nan_observed_at_enabled_boundaries",
+        "point": "ctx128-n4-t12-skewed",
+        "raw_sha256": "8630806ba9c8b600973312e0ac796ca8964ba62bb1192834eb06f12b3c80411e",
+        "stream_error": null
+      }
+    ],
+    "performance_eligible": false,
+    "planned_points": 10,
+    "status": "completed"
+  },
+  "shutdown_log_anchors": [
+    {
+      "line": 765,
+      "text": "INFO 09-12 14:00:58 [core_client.py:659] [shutdown] MPClient: start timeout=12s"
+    },
+    {
+      "line": 766,
+      "text": "INFO 09-12 14:00:58 [core_client.py:661] [shutdown] MPClient: stopping engine manager"
+    },
+    {
+      "line": 767,
+      "text": "(EngineCore pid=106449) INFO 09-12 14:00:58 [core.py:1298] [shutdown] EngineCore: trigger received signal=SIGTERM"
+    },
+    {
+      "line": 768,
+      "text": "(EngineCore pid=106449) INFO 09-12 14:00:58 [core.py:1417] [shutdown] EngineCore: start mode=abort timeout=0s"
+    },
+    {
+      "line": 769,
+      "text": "(EngineCore pid=106449) INFO 09-12 14:00:58 [core.py:1448] [shutdown] EngineCore: request processing complete; starting resource teardown"
+    },
+    {
+      "line": 770,
+      "text": "(EngineCore pid=106449) INFO 09-12 14:00:58 [core.py:1311] [shutdown] EngineCore: exiting busy loop"
+    },
+    {
+      "line": 771,
+      "text": "(EngineCore pid=106449) INFO 09-12 14:00:58 [multiproc_executor.py:426] [shutdown] Executor: waiting for worker exit count=8"
+    },
+    {
+      "line": 773,
+      "text": "(EngineCore pid=106449) WARNING 09-12 14:01:03 [multiproc_executor.py:438] [shutdown] Executor: workers still running after grace period; sending SIGTERM count=8"
+    },
+    {
+      "line": 774,
+      "text": "(EngineCore pid=106449) WARNING 09-12 14:01:07 [multiproc_executor.py:448] [shutdown] Executor: workers still running after SIGTERM; sending SIGKILL count=4"
+    },
+    {
+      "line": 776,
+      "text": "WARNING 09-12 14:01:10 [utils.py:635] [shutdown] Process manager: force killing remaining processes count=1"
+    },
+    {
+      "line": 777,
+      "text": "INFO 09-12 14:01:10 [core_client.py:663] [shutdown] MPClient: engine manager stopped"
+    },
+    {
+      "line": 778,
+      "text": "INFO 09-12 14:01:10 [core_client.py:664] [shutdown] MPClient: cleaning up background resources"
+    },
+    {
+      "line": 779,
+      "text": "INFO 09-12 14:01:10 [core_client.py:666] [shutdown] MPClient: complete"
+    },
+    {
+      "line": 787,
+      "text": "ERROR 09-12 14:01:10 [async_llm.py:707] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause."
+    },
+    {
+      "line": 788,
+      "text": "VERIFICATION_FAILED=RuntimeError: Profile engine cleanup failed: forced_cleanup"
+    }
+  ],
+  "focused_result": "1012 passed, 14 warnings in 224.54s (0:03:44)",
+  "numeric_result": "not reproduced in observed boundaries; not a repair",
+  "cleanup_result": "returned in ~12.03s, no outer timeout, forced worker TERM/KILL and manager kill; worker internal stage unavailable",
+  "residual_check": "No separate residual-process enumeration in archive; supervisor signals_sent=[] is consistent with group absent when checked, not proof of graceful exit."
+}
