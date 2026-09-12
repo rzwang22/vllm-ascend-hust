@@ -205,7 +205,16 @@ def test_worker_rejects_profile_observer_for_formal_mode(tmp_path):
 
 @pytest.mark.parametrize("fails", [False, True])
 @pytest.mark.parametrize(
-    "mode", ["full", "baseline", "metadata-only", "context-kv-sync", "numeric-boundaries", "upstream-boundaries"]
+    "mode",
+    [
+        "full",
+        "baseline",
+        "metadata-only",
+        "context-kv-sync",
+        "numeric-boundaries",
+        "upstream-boundaries",
+        "auxiliary-transfers",
+    ],
 )
 def test_diagnostic_run_never_compiles_costs(tmp_path, monkeypatch, fails, mode):
     args = NS(

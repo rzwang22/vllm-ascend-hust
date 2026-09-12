@@ -350,3 +350,57 @@ def test_diagnostic_disabled_does_not_apply_support_gate(diagnostic_capture):
     assert state.calls[0]["model"].replay_diagnostics is None
     assert not hasattr(state.manager, "_dspark_nan_diagnostic")
     assert state.finished == []
+    assert not hasattr(state.manager, "_dspark_auxiliary_capture")
+
+
+def test_auxiliary_capture_reuses_output_wrapper_without_layer_banks(capture_api, monkeypatch):
+    pytest.importorskip("torch")
+    from tests.ut.test_dspark_profile_auxiliary import load_auxiliary
+
+    state = capture_api
+    module = load_auxiliary(monkeypatch)
+    monkeypatch.setitem(sys.modules, "vllm_ascend.diagnostics.dspark_profile_auxiliary", module)
+    state.manager.vllm_config = SimpleNamespace(
+        additional_config={
+            "dspark_profile_observation": {"mode": "auxiliary-transfers"},
+            "dspark_confidence_verification": {"mode": "specified_lengths", "profile": True},
+        },
+        parallel_config=SimpleNamespace(data_parallel_size=1),
+    )
+    state.manager.model_runner = SimpleNamespace(
+        ascend_config=SimpleNamespace(enable_flashcomm1=False),
+        speculator=SimpleNamespace(target_layer_ids=(40, 41, 42)),
+    )
+    state.result = {}
+    state.manager.capture(*state.inputs, use_aux_hidden_state_outputs=True)
+    snapshots = state.calls[0]["model"].replay_diagnostics
+    assert snapshots is state.manager._dspark_auxiliary_capture
+    assert isinstance(snapshots, module.AuxiliaryCapture)
+    assert not hasattr(snapshots, "bank") and not snapshots.shapes
+    assert not hasattr(state.manager, "_dspark_nan_diagnostic")
+
+
+@pytest.mark.parametrize("override", ["no_aux", "flashcomm", "dp", "lora", "not_profile", "old_diagnostic"])
+def test_auxiliary_capture_rejects_incompatible_scopes(capture_api, monkeypatch, override):
+    pytest.importorskip("torch")
+    from tests.ut.test_dspark_profile_auxiliary import load_auxiliary
+
+    state = capture_api
+    monkeypatch.setitem(sys.modules, "vllm_ascend.diagnostics.dspark_profile_auxiliary", load_auxiliary(monkeypatch))
+    additional = {
+        "dspark_profile_observation": {"mode": "auxiliary-transfers"},
+        "dspark_confidence_verification": {"mode": "specified_lengths", "profile": override != "not_profile"},
+    }
+    if override == "old_diagnostic":
+        additional["dspark_nan_replay_window"] = [1, 3]
+    state.manager.vllm_config = SimpleNamespace(
+        additional_config=additional, parallel_config=SimpleNamespace(data_parallel_size=2 if override == "dp" else 1)
+    )
+    state.manager.model_runner = SimpleNamespace(
+        ascend_config=SimpleNamespace(enable_flashcomm1=override == "flashcomm")
+    )
+    with pytest.raises(ValueError, match="Auxiliary transfers require"):
+        state.manager.capture(
+            *state.inputs, use_aux_hidden_state_outputs=override != "no_aux", has_lora=override == "lora"
+        )
+    assert not state.calls and not hasattr(state.manager, "_dspark_auxiliary_capture")

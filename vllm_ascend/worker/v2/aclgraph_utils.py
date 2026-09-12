@@ -177,6 +177,27 @@ class ModelAclGraphManager(ModelCudaGraphManager):
         replay_diagnostics = None
         config = getattr(self, "vllm_config", None)
         additional = getattr(config, "additional_config", None) or {}
+        if (additional.get("dspark_profile_observation") or {}).get("mode") == "auxiliary-transfers":
+            from vllm_ascend.diagnostics.dspark_profile_auxiliary import AuxiliaryCapture
+
+            verification = additional.get("dspark_confidence_verification") or {}
+            if (
+                not verification.get("profile")
+                or verification.get("mode") != "specified_lengths"
+                or additional.get("dspark_nan_replay_window") is not None
+                or additional.get("dspark_nan_diagnostic_dir")
+                or additional.get("dspark_profile_nan_diagnostic_dir")
+                or has_lora
+                or not use_aux_hidden_state_outputs
+                or self.model_runner.ascend_config.enable_flashcomm1
+                or config.parallel_config.data_parallel_size != 1
+            ):
+                raise ValueError(
+                    "Auxiliary transfers require isolated profile FULL, auxiliary outputs, "
+                    "FlashComm1 off, DP1 and no LoRA/full diagnostics."
+                )
+            replay_diagnostics = AuxiliaryCapture(self)
+            self._dspark_auxiliary_capture = replay_diagnostics
         if additional.get("dspark_nan_replay_window") is not None:
             from vllm_ascend.diagnostics.dspark_nan import DSparkNaNDiagnostics
             from vllm_ascend.diagnostics.dspark_replay import ReplaySnapshots

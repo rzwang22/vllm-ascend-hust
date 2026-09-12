@@ -5,6 +5,12 @@ norm/LM head. This delivery adds the next local observation interval; it does no
 claim a proven producer or a validated production repair. New NPU execution is
 still required and remains user-owned.
 
+The subsequent server run at this delivery's commit reproduced auxiliary NaN
+at consumption. See [PROFILE_AUXILIARY_TRANSFERS.md](PROFILE_AUXILIARY_TRANSFERS.md)
+for the independently read `rlmP9WCW` archive, source audit and the next limited
+raw-output/transfer/consumption probe. The "not yet executed" status above
+describes the original upstream-boundaries delivery, not that later server run.
+
 ## Independently verified server evidence
 
 Read `PROFILE_NUMERIC_BOUNDARIES.md` first for the preceding implementation.
