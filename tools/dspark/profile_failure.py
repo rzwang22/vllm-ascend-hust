@@ -44,6 +44,7 @@ class ProfileFailureGuard:
         self.first = None
         self.pending = None
         self.cleanup_result = None
+        self.attention_validity = None
 
     def remember(self, error):
         if self.first is None:
@@ -85,7 +86,12 @@ class ProfileFailureGuard:
                     raise ProfileEngineFailed("AsyncLLM/EngineCore is dead while awaiting " + operation)
                 done, _ = await asyncio.wait({task}, timeout=POLL_SECONDS)
                 if done:
-                    return task.result()
+                    result = task.result()
+                    if operation == "generate" and self.attention_validity is not None and not result.get("error"):
+                        self.attention_validity.check(self.point, finished=True)
+                    return result
+                if operation == "generate" and self.attention_validity is not None:
+                    self.attention_validity.check(self.point)
                 if timeout is not None and time.monotonic() - started >= timeout:
                     raise TimeoutError(f"Profile {operation} exceeded {timeout}s")
         except BaseException as error:

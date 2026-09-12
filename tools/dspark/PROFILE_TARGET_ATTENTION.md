@@ -1,5 +1,8 @@
 # DSpark：layer 1 attention 内部诊断与退出记录容量
 
+后续 `6DoBME2M` 的回执失效审计与修复见 [attention 回执修复](PROFILE_ATTENTION_RECEIPTS.md)。
+以下保留原 `Ftmn8d8I` 历史证据，不能作为新增十二个切点已经有效的证明。
+
 本轮是 **NaN 诊断补充 + 退出记录覆盖修正**，没有生产数值或进程退出修复。
 原始 NaN 本次再次复现，最早已定位区间为 `layer.1.attn_input → layer.1.attn_output`；
 具体 producer/错误状态仍为 **UNKNOWN**。新代码的 NPU 复验为 **PENDING**。

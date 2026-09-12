@@ -8,7 +8,7 @@ import torch
 
 from vllm_ascend.diagnostics.dspark_profile_attention import ATTENTION_STAGES, STATE_COLUMNS, install_attention_probe
 from vllm_ascend.diagnostics.dspark_profile_auxiliary import AuxiliaryCapture, AuxiliaryProfileObservation
-from vllm_ascend.diagnostics.dspark_profile_observation import EPOCH_FIELDS
+from vllm_ascend.diagnostics.dspark_profile_observation import EPOCH_FIELDS, describe
 
 MAX_TARGET_TOKENS = 384
 MAX_TARGET_BOUNDARIES = 24
@@ -16,6 +16,7 @@ EARLY_LAYER_COUNT = 4
 LAYER_CHECKPOINT_INTERVAL = 10
 MAX_ERROR_EVENTS = 4
 MAX_METADATA_TENSORS = 32
+VALIDITY_ROUNDS = 3
 DETAILED_BOUNDARIES = ("attn_input", "attn_output", "residual", "ffn_input", "ffn_output", "output")
 
 
@@ -81,24 +82,37 @@ class TargetBoundaryFlags:
             name: [hc_mult, hidden_size] if name.endswith((".input", ".residual", ".output")) else [hidden_size]
             for name in self.names
         }
-        self.flags = torch.empty((len(self.names), self.max_tokens, 2), dtype=torch.bool, device=device)
-        self.receipts = torch.zeros((len(self.names), 1), dtype=torch.int64, device=device)
+        self.flags = torch.empty((len(self.outer_names), self.max_tokens, 2), dtype=torch.bool, device=device)
+        self.receipts = torch.zeros((len(self.outer_names), 1), dtype=torch.int64, device=device)
+        # Opaque DSA writes must not share storage with AOT-functionalized
+        # outer writes: their copy-back would overwrite undeclared side effects.
+        count = len(self.names) - len(self.outer_names)
+        self.attention_flags = (
+            torch.empty((count, self.max_tokens, 2), dtype=torch.bool, device=device) if count else None
+        )
+        self.attention_receipts = torch.zeros((count, 1), dtype=torch.int64, device=device) if count else None
         self.epoch_input = torch.zeros(1, dtype=torch.int64, device=device)
 
     def write(self, name, value):
         if name not in self.names:
             return  # compile-time constant: unselected stages add no device work
         index = self.names.index(name)
+        flags, receipts = self.flags, self.receipts
+        if index >= len(self.outer_names):
+            index -= len(self.outer_names)
+            flags, receipts = self.attention_flags, self.attention_receipts
         # Frozen Core bypasses Dynamo guards. Keep the symbolic minimum even
         # when the first profile/compile uses 8192 rows and capture uses <=384.
         n = torch.sym_min(value.shape[0], self.max_tokens)
         flat = value[:n].flatten(1)
-        self.flags[index, :n].copy_(torch.stack((torch.isnan(flat).any(1), torch.isinf(flat).any(1)), dim=1))
-        self.receipts[index].copy_(self.epoch_input)
+        flags[index, :n].copy_(torch.stack((torch.isnan(flat).any(1), torch.isinf(flat).any(1)), dim=1))
+        receipts[index].copy_(self.epoch_input)
 
     @property
     def allocated_bytes(self):
         values = (self.flags, self.receipts, self.epoch_input)
+        if self.attention_flags is not None:
+            values += (self.attention_flags, self.attention_receipts)
         if self.attention_probe is not None:
             values += (self.attention_probe.state,)
         return sum(x.numel() * x.element_size() for x in values)
@@ -149,12 +163,16 @@ class TargetProfileObservation(AuxiliaryProfileObservation):
         self.target_counts = Counter()
         self.target_latches = set()
         self.error_events = []
+        self.attention_validity_rounds = []
+        self.attention_validity_done = False
         super().__init__(runner, options)
         self.bank = self.capture.bank
 
     def before_replay(self, desc, graph):
         pending = super().before_replay(desc, graph)
         self.bank.receipts.fill_(-1)
+        if self.bank.attention_receipts is not None:
+            self.bank.attention_receipts.fill_(-1)
         self.bank.epoch_input.fill_(self.execution)
         # These are the actual captured DSA fields; the previous experiment
         # observed `positions`, while DSA decode names it `input_positions`.
@@ -179,8 +197,13 @@ class TargetProfileObservation(AuxiliaryProfileObservation):
         super().after_replay(desc)
         # copy=True owns flags/receipts now; later draft/capture/profile writes
         # cannot change this execution's packet. No host wait at this boundary.
-        self.integer("target_internal.flags", self.bank.flags[:, : desc.num_tokens])
-        self.integer("target_internal.receipts", self.bank.receipts)
+        flags, receipts = self.bank.flags, self.bank.receipts
+        if self.bank.attention_flags is not None:
+            # Merge only after replay, outside the model's compiled function.
+            flags = torch.cat((flags, self.bank.attention_flags))
+            receipts = torch.cat((receipts, self.bank.attention_receipts))
+        self.integer("target_internal.flags", flags[:, : desc.num_tokens])
+        self.integer("target_internal.receipts", receipts)
         if self.bank.attention_probe is not None:
             self.integer("target_internal.attention_state", self.bank.attention_probe.state[: desc.num_tokens])
 
@@ -257,12 +280,51 @@ class TargetProfileObservation(AuxiliaryProfileObservation):
                 "coverage": record["target_internal"]["coverage"],
                 "scope": "parallel Q/KV inputs and a sequential output path; not one causal boundary chain",
             }
+        self.save_attention_validity(record, fresh)
         self.target_counts[record["target_internal"]["coverage"]] += 1
         nonfinite = any(v["nan"] or v["inf"] for b in boundaries for v in b["rows"] if v["row"] < record["target_rows"])
         self.target_counts["nonfinite_rounds"] += nonfinite
         if nonfinite and "nonfinite" not in self.target_latches:
             self.write("target-first-nonfinite", self.snapshot(), exclusive=True)
             self.target_latches.add("nonfinite")
+
+    def save_attention_validity(self, record, fresh):
+        if self.bank.attention_probe is None or self.attention_validity_done or record["graph_capacity"] is None:
+            return
+        # Consume the already transferred packet; no extra device read or RPC.
+        good = fresh and record["coverage"] == "FULL" and not self.recording_error
+        if good and not (record["consumption_reached"] and record["head_reached"]):
+            return
+        previous = self.attention_validity_rounds
+        good = bool(good and (not previous or record["execution"] == previous[-1]["execution"] + 1))
+        previous.append(
+            {
+                "execution": record["execution"],
+                "proposal_epoch": record["proposal_epoch"],
+                "valid": good,
+                "target_receipts": record["device_integers"].get("target_internal.receipts"),
+                "raw_receipts": record["device_integers"].get("raw_receipts"),
+                "consume_receipts": record["device_integers"].get("consume_receipts"),
+            }
+        )
+        status = "failed" if not good else "passed" if len(previous) == VALIDITY_ROUNDS else "pending"
+        data = {
+            "performance_eligible": False,
+            "point": record["point"],
+            "rank": self.rank,
+            "status": status,
+            "required_boundaries": list(self.bank.names),
+            "rounds": list(previous),
+            "error": (self.recording_error or "Incomplete/nonconsecutive FULL receipts") if not good else None,
+            "snapshot": self.snapshot(),
+            "buffers": {
+                name: describe(getattr(self.bank, name))
+                for name in ("flags", "receipts", "attention_flags", "attention_receipts", "epoch_input")
+            },
+        }
+        # Atomic publication includes first failure evidence before frontend abort.
+        self.write("attention-validity", data)
+        self.attention_validity_done = status != "pending"
 
     def failed(self, stage, error):
         super().failed(stage, error)  # preserve the original, exclusively saved numerical failure

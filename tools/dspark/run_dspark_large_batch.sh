@@ -58,6 +58,8 @@ main() {
         tests/ut/test_dspark_profile_nan.py tests/ut/test_dspark_profile_observation.py \
         tests/ut/test_dspark_profile_numerics.py tests/ut/test_dspark_profile_upstream.py \
         tests/ut/test_dspark_profile_auxiliary.py tests/ut/test_dspark_profile_target.py \
+        tests/ut/test_dspark_attention_receipts.py \
+        tests/ut/test_dspark_attention_validity.py \
         tests/ut/test_dspark_profile_attention.py \
         tests/ut/test_dspark_replay_diagnostics.py \
         tests/ut/test_dspark_nan_diagnostics.py tests/ut/test_dspark_profile_failure.py tests/ut/test_dspark_worker_exit.py \

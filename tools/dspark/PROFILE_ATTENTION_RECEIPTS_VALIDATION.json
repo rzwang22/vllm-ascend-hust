@@ -1,0 +1,254 @@
+{
+  "kind": "CPU regression, not original NPU reproduction",
+  "torch": "2.14.0",
+  "focused": {
+    "passed": 596,
+    "skipped": 5,
+    "seconds": 37.46,
+    "scope": "24 host/source test files --noconftest; installed worker/spec_decode files not run locally"
+  },
+  "actual_dispatch_aot_profiler": {
+    "passed": 2,
+    "skipped": 2,
+    "seconds": 2.78,
+    "proof": [
+      {
+        "shared_storage": true,
+        "rounds": [
+          {
+            "execution": 11,
+            "shared": true,
+            "whole_bank_copy_shapes": [
+              [
+                21
+              ],
+              [
+                21,
+                1
+              ],
+              [
+                21,
+                6,
+                2
+              ]
+            ],
+            "attention_receipts": [
+              -1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1
+            ]
+          },
+          {
+            "execution": 12,
+            "shared": true,
+            "whole_bank_copy_shapes": [
+              [
+                21
+              ],
+              [
+                21,
+                1
+              ],
+              [
+                21,
+                6,
+                2
+              ]
+            ],
+            "attention_receipts": [
+              -1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1
+            ]
+          },
+          {
+            "execution": 13,
+            "shared": true,
+            "whole_bank_copy_shapes": [
+              [
+                21
+              ],
+              [
+                21,
+                1
+              ],
+              [
+                21,
+                6,
+                2
+              ]
+            ],
+            "attention_receipts": [
+              -1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1,
+              -1
+            ]
+          }
+        ],
+        "fx_sha256": "20ff2e553dbef1c3908e2e1715fb78ce711c87d0c2226d66f2280470ce914c54"
+      },
+      {
+        "shared_storage": false,
+        "rounds": [
+          {
+            "execution": 11,
+            "shared": false,
+            "whole_bank_copy_shapes": [
+              [
+                9
+              ],
+              [
+                9,
+                1
+              ],
+              [
+                9,
+                6,
+                2
+              ]
+            ],
+            "attention_receipts": [
+              11,
+              11,
+              11,
+              11,
+              11,
+              11,
+              11,
+              11,
+              11,
+              11,
+              11,
+              11
+            ]
+          },
+          {
+            "execution": 12,
+            "shared": false,
+            "whole_bank_copy_shapes": [
+              [
+                9
+              ],
+              [
+                9,
+                1
+              ],
+              [
+                9,
+                6,
+                2
+              ]
+            ],
+            "attention_receipts": [
+              12,
+              12,
+              12,
+              12,
+              12,
+              12,
+              12,
+              12,
+              12,
+              12,
+              12,
+              12
+            ]
+          },
+          {
+            "execution": 13,
+            "shared": false,
+            "whole_bank_copy_shapes": [
+              [
+                9
+              ],
+              [
+                9,
+                1
+              ],
+              [
+                9,
+                6,
+                2
+              ]
+            ],
+            "attention_receipts": [
+              13,
+              13,
+              13,
+              13,
+              13,
+              13,
+              13,
+              13,
+              13,
+              13,
+              13,
+              13
+            ]
+          }
+        ],
+        "fx_sha256": "20ff2e553dbef1c3908e2e1715fb78ce711c87d0c2226d66f2280470ce914c54"
+      }
+    ]
+  },
+  "skips": [
+    "2 torch_npu/Ascend npugraph_ex + ACLGraph replay",
+    "3 installed vllm/Ascend tests"
+  ],
+  "changed_file_hooks": "all applicable hooks passed",
+  "full_format": {
+    "returncode": 1,
+    "hooks": [
+      "ruff check..................................................................Failed",
+      "ruff format.................................................................Failed",
+      "codespell...................................................................Failed",
+      "typos.......................................................................Failed",
+      "clang-format................................................................Passed",
+      "markdownlint................................................................Failed",
+      "Lint GitHub Actions workflow files..........................................Failed",
+      "Lint shell scripts..........................................................Failed",
+      "Lint PNG exports from excalidraw............................................Passed",
+      "Check for spaces in all filenames...........................................Passed",
+      "Enforce __init__.py in Python packages......................................Passed",
+      "Forbid init_logger(__name__) in vllm_ascend modules.........................Passed",
+      "Check for forbidden imports.................................................Failed",
+      "Check for boolean ops in with-statements....................................Passed",
+      "Check that new functions over 100 lines have comments.......................Passed",
+      "Check symbolic shapes in meta kernels.......................................Passed",
+      "Suggestion..................................................................Passed"
+    ],
+    "auto_modified_count": 78,
+    "auto_modified_task_files": []
+  },
+  "baseline_comparison": "same eight failed hooks and same 78 unrelated auto-modified paths as baseline",
+  "npu_receipt_repair": "PENDING",
+  "original_nan": "not reached by 6DoBME2M; UNKNOWN",
+  "natural_worker_exit": "forced cleanup remains failure"
+}

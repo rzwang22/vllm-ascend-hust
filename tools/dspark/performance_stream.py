@@ -15,6 +15,7 @@ import time
 from types import SimpleNamespace
 
 from tools.dspark import benchmark_dspark_acceptance as benchmark
+from tools.dspark.profile_attention_validity import AttentionValidity
 from tools.dspark.profile_failure import CANCEL_TIMEOUT_SECONDS, RPC_TIMEOUT_SECONDS, ProfileFailureGuard
 from tools.dspark.profile_request_ids import RequestIdObserver
 
@@ -38,7 +39,16 @@ def request_latency(record):
 
 
 async def stream_batch(
-    engine, prompts, sampling, outstanding, batch_id, *, clock=time.monotonic, progress=None, bounded_cancel=False
+    engine,
+    prompts,
+    sampling,
+    outstanding,
+    batch_id,
+    *,
+    clock=time.monotonic,
+    progress=None,
+    bounded_cancel=False,
+    validate_progress=None,
 ):
     """Closed-loop admission in source order, or all-at-once when limit is None."""
     if outstanding is not None and outstanding <= 0:
@@ -88,6 +98,8 @@ async def stream_batch(
                         record["events"].append({"monotonic": observed, "new_tokens": len(tokens)})
                     record["output_token_ids"].extend(tokens)
                     record["text_parts"].append(completion.text)
+                    if validate_progress is not None:
+                        validate_progress(sum(len(r["output_token_ids"]) for r in records if r is not None))
                     if output.finished:
                         record["completed_monotonic"] = observed
                         record["finish_reason"] = completion.finish_reason
@@ -217,6 +229,13 @@ class StreamingEngine:
         failure_directory = (kwargs.get("additional_config") or {}).get("dspark_profile_failure_dir")
         if failure_directory is not None:
             self.profile_guard = ProfileFailureGuard(self.engine, failure_directory, require_worker_receipt=True)
+        observation = (kwargs.get("additional_config") or {}).get("dspark_profile_observation", {})
+        if observation.get("attention"):
+            if self.profile_guard is None:
+                raise ValueError("Attention validation requires the bounded profile guard")
+            self.profile_guard.attention_validity = AttentionValidity(
+                observation["directory"], kwargs["tensor_parallel_size"]
+            )
         # Adapt only the read-only config/utility interface used by the existing benchmark.
         self.llm_engine = SimpleNamespace(
             vllm_config=self.engine.vllm_config, engine_core=SimpleNamespace(call_utility=self.call_utility)
@@ -276,6 +295,12 @@ class StreamingEngine:
                 self.engine, profile_point, {f"{batch_id}-{i}": i for i in range(len(prompts))}
             )
             self.last_batch = {}
+            gate = getattr(self.profile_guard, "attention_validity", None)
+            validate = (
+                (lambda tokens: gate.check(profile_point, tokens=tokens))
+                if gate is not None and not gate.passed
+                else None
+            )
             try:
                 with observer:
                     self.last_batch = self._run(
@@ -288,6 +313,7 @@ class StreamingEngine:
                             batch_id,
                             progress=self.last_batch,
                             bounded_cancel=self.profile_guard is not None,
+                            validate_progress=validate,
                         ),
                     )
             finally:

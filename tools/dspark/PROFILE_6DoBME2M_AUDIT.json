@@ -1,0 +1,820 @@
+{
+  "compiler_anchors": [
+    {
+      "line": 631,
+      "text": "(Worker_TP5_EP5 pid=131201) INFO 09-12 17:41:56 [compiler_interface.py:248] AscendCompiler hash factors: {'torch_npu_version': '2.10.0.post2', 'enable_npugraph_ex': True, 'enable_static_kernel': False}"
+    },
+    {
+      "line": 632,
+      "text": "(Worker_TP7_EP7 pid=131354) INFO 09-12 17:41:56 [compiler_interface.py:248] AscendCompiler hash factors: {'torch_npu_version': '2.10.0.post2', 'enable_npugraph_ex': True, 'enable_static_kernel': False}"
+    },
+    {
+      "line": 633,
+      "text": "(Worker_TP0_EP0 pid=130837) INFO 09-12 17:41:56 [compiler_interface.py:248] AscendCompiler hash factors: {'torch_npu_version': '2.10.0.post2', 'enable_npugraph_ex': True, 'enable_static_kernel': False}"
+    },
+    {
+      "line": 636,
+      "text": "(Worker_TP6_EP6 pid=131277) INFO 09-12 17:41:57 [compiler_interface.py:248] AscendCompiler hash factors: {'torch_npu_version': '2.10.0.post2', 'enable_npugraph_ex': True, 'enable_static_kernel': False}"
+    },
+    {
+      "line": 637,
+      "text": "(Worker_TP1_EP1 pid=130890) INFO 09-12 17:41:57 [compiler_interface.py:248] AscendCompiler hash factors: {'torch_npu_version': '2.10.0.post2', 'enable_npugraph_ex': True, 'enable_static_kernel': False}"
+    },
+    {
+      "line": 638,
+      "text": "(Worker_TP4_EP4 pid=131121) INFO 09-12 17:41:58 [compiler_interface.py:248] AscendCompiler hash factors: {'torch_npu_version': '2.10.0.post2', 'enable_npugraph_ex': True, 'enable_static_kernel': False}"
+    },
+    {
+      "line": 639,
+      "text": "(Worker_TP0_EP0 pid=130837) INFO 09-12 17:41:58 [compiler_interface.py:285] enable_npugraph_ex is enabled, which will bring graph compilation optimization."
+    },
+    {
+      "line": 640,
+      "text": "(Worker_TP2_EP2 pid=130966) INFO 09-12 17:41:58 [compiler_interface.py:248] AscendCompiler hash factors: {'torch_npu_version': '2.10.0.post2', 'enable_npugraph_ex': True, 'enable_static_kernel': False}"
+    },
+    {
+      "line": 641,
+      "text": "(Worker_TP3_EP3 pid=131043) INFO 09-12 17:41:58 [compiler_interface.py:248] AscendCompiler hash factors: {'torch_npu_version': '2.10.0.post2', 'enable_npugraph_ex': True, 'enable_static_kernel': False}"
+    },
+    {
+      "line": 643,
+      "text": "(Worker_TP7_EP7 pid=131354) INFO 09-12 17:42:39 [compiler_interface.py:199] Saved compiled graph to cache: /root/.cache/vllm/torch_compile_cache/64b56c8fa2/rank_7_0/backbone/artifact_compile_range_1_8192_subgraph_0"
+    },
+    {
+      "line": 644,
+      "text": "(Worker_TP5_EP5 pid=131201) INFO 09-12 17:42:40 [compiler_interface.py:199] Saved compiled graph to cache: /root/.cache/vllm/torch_compile_cache/64b56c8fa2/rank_5_0/backbone/artifact_compile_range_1_8192_subgraph_0"
+    },
+    {
+      "line": 645,
+      "text": "(Worker_TP0_EP0 pid=130837) INFO 09-12 17:42:41 [compiler_interface.py:199] Saved compiled graph to cache: /root/.cache/vllm/torch_compile_cache/64b56c8fa2/rank_0_0/backbone/artifact_compile_range_1_8192_subgraph_0"
+    },
+    {
+      "line": 648,
+      "text": "(Worker_TP6_EP6 pid=131277) INFO 09-12 17:42:42 [compiler_interface.py:199] Saved compiled graph to cache: /root/.cache/vllm/torch_compile_cache/64b56c8fa2/rank_6_0/backbone/artifact_compile_range_1_8192_subgraph_0"
+    },
+    {
+      "line": 649,
+      "text": "(Worker_TP1_EP1 pid=130890) INFO 09-12 17:42:43 [compiler_interface.py:199] Saved compiled graph to cache: /root/.cache/vllm/torch_compile_cache/64b56c8fa2/rank_1_0/backbone/artifact_compile_range_1_8192_subgraph_0"
+    },
+    {
+      "line": 650,
+      "text": "(Worker_TP3_EP3 pid=131043) INFO 09-12 17:42:44 [compiler_interface.py:199] Saved compiled graph to cache: /root/.cache/vllm/torch_compile_cache/64b56c8fa2/rank_3_0/backbone/artifact_compile_range_1_8192_subgraph_0"
+    },
+    {
+      "line": 651,
+      "text": "(Worker_TP4_EP4 pid=131121) INFO 09-12 17:42:44 [compiler_interface.py:199] Saved compiled graph to cache: /root/.cache/vllm/torch_compile_cache/64b56c8fa2/rank_4_0/backbone/artifact_compile_range_1_8192_subgraph_0"
+    },
+    {
+      "line": 652,
+      "text": "(Worker_TP2_EP2 pid=130966) INFO 09-12 17:42:46 [compiler_interface.py:199] Saved compiled graph to cache: /root/.cache/vllm/torch_compile_cache/64b56c8fa2/rank_2_0/backbone/artifact_compile_range_1_8192_subgraph_0"
+    }
+  ],
+  "archive_sha256": "e7e6021068ce6048c0b6856a962f0fce1f3ebf88fab132896f1c8f064912197e",
+  "members": 98,
+  "expanded_bytes": 28416185,
+  "kind": "independent offline assertions; not NPU validation",
+  "versions": {
+    "plugin_sha": "9af2b22b54d74029647e5e7ad040cf03d740bd96",
+    "core_sha": "897306c43bf800e2480cb5c0f3e2da408d85a2fd"
+  },
+  "first_point": {
+    "raw_sha256": "d2925015d818bafcefeaa295c5aae128a4f2e517aa75ec267e489b3a9e9af813",
+    "tokens": 512,
+    "generation_error": null,
+    "snapshot_error": "RuntimeError: Engine failed; post-mortem RPC not retried"
+  },
+  "original_nan_scenario": "not reached",
+  "ranks": [
+    {
+      "rank": 0,
+      "file": "runs/b64/worker-first-failure/rank-0-latest.json",
+      "sha256": "e3eab5159ab5c5874ee5a51a00dd8dafbf4244a429f088385e00250f3a2e78df",
+      "executions": [
+        86,
+        87,
+        88
+      ],
+      "outer_current": 9,
+      "attention_invalid": 12,
+      "attention_state_first_rows": [
+        [
+          0,
+          626,
+          499,
+          627,
+          82,
+          18,
+          82,
+          18,
+          0,
+          0
+        ],
+        [
+          0,
+          632,
+          505,
+          633,
+          82,
+          24,
+          82,
+          24,
+          0,
+          0
+        ],
+        [
+          0,
+          638,
+          511,
+          639,
+          82,
+          30,
+          82,
+          30,
+          0,
+          0
+        ]
+      ],
+      "recording_error": "Target internal flags missing/stale; no complete replay receipt"
+    },
+    {
+      "rank": 1,
+      "file": "runs/b64/worker-first-failure/rank-1-latest.json",
+      "sha256": "01653adfe3daa6947d45a3af46908cc4e9d6f0308dd7c072e14284b4879f18a8",
+      "executions": [
+        86,
+        87,
+        88
+      ],
+      "outer_current": 9,
+      "attention_invalid": 12,
+      "attention_state_first_rows": [
+        [
+          0,
+          626,
+          499,
+          627,
+          82,
+          18,
+          82,
+          18,
+          0,
+          0
+        ],
+        [
+          0,
+          632,
+          505,
+          633,
+          82,
+          24,
+          82,
+          24,
+          0,
+          0
+        ],
+        [
+          0,
+          638,
+          511,
+          639,
+          82,
+          30,
+          82,
+          30,
+          0,
+          0
+        ]
+      ],
+      "recording_error": "Target internal flags missing/stale; no complete replay receipt"
+    },
+    {
+      "rank": 2,
+      "file": "runs/b64/worker-first-failure/rank-2-latest.json",
+      "sha256": "530efff298232211b4382fd71741d45f4f4c188d856bb4da41a49ab4c28fa933",
+      "executions": [
+        86,
+        87,
+        88
+      ],
+      "outer_current": 9,
+      "attention_invalid": 12,
+      "attention_state_first_rows": [
+        [
+          0,
+          626,
+          499,
+          627,
+          82,
+          18,
+          82,
+          18,
+          0,
+          0
+        ],
+        [
+          0,
+          632,
+          505,
+          633,
+          82,
+          24,
+          82,
+          24,
+          0,
+          0
+        ],
+        [
+          0,
+          638,
+          511,
+          639,
+          82,
+          30,
+          82,
+          30,
+          0,
+          0
+        ]
+      ],
+      "recording_error": "Target internal flags missing/stale; no complete replay receipt"
+    },
+    {
+      "rank": 3,
+      "file": "runs/b64/worker-first-failure/rank-3-latest.json",
+      "sha256": "222d48ede3afc29f042af54f407d493dd1544bd6d1bb8189cbde3320b7155848",
+      "executions": [
+        86,
+        87,
+        88
+      ],
+      "outer_current": 9,
+      "attention_invalid": 12,
+      "attention_state_first_rows": [
+        [
+          0,
+          626,
+          499,
+          627,
+          82,
+          18,
+          82,
+          18,
+          0,
+          0
+        ],
+        [
+          0,
+          632,
+          505,
+          633,
+          82,
+          24,
+          82,
+          24,
+          0,
+          0
+        ],
+        [
+          0,
+          638,
+          511,
+          639,
+          82,
+          30,
+          82,
+          30,
+          0,
+          0
+        ]
+      ],
+      "recording_error": "Target internal flags missing/stale; no complete replay receipt"
+    },
+    {
+      "rank": 4,
+      "file": "runs/b64/worker-first-failure/rank-4-latest.json",
+      "sha256": "4d4aeeebaf0ad82c06c63617edc9ee978f8fd334e07242a8c2995f90f5995040",
+      "executions": [
+        86,
+        87,
+        88
+      ],
+      "outer_current": 9,
+      "attention_invalid": 12,
+      "attention_state_first_rows": [
+        [
+          0,
+          626,
+          499,
+          627,
+          82,
+          18,
+          82,
+          18,
+          0,
+          0
+        ],
+        [
+          0,
+          632,
+          505,
+          633,
+          82,
+          24,
+          82,
+          24,
+          0,
+          0
+        ],
+        [
+          0,
+          638,
+          511,
+          639,
+          82,
+          30,
+          82,
+          30,
+          0,
+          0
+        ]
+      ],
+      "recording_error": "Target internal flags missing/stale; no complete replay receipt"
+    },
+    {
+      "rank": 5,
+      "file": "runs/b64/worker-first-failure/rank-5-latest.json",
+      "sha256": "09fd2cb3c2cde801ffff3f585b8df8c35a14da3fee63bbc0a36207d9f77f20dd",
+      "executions": [
+        86,
+        87,
+        88
+      ],
+      "outer_current": 9,
+      "attention_invalid": 12,
+      "attention_state_first_rows": [
+        [
+          0,
+          626,
+          499,
+          627,
+          82,
+          18,
+          82,
+          18,
+          0,
+          0
+        ],
+        [
+          0,
+          632,
+          505,
+          633,
+          82,
+          24,
+          82,
+          24,
+          0,
+          0
+        ],
+        [
+          0,
+          638,
+          511,
+          639,
+          82,
+          30,
+          82,
+          30,
+          0,
+          0
+        ]
+      ],
+      "recording_error": "Target internal flags missing/stale; no complete replay receipt"
+    },
+    {
+      "rank": 6,
+      "file": "runs/b64/worker-first-failure/rank-6-latest.json",
+      "sha256": "8f8469f27455313b73ca3f9f1349335247ac44f780f9f6dee0041fad134b63a2",
+      "executions": [
+        86,
+        87,
+        88
+      ],
+      "outer_current": 9,
+      "attention_invalid": 12,
+      "attention_state_first_rows": [
+        [
+          0,
+          626,
+          499,
+          627,
+          82,
+          18,
+          82,
+          18,
+          0,
+          0
+        ],
+        [
+          0,
+          632,
+          505,
+          633,
+          82,
+          24,
+          82,
+          24,
+          0,
+          0
+        ],
+        [
+          0,
+          638,
+          511,
+          639,
+          82,
+          30,
+          82,
+          30,
+          0,
+          0
+        ]
+      ],
+      "recording_error": "Target internal flags missing/stale; no complete replay receipt"
+    },
+    {
+      "rank": 7,
+      "file": "runs/b64/worker-first-failure/rank-7-latest.json",
+      "sha256": "9abd66ba6b7d85f78db537424bab0fdc33dc31bf6989cd3ba5073d572a3f6a44",
+      "executions": [
+        86,
+        87,
+        88
+      ],
+      "outer_current": 9,
+      "attention_invalid": 12,
+      "attention_state_first_rows": [
+        [
+          0,
+          626,
+          499,
+          627,
+          82,
+          18,
+          82,
+          18,
+          0,
+          0
+        ],
+        [
+          0,
+          632,
+          505,
+          633,
+          82,
+          24,
+          82,
+          24,
+          0,
+          0
+        ],
+        [
+          0,
+          638,
+          511,
+          639,
+          82,
+          30,
+          82,
+          30,
+          0,
+          0
+        ]
+      ],
+      "recording_error": "Target internal flags missing/stale; no complete replay receipt"
+    }
+  ],
+  "cleanup": {
+    "schema_version": 2,
+    "performance_eligible": false,
+    "started_utc": "2026-09-12T17:44:17.372235+00:00",
+    "timeout_seconds": 12,
+    "finalize_timeout_seconds": 4,
+    "outer_timeout_seconds": 16,
+    "supervisor_failure_grace_seconds": 24,
+    "status": "forced_cleanup",
+    "shutdown_completed": true,
+    "engine_returned": true,
+    "thread_completed": true,
+    "timed_out": false,
+    "success": false,
+    "force_events": [
+      {
+        "observed_utc": "2026-09-12T17:44:29.384539+00:00",
+        "message": "[shutdown] Process manager: force killing remaining processes count=1"
+      }
+    ],
+    "forced_cleanup": true,
+    "force_observation_scope": "frontend Core process-manager warning on cleanup thread; not descendant logs",
+    "graceful_worker_exit": false,
+    "event_loop": "closed",
+    "error": null,
+    "recording_error": null,
+    "returned_utc": "2026-09-12T17:44:29.389929+00:00",
+    "engine_started_utc": "2026-09-12T17:44:17.372887+00:00",
+    "engine_finished_utc": "2026-09-12T17:44:29.389948+00:00",
+    "engine_elapsed_seconds": 12.017063468694687,
+    "returned_after_outer_deadline": false,
+    "elapsed_seconds": 12.020009183324873,
+    "observed_utc": "2026-09-12T17:44:29.392242+00:00",
+    "worker_cleanup": {
+      "performance_eligible": false,
+      "parent_pid": 130776,
+      "point": "ctx128-n1-t6-balanced",
+      "started_utc": "2026-09-12T17:44:17.376834+00:00",
+      "status": "returned",
+      "force_events": [
+        {
+          "observed_utc": "2026-09-12T17:44:22.384881+00:00",
+          "message": "[shutdown] Executor: workers still running after grace period; sending SIGTERM count=8"
+        },
+        {
+          "observed_utc": "2026-09-12T17:44:26.393019+00:00",
+          "message": "[shutdown] Executor: workers still running after SIGTERM; sending SIGKILL count=6"
+        }
+      ],
+      "forced_cleanup": true,
+      "error": null,
+      "recording_error": null,
+      "elapsed_seconds": 9.031651515513659,
+      "finished_utc": "2026-09-12T17:44:26.406282+00:00",
+      "workers": [
+        {
+          "pid": 130837,
+          "rank": 0,
+          "name": "VllmWorker-0",
+          "raw_exitcode": null,
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "unavailable: not reaped/exited"
+        },
+        {
+          "pid": 130890,
+          "rank": 1,
+          "name": "VllmWorker-1",
+          "raw_exitcode": null,
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "unavailable: not reaped/exited"
+        },
+        {
+          "pid": 130966,
+          "rank": 2,
+          "name": "VllmWorker-2",
+          "raw_exitcode": null,
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "unavailable: not reaped/exited"
+        },
+        {
+          "pid": 131043,
+          "rank": 3,
+          "name": "VllmWorker-3",
+          "raw_exitcode": -15,
+          "signal": 15,
+          "signal_name": "SIGTERM",
+          "exit_status": "available"
+        },
+        {
+          "pid": 131121,
+          "rank": 4,
+          "name": "VllmWorker-4",
+          "raw_exitcode": -15,
+          "signal": 15,
+          "signal_name": "SIGTERM",
+          "exit_status": "available"
+        },
+        {
+          "pid": 131201,
+          "rank": 5,
+          "name": "VllmWorker-5",
+          "raw_exitcode": null,
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "unavailable: not reaped/exited"
+        },
+        {
+          "pid": 131277,
+          "rank": 6,
+          "name": "VllmWorker-6",
+          "raw_exitcode": null,
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "unavailable: not reaped/exited"
+        },
+        {
+          "pid": 131354,
+          "rank": 7,
+          "name": "VllmWorker-7",
+          "raw_exitcode": null,
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "unavailable: not reaped/exited"
+        }
+      ]
+    }
+  },
+  "worker_cleanup": {
+    "performance_eligible": false,
+    "parent_pid": 130776,
+    "point": "ctx128-n1-t6-balanced",
+    "started_utc": "2026-09-12T17:44:17.376834+00:00",
+    "status": "returned",
+    "force_events": [
+      {
+        "observed_utc": "2026-09-12T17:44:22.384881+00:00",
+        "message": "[shutdown] Executor: workers still running after grace period; sending SIGTERM count=8"
+      },
+      {
+        "observed_utc": "2026-09-12T17:44:26.393019+00:00",
+        "message": "[shutdown] Executor: workers still running after SIGTERM; sending SIGKILL count=6"
+      }
+    ],
+    "forced_cleanup": true,
+    "error": null,
+    "recording_error": null,
+    "elapsed_seconds": 9.031651515513659,
+    "finished_utc": "2026-09-12T17:44:26.406282+00:00",
+    "workers": [
+      {
+        "pid": 130837,
+        "rank": 0,
+        "name": "VllmWorker-0",
+        "raw_exitcode": null,
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "unavailable: not reaped/exited"
+      },
+      {
+        "pid": 130890,
+        "rank": 1,
+        "name": "VllmWorker-1",
+        "raw_exitcode": null,
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "unavailable: not reaped/exited"
+      },
+      {
+        "pid": 130966,
+        "rank": 2,
+        "name": "VllmWorker-2",
+        "raw_exitcode": null,
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "unavailable: not reaped/exited"
+      },
+      {
+        "pid": 131043,
+        "rank": 3,
+        "name": "VllmWorker-3",
+        "raw_exitcode": -15,
+        "signal": 15,
+        "signal_name": "SIGTERM",
+        "exit_status": "available"
+      },
+      {
+        "pid": 131121,
+        "rank": 4,
+        "name": "VllmWorker-4",
+        "raw_exitcode": -15,
+        "signal": 15,
+        "signal_name": "SIGTERM",
+        "exit_status": "available"
+      },
+      {
+        "pid": 131201,
+        "rank": 5,
+        "name": "VllmWorker-5",
+        "raw_exitcode": null,
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "unavailable: not reaped/exited"
+      },
+      {
+        "pid": 131277,
+        "rank": 6,
+        "name": "VllmWorker-6",
+        "raw_exitcode": null,
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "unavailable: not reaped/exited"
+      },
+      {
+        "pid": 131354,
+        "rank": 7,
+        "name": "VllmWorker-7",
+        "raw_exitcode": null,
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "unavailable: not reaped/exited"
+      }
+    ]
+  },
+  "cleanup_failure": {
+    "completed_points": 0,
+    "error": "RuntimeError: Profile engine cleanup failed: forced_cleanup",
+    "performance_eligible": false,
+    "phase": "cleanup",
+    "points_status": "failed",
+    "prior_error": "ProfileEngineFailed: Exception: Call to collective_rpc method failed: Worker failed with error 'Profile metadata evidence unavailable: Target internal flags missing/stale; no complete replay receipt', please check the stack trace above for the root cause"
+  },
+  "supervisor": {
+    "schema_version": 1,
+    "performance_eligible": false,
+    "child_pid": 130657,
+    "owned_process_group": 130657,
+    "command": [
+      "/usr/local/python3.12.13/bin/python",
+      "/workspace/vllm-ascend-hust/tools/dspark/run_confidence_verification.py",
+      "--plugin",
+      "/workspace/vllm-ascend-hust",
+      "--core",
+      "/workspace/vllm-hust",
+      "--plugin-sha",
+      "9af2b22b54d74029647e5e7ad040cf03d740bd96",
+      "--model",
+      "/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8",
+      "--manifest",
+      "/workspace/dspark-results/dspark-repeated-input.WSJur2Ev/input/manifest.json",
+      "--num-prompts",
+      "400",
+      "--output-len",
+      "256",
+      "--warmup-prompts",
+      "4",
+      "--max-model-len",
+      "8192",
+      "--max-num-batched-tokens",
+      "8192",
+      "--gpu-memory-utilization",
+      "0.9",
+      "--stage",
+      "profile",
+      "--batch",
+      "64",
+      "--capture",
+      "6",
+      "12",
+      "24",
+      "48",
+      "96",
+      "192",
+      "384",
+      "--output-dir",
+      "/workspace/dspark-results/dspark-large-batch.6DoBME2M/runs/b64",
+      "--profile-experiment",
+      "target-boundaries",
+      "--profile-stop-after-point",
+      "ctx128-n4-t12-skewed",
+      "--profile-target-layer",
+      "1",
+      "--profile-worker-exit",
+      "--profile-target-attention",
+      "--profile-contexts",
+      "128",
+      "2048",
+      "--profile-output-tokens",
+      "512",
+      "--profile-warmup",
+      "2",
+      "--profile-samples",
+      "5"
+    ],
+    "first_failure": {
+      "source": "engine-failure.json",
+      "receipt": {
+        "schema_version": 1,
+        "phase": "runtime",
+        "performance_eligible": false,
+        "observed_utc": "2026-09-12T17:44:17.364196+00:00",
+        "point": "ctx128-n1-t6-balanced",
+        "pending_operation": {
+          "name": "collective_rpc:dspark_benchmark_replay_snapshot",
+          "point": "ctx128-n1-t6-balanced",
+          "started_utc": "2026-09-12T17:44:17.275303+00:00"
+        },
+        "error": "Exception: Call to collective_rpc method failed: Worker failed with error 'Profile metadata evidence unavailable: Target internal flags missing/stale; no complete replay receipt', please check the stack trace above for the root cause",
+        "observed_frontend_error": "Exception: Call to collective_rpc method failed: Worker failed with error 'Profile metadata evidence unavailable: Target internal flags missing/stale; no complete replay receipt', please check the stack trace above for the root cause"
+      }
+    },
+    "signals_sent": [],
+    "raw_returncode": 1,
+    "failure_grace_seconds": 24,
+    "term_grace_seconds": 5,
+    "max_runtime_seconds": 3600.0,
+    "stop_file": "/workspace/dspark-results/dspark-large-batch.6DoBME2M/STOP",
+    "started_utc": "2026-09-12T17:34:45.272153+00:00",
+    "observed_utc": "2026-09-12T17:44:17.375909+00:00",
+    "completed_utc": "2026-09-12T17:44:32.329985+00:00"
+  }
+}

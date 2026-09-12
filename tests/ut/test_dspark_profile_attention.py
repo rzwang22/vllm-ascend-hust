@@ -260,9 +260,9 @@ def test_kv_window_read_indices_padding_and_owned_receipts(monkeypatch):
     bank.epoch_input.fill_(7)
     cache[2, 0].fill_(torch.nan)
     graph.replay()
-    index = bank.names.index("layer.1.attention.kv_window")
-    assert bank.receipts[index].item() == 7 and bank.flags[index, 0, 0]
-    assert not bank.flags[index, 3].any()
+    index = bank.names.index("layer.1.attention.kv_window") - len(bank.outer_names)
+    assert bank.attention_receipts[index].item() == 7 and bank.attention_flags[index, 0, 0]
+    assert not bank.attention_flags[index, 3].any()
     saved = probe.state.clone()
     metadata.block_table[0, 1] = 1000
     bank.epoch_input.fill_(8)
@@ -430,3 +430,32 @@ def test_installation_selects_real_nested_impl_and_rejects_other_routes(monkeypa
         attention.install_attention_probe(bank, model, 1)
         assert impl._dspark_attn_probe is impl.wo_b._dspark_attn_probe is bank.attention_probe
         assert bank.allocated_bytes == 47024
+
+
+@pytest.mark.parametrize("stale", [False, True])
+def test_first_full_validity_publication_is_owned_and_bounded(tmp_path, monkeypatch, stale):
+    f = target_fixture(
+        tmp_path,
+        monkeypatch,
+        target_layer=1,
+        attention_factory=attention_factory(monkeypatch, "raw_attention"),
+    )
+    if stale:
+        original = f.observer.after_replay
+
+        def corrupt(desc):
+            f.observer.bank.attention_receipts.fill_(-1)
+            original(desc)
+
+        monkeypatch.setattr(f.observer, "after_replay", corrupt)
+    for epoch in (10, 11, 12):
+        f.run(epoch)
+    path = tmp_path / "rank-0-attention-validity.json"
+    saved = path.read_bytes()
+    data = json.loads(saved)
+    assert data["status"] == ("failed" if stale else "passed")
+    assert len(data["rounds"]) == (1 if stale else 3)
+    assert data["rounds"][0]["target_receipts"][9:] == ([-1] * 12 if stale else [1] * 12)
+    f.run(13)
+    assert path.read_bytes() == saved
+    f.observer.close()
