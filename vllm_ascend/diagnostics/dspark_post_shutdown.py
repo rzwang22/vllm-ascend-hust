@@ -11,11 +11,27 @@ import sys
 import threading
 import time
 import weakref
+from collections import deque
 from itertools import islice
+from types import MappingProxyType
 
 MAX_OBJECTS = 64
 MAX_GRAPHS = 7
 MAX_EVENTS = 128
+EVENT_BUDGETS = MappingProxyType({"ordinary": 64, "critical": 48, "error": 16})
+CRITICAL_STAGES = (
+    "WorkerProc.shutdown",
+    "shutdown_wrapper",
+    "lifetimes",
+    "multiprocessing.exit_function",
+    "threading.shutdown",
+    "atexit",
+)
+MAX_HISTORY = 16
+MAX_PENDING = 16
+MAX_ERRORS = 8
+MAX_COUNTERS = 16
+MAX_STATE_BYTES = 65536
 MAX_EVENT_BYTES = 16384
 
 
@@ -49,7 +65,17 @@ class PostShutdownTrace:
         self.refs = {}
         self.objects = {}
         self.count = self.dropped = 0
-        self.max_events, self.max_event_bytes = MAX_EVENTS, MAX_EVENT_BYTES
+        self.state_path = trace.directory / f"{trace.prefix}-lifetimes-state.json"
+        self.temp_path = str(self.state_path) + ".tmp"
+        self.budgets = dict(EVENT_BUDGETS)
+        self.written = dict.fromkeys(EVENT_BUDGETS, 0)
+        self.truncated = dict.fromkeys(EVENT_BUDGETS, 0)
+        self.history = deque(maxlen=MAX_HISTORY)
+        self.pending = {}
+        self.errors = []
+        self.counters = {}
+        self.overflow = {"pending": 0, "errors": 0, "counter_keys": 0, "unpaired_returns": 0}
+        self.max_event_bytes = MAX_EVENT_BYTES
         self.lock = threading.Lock()
         self.patches = []
         self.armed = False
@@ -61,20 +87,20 @@ class PostShutdownTrace:
         self.wall_clock = time.time_ns
         self.finalizing = sys.is_finalizing
         self.ident = threading.get_ident
+        self.open_fd, self.close_fd, self.replace = os.open, os.close, os.replace
 
-    def record(self, stage, event, **fields):
+    def record(self, stage, event, *, call_id=None, **fields):
         # GC/weak callbacks may interrupt this writer on the SAME thread. Never
         # wait for our lock or recursively log an observer failure.
         if not self.lock.acquire(blocking=False):
             self.dropped += 1
-            return
+            return None
         try:
-            if self.count >= self.max_events:
-                return
             self.count += 1
             data = {
                 **self.identity,
                 "seq": self.count,
+                "call_id": self.count if event in ("begin", "start") else call_id,
                 "monotonic_ns": self.clock(),
                 "unix_ns": self.wall_clock(),
                 "thread_id": self.ident(),
@@ -86,17 +112,94 @@ class PostShutdownTrace:
                 "recording_error": self.recording_error,
                 **fields,
             }
-            if self.count == self.max_events:
-                data.update(stage="coverage", event="event_limit_reached")
-            payload = (self.dumps(data, allow_nan=False) + "\n").encode()
-            if len(payload) > self.max_event_bytes:
-                raise ValueError("Lifetime receipt exceeds byte budget")
-            if self.write(self.fd, payload) != len(payload):
-                raise OSError("Partial lifetime receipt write")
+            self.update_state(data, call_id)
+            repeated = stage == "multiprocessing.finalizer" or stage.startswith("gc.callback.")
+            category = "error" if event == "error" else "critical" if stage in CRITICAL_STAGES else "ordinary"
+            if not repeated or event == "error":
+                used, limit = self.written[category], self.budgets[category]
+                if used < limit:
+                    self.written[category] += 1
+                    line = data
+                    if used == limit - 1:
+                        line = data | {"stage": "coverage", "event": "event_limit_reached", "category": category}
+                        self.truncated[category] += 1
+                    self.emit(self.fd, line, self.max_event_bytes)
+                else:
+                    self.truncated[category] += 1
+            # Repeated finalizers/GC never spend critical append capacity. The
+            # atomic fixed-size snapshot holds their active calls and history.
+            self.save_state(data)
+            return data["seq"]
         except Exception as exc:
             self.recording_error = f"{type(exc).__name__}: {exc}"
+            return None
         finally:
             self.lock.release()
+
+    def update_state(self, data, call_id):
+        compact = {k: v for k, v in data.items() if k not in (*self.identity, "alive")}
+        self.history.append(compact)
+        key = data["stage"] + ":" + str(data.get("callback", ""))[:256]
+        if key not in self.counters and len(self.counters) >= MAX_COUNTERS:
+            self.overflow["counter_keys"] += 1
+            key = "other"
+        counts = self.counters.setdefault(key, {"begin": 0, "returned": 0, "error": 0, "other": 0})
+        event = data["event"]
+        counts[event if event in counts else "other"] += 1
+        if event in ("begin", "start"):
+            if len(self.pending) < MAX_PENDING:
+                self.pending[data["seq"]] = compact
+            else:
+                self.overflow["pending"] += 1
+        elif event in ("returned", "stop", "error"):
+            if event == "stop":
+                # GC callbacks carry generation/thread identity, no bound resource.
+                call_id = next(
+                    (
+                        k
+                        for k, v in self.pending.items()
+                        if v["stage"] == data["stage"] and v["thread_id"] == data["thread_id"]
+                    ),
+                    None,
+                )
+            if self.pending.pop(call_id, None) is None:
+                self.overflow["unpaired_returns"] += 1
+        if event == "error":
+            if len(self.errors) < MAX_ERRORS:
+                self.errors.append(compact)
+            else:
+                self.overflow["errors"] += 1
+
+    def emit(self, fd, data, limit):
+        payload = (self.dumps(data, allow_nan=False) + "\n").encode()
+        if len(payload) > limit:
+            raise ValueError("Lifetime receipt exceeds byte budget")
+        if self.write(fd, payload) != len(payload):
+            raise OSError("Partial lifetime receipt write")
+
+    def save_state(self, latest):
+        state = {
+            **self.identity,
+            "last_seq": self.count,
+            "latest": latest,
+            "pending_calls": list(self.pending.values()),
+            "history": list(self.history),
+            "first_errors": self.errors,
+            "counts": self.counters,
+            "overflow": self.overflow,
+            "append_written": self.written,
+            "append_truncated": self.truncated,
+            "history_overwritten": max(0, self.count - MAX_HISTORY),
+            "dropped_reentrant_events": self.dropped,
+            "recording_error": self.recording_error,
+            "process_exit": "UNAVAILABLE: this is a worker receipt, not a parent wait result",
+        }
+        fd = self.open_fd(self.temp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            self.emit(fd, state, MAX_STATE_BYTES)
+        finally:
+            self.close_fd(fd)
+        self.replace(self.temp_path, self.state_path)
 
     def watch(self, label, obj):
         if len(self.objects) >= MAX_OBJECTS:
@@ -163,24 +266,24 @@ class PostShutdownTrace:
             if stage == "multiprocessing.finalizer":
                 callback = stored(args[0], "_callback")
                 detail = {
-                    "callback": f"{getattr(callback, '__module__', '')}.{getattr(callback, '__qualname__', '')}",
+                    "callback": f"{getattr(callback, '__module__', '')}.{getattr(callback, '__qualname__', '')}"[:256],
                     "key": stored(args[0], "_key"),
                 }
                 del callback  # do not extend callback/resource lifetime
-            self.record(stage, "begin", **detail)
+            call_id = self.record(stage, "begin", **detail)
             try:
                 result = original(*args, **kwargs)
             except BaseException as exc:
-                self.record(stage, "error", error=f"{type(exc).__name__}: {exc}"[:1024], **detail)
+                self.record(stage, "error", call_id=call_id, error=f"{type(exc).__name__}: {exc}"[:1024], **detail)
                 raise
-            self.record(stage, "returned", **detail)
+            self.record(stage, "returned", call_id=call_id, **detail)
             return result
 
         setattr(owner, name, observed)
         self.patches.append((owner, name, original, observed))
 
     def gc_callback(self, phase, info):
-        self.record("gc.callback", phase, gc_info=dict(info))
+        self.record(f"gc.callback.{info.get('generation', 'unknown')}", phase, gc_info=dict(info))
 
     def at_exit(self):
         self.record("atexit", "marker")  # one callback, not completion of all atexit handlers

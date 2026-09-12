@@ -92,6 +92,7 @@ def command(args, batch, root):
                 else []
             ),
             *(["--profile-worker-exit"] if getattr(args, "profile_worker_exit", False) else []),
+            *(["--profile-target-attention"] if getattr(args, "profile_target_attention", False) else []),
             "--profile-contexts",
             *map(str, args.profile_contexts),
             "--profile-output-tokens",
@@ -295,12 +296,17 @@ def main(argv=None):
     )
     parser.add_argument("--profile-stop-after-point", default="ctx128-n4-t12-skewed")
     parser.add_argument("--profile-target-layer", type=int, help="Opt-in local target-boundaries decoder index")
+    parser.add_argument("--profile-target-attention", action="store_true", help="Opt-in selected SWA attention detail")
     parser.add_argument(
         "--profile-worker-exit", action="store_true", help="Opt-in exit-only steps and pre-escalation stacks"
     )
     args = parser.parse_args(argv)
     if args.profile_worker_exit and args.profile_experiment != "target-boundaries":
         parser.error("--profile-worker-exit requires target-boundaries")
+    if args.profile_target_attention and (
+        args.profile_experiment != "target-boundaries" or args.profile_target_layer is None
+    ):
+        parser.error("--profile-target-attention requires target-boundaries and --profile-target-layer")
     if args.profile_target_layer is not None and (
         args.profile_experiment != "target-boundaries" or args.profile_target_layer < 0
     ):

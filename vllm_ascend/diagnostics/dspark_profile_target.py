@@ -6,6 +6,7 @@ from collections import Counter
 
 import torch
 
+from vllm_ascend.diagnostics.dspark_profile_attention import ATTENTION_STAGES, STATE_COLUMNS, install_attention_probe
 from vllm_ascend.diagnostics.dspark_profile_auxiliary import AuxiliaryCapture, AuxiliaryProfileObservation
 from vllm_ascend.diagnostics.dspark_profile_observation import EPOCH_FIELDS
 
@@ -27,7 +28,17 @@ class TargetBoundaryFlags:
     """
 
     def __init__(
-        self, *, sizes, auxiliary_layers, start_layer, end_layer, hidden_size, hc_mult, device, target_layer=None
+        self,
+        *,
+        sizes,
+        auxiliary_layers,
+        start_layer,
+        end_layer,
+        hidden_size,
+        hc_mult,
+        device,
+        target_layer=None,
+        attention=False,
     ):
         if (
             not sizes
@@ -41,6 +52,9 @@ class TargetBoundaryFlags:
         if target_layer is not None and (type(target_layer) is not int or not start_layer <= target_layer < end_layer):
             raise ValueError("Target detail layer must be a zero-based decoder index within the target model")
         self.target_layer = target_layer
+        if attention and target_layer is None:
+            raise ValueError("Attention detail requires an explicit target layer")
+        self.attention_probe = None
         # Keep the original broad plan when no detail layer is requested.
         # A local plan replaces its distant cuts, while AuxiliaryCapture still
         # observes all configured raw/persistent/consumed auxiliary outputs.
@@ -57,6 +71,9 @@ class TargetBoundaryFlags:
             + ((f"layer.{anchor}.input",) if self.observe_layer_input else ())
             + tuple(f"layer.{anchor}.{stage}" for stage in DETAILED_BOUNDARIES)
         )
+        self.outer_names = self.names
+        if attention:
+            self.names += tuple(f"layer.{anchor}.attention.{stage}" for stage in ATTENTION_STAGES)
         if len(self.names) > MAX_TARGET_BOUNDARIES:
             raise ValueError("Target diagnostic boundary budget exceeded")
         self.max_tokens = max(sizes)
@@ -81,7 +98,10 @@ class TargetBoundaryFlags:
 
     @property
     def allocated_bytes(self):
-        return sum(x.numel() * x.element_size() for x in (self.flags, self.receipts, self.epoch_input))
+        values = (self.flags, self.receipts, self.epoch_input)
+        if self.attention_probe is not None:
+            values += (self.attention_probe.state,)
+        return sum(x.numel() * x.element_size() for x in values)
 
 
 def install_target_boundaries(model, config):
@@ -107,10 +127,13 @@ def install_target_boundaries(model, config):
         hc_mult=model.hc_mult,
         device=model.device,
         target_layer=additional["dspark_profile_observation"].get("target_layer"),
+        attention=additional["dspark_profile_observation"].get("attention", False),
     )
     model._dspark_layer_snapshots = bank
     for index in bank.layers:
         model.layers[index]._dspark_layer_snapshots = bank
+    if additional["dspark_profile_observation"].get("attention", False):
+        install_attention_probe(bank, model, bank.target_layer)
 
 
 class TargetCapture(AuxiliaryCapture):
@@ -158,6 +181,8 @@ class TargetProfileObservation(AuxiliaryProfileObservation):
         # cannot change this execution's packet. No host wait at this boundary.
         self.integer("target_internal.flags", self.bank.flags[:, : desc.num_tokens])
         self.integer("target_internal.receipts", self.bank.receipts)
+        if self.bank.attention_probe is not None:
+            self.integer("target_internal.attention_state", self.bank.attention_probe.state[: desc.num_tokens])
 
     def complete_record(self, record, pending):
         device = record["device_integers"]
@@ -169,6 +194,11 @@ class TargetProfileObservation(AuxiliaryProfileObservation):
             and receipts == [record["execution"]] * len(self.bank.names)
             and len(flags) == len(self.bank.names) * (capacity or 0) * 2
         )
+        if self.bank.attention_probe is not None:
+            fresh = fresh and (
+                len(device.get("target_internal.attention_state", [])) == (capacity or 0) * len(STATE_COLUMNS)
+                and capacity in self.bank.attention_probe.routes
+            )
         if capacity is not None and not fresh:
             self.recording_error = "Target internal flags missing/stale; no complete replay receipt"
         boundaries = []
@@ -185,7 +215,7 @@ class TargetProfileObservation(AuxiliaryProfileObservation):
         brackets = []
         for row in range(record["target_rows"] if fresh else 0):
             last = None
-            for boundary in boundaries:
+            for boundary in (b for b in boundaries if b["name"] in self.bank.outer_names):
                 value = boundary["rows"][row]
                 if value["nan"] or value["inf"]:
                     brackets.append(
@@ -200,9 +230,37 @@ class TargetProfileObservation(AuxiliaryProfileObservation):
             "metadata_fields": pending.get("target_metadata_fields"),
             "root_cause": "UNKNOWN",
         }
+        if self.bank.attention_probe is not None:
+            probe = self.bank.attention_probe
+            state = device.get("target_internal.attention_state", [])
+            attention_rows = []
+            positions = device.get("target.positions", [])
+            if fresh:
+                for row, i in enumerate(range(0, len(state), len(STATE_COLUMNS))):
+                    entry = dict(zip(STATE_COLUMNS, state[i : i + len(STATE_COLUMNS)]))
+                    req = entry["request_row"]
+                    entry["row"] = row
+                    entry["request_id"] = record["request_ids"][req] if 0 <= req < len(record["request_ids"]) else None
+                    entry["valid_target_row"] = row < record["target_rows"]
+                    entry["position_matches_target"] = (
+                        entry["position"] == positions[row] if row < len(positions) else None
+                    )
+                    entry["window_range_valid"] = (
+                        entry["invalid_window_indices"] == 0 if entry["valid_target_row"] else None
+                    )
+                    attention_rows.append(entry)
+            record["target_internal"]["attention"] = {
+                "route": probe.routes.get(capacity),
+                "state_columns": STATE_COLUMNS,
+                "rows": attention_rows,
+                "boundaries": [b for b in boundaries if b["name"] not in self.bank.outer_names],
+                "coverage": record["target_internal"]["coverage"],
+                "scope": "parallel Q/KV inputs and a sequential output path; not one causal boundary chain",
+            }
         self.target_counts[record["target_internal"]["coverage"]] += 1
-        self.target_counts["nonfinite_rounds"] += bool(brackets)
-        if brackets and "nonfinite" not in self.target_latches:
+        nonfinite = any(v["nan"] or v["inf"] for b in boundaries for v in b["rows"] if v["row"] < record["target_rows"])
+        self.target_counts["nonfinite_rounds"] += nonfinite
+        if nonfinite and "nonfinite" not in self.target_latches:
             self.write("target-first-nonfinite", self.snapshot(), exclusive=True)
             self.target_latches.add("nonfinite")
 
@@ -236,6 +294,7 @@ class TargetProfileObservation(AuxiliaryProfileObservation):
                 "enabled": True,
                 "boundary_order": self.capture.bank.names,
                 "target_layer": self.capture.bank.target_layer,
+                "attention_enabled": self.capture.bank.attention_probe is not None,
                 "bank_bytes": self.capture.bank.allocated_bytes,
                 "counts": dict(self.target_counts),
                 "root_cause": "UNKNOWN",

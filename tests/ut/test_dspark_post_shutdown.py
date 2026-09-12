@@ -165,8 +165,8 @@ if __name__=='__main__':
         p.join(timeout=2)
         if p.is_alive():
             rows=[json.loads(x) for x in (Path(sys.argv[2])/'test-lifetimes.jsonl').read_text().splitlines()]
-            assert any(r['stage']=='multiprocessing.finalizer' and r['event']=='begin' for r in rows)
-            assert not any(r['stage']=='multiprocessing.finalizer' and r['event']=='returned' for r in rows)
+            state=json.loads((Path(sys.argv[2])/'test-lifetimes-state.json').read_text())
+            assert any(r['stage']=='multiprocessing.finalizer' for r in state['pending_calls'])
             (Path(sys.argv[2])/'before-signal.json').write_text(json.dumps({'raw_exitcode':p.exitcode,'rows':len(rows)}))
     finally:
         if p.is_alive(): p.terminate();p.join(timeout=2)
@@ -196,3 +196,77 @@ if __name__=='__main__':
             # our wrapper preserves it, it does not invent a new process code.
             assert "fixture finalizer error" in result.stderr
             assert any(r["stage"] == "multiprocessing.finalizer" and r["event"] == "error" for r in rows)
+
+
+def state(tmp_path):
+    return json.loads((tmp_path / "test-lifetimes-state.json").read_text())
+
+
+def test_finalizer_flood_reserves_exit_gc_threading_atexit_and_pending(trace, tmp_path, module):
+    for _ in range(module.MAX_EVENTS + 10):
+        trace.record("weakref", "cleared")
+    obj = NS(_callback=lambda: None, _key=(1, 2))
+    owner = NS(call=lambda obj: None)
+    trace.wrap(owner, "call", "multiprocessing.finalizer")
+    for _ in range(600):
+        owner.call(obj)
+    assert len(records(tmp_path)) == module.EVENT_BUDGETS["ordinary"]
+    trace.record("multiprocessing.exit_function", "begin")
+    trace.gc_callback("start", {"generation": 2})
+    trace.gc_callback("stop", {"generation": 2, "collected": 0})
+    trace.record("threading.shutdown", "begin")
+    trace.at_exit()
+    d = state(tmp_path)
+    assert d["append_truncated"]["ordinary"] > 0 and d["append_truncated"]["critical"] == 0
+    assert d["history_overwritten"] > 1000
+    assert len(d["history"]) == module.MAX_HISTORY
+    assert {p["stage"] for p in d["pending_calls"]} == {"multiprocessing.exit_function", "threading.shutdown"}
+    assert any(r["stage"] == "atexit" for r in records(tmp_path))
+    assert any(v["begin"] == v["returned"] == 600 for v in d["counts"].values())
+    assert any(k.startswith("gc.callback.2") for k in d["counts"])
+    assert (tmp_path / "test-lifetimes-state.json").stat().st_size < module.MAX_STATE_BYTES
+    assert len(records(tmp_path)) < module.MAX_EVENTS
+    assert d["process_exit"].startswith("UNAVAILABLE")
+
+
+def test_nested_pending_finalizer_error_and_truncation_survive_history(trace, tmp_path, module):
+    obj = NS(_callback=lambda: None, _key=(0, 0))
+    original_error = RuntimeError("original finalizer exception")
+
+    def nested(obj):
+        d = state(tmp_path)
+        assert len(d["pending_calls"]) == 2
+        assert all(p["stage"] == "multiprocessing.finalizer" for p in d["pending_calls"])
+        raise original_error
+
+    inner = NS(call=nested)
+    outer = NS(call=lambda obj: inner.call(obj))
+    trace.wrap(inner, "call", "multiprocessing.finalizer")
+    trace.wrap(outer, "call", "multiprocessing.finalizer")
+    with pytest.raises(RuntimeError) as caught:
+        outer.call(obj)
+    assert caught.value is original_error
+    for _ in range(200):
+        trace.record("weakref", "cleared")
+    d = state(tmp_path)
+    assert not d["pending_calls"] and len(d["first_errors"]) == 2
+    assert all("original finalizer exception" in e["error"] for e in d["first_errors"])
+    # Excess nesting/callback identities is explicitly unavailable, not silently complete.
+    for i in range(50):
+        trace.record("multiprocessing.finalizer", "begin", callback=str(i))
+    d = state(tmp_path)
+    assert len(d["pending_calls"]) == module.MAX_PENDING and d["overflow"]["pending"] > 0
+    assert len(d["counts"]) <= module.MAX_COUNTERS + 1 and d["overflow"]["counter_keys"] > 0
+    assert (tmp_path / "test-lifetimes-state.json").stat().st_size < module.MAX_STATE_BYTES
+
+
+def test_snapshot_replace_failure_preserves_previous_and_original_error(trace, tmp_path):
+    call = trace.record("multiprocessing.exit_function", "begin")
+    previous = (tmp_path / "test-lifetimes-state.json").read_bytes()
+    replace = trace.replace
+    trace.replace = lambda *args: (_ for _ in ()).throw(OSError("replace unavailable"))
+    trace.record("multiprocessing.exit_function", "returned", call_id=call)
+    assert (tmp_path / "test-lifetimes-state.json").read_bytes() == previous
+    trace.replace = replace
+    trace.at_exit()
+    assert "replace unavailable" in state(tmp_path)["recording_error"]

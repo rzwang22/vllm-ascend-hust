@@ -92,7 +92,11 @@ class AscendUnquantizedLinearMethod(UnquantizedLinearMethod):
         x: torch.Tensor,
         bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        return torch.ops.vllm.unquantized_gemm(x, layer.weight, bias)
+        result = torch.ops.vllm.unquantized_gemm(x, layer.weight, bias)
+        probe = getattr(layer, "_dspark_attn_probe", None)
+        if probe is not None:
+            probe.write("wo_b_local", result)
+        return result
 
 
 # TODO(realliujiaxu): Remove this class after linear of vllm supports custom comm group

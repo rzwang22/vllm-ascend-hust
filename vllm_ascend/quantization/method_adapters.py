@@ -159,7 +159,11 @@ class AscendLinearMethod(LinearMethodBase):
                 tp_rank = get_tensor_model_parallel_rank()
         else:
             tp_rank = 0
-        return self.quant_method.apply(layer, x, bias, tp_rank)
+        result = self.quant_method.apply(layer, x, bias, tp_rank)
+        probe = getattr(layer, "_dspark_attn_probe", None)
+        if probe is not None:
+            probe.write("wo_b_local", result)
+        return result
 
 
 class AscendKVCacheMethod(BaseKVCacheMethod):

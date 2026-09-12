@@ -1,5 +1,8 @@
 # DSpark：从 layer 0 → layer 1 区间继续定位
 
+后续 Ftmn8d8I 原始 NaN 再次复现；最新 attention 区间及退出日志容量修正见
+[PROFILE_TARGET_ATTENTION.md](PROFILE_TARGET_ATTENTION.md)。以下保留本归档的历史结论。
+
 后续实际运行 vZQfCb3q 已完成十点，已观测数值边界未复现异常，但 cleanup 失败。
 独立归档审计、清理计时修复及下一次同配置命令见 [PROFILE_CLEANUP.md](PROFILE_CLEANUP.md)。
 下文保留本次局部诊断最初交付时的证据与状态，不代表已有 NaN 生产修复。

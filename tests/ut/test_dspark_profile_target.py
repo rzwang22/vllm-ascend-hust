@@ -21,6 +21,13 @@ from tools.dspark import startup_cost_profile as profile
 
 
 def load_target(monkeypatch):
+    name = "vllm_ascend.diagnostics.dspark_profile_attention"
+    attention_spec = importlib.util.spec_from_file_location(
+        name, ROOT / "vllm_ascend/diagnostics/dspark_profile_attention.py"
+    )
+    attention_module = importlib.util.module_from_spec(attention_spec)
+    monkeypatch.setitem(sys.modules, name, attention_module)
+    attention_spec.loader.exec_module(attention_module)
     auxiliary = load_auxiliary(monkeypatch)
     monkeypatch.setitem(sys.modules, "vllm_ascend.diagnostics.dspark_profile_auxiliary", auxiliary)
     spec = importlib.util.spec_from_file_location(
@@ -32,7 +39,7 @@ def load_target(monkeypatch):
     return module
 
 
-def make_bank(module, sizes=(6, 12, 24, 48, 96, 192, 384), auxiliary=(40, 41, 42), target_layer=None):
+def make_bank(module, sizes=(6, 12, 24, 48, 96, 192, 384), auxiliary=(40, 41, 42), target_layer=None, attention=False):
     return module.TargetBoundaryFlags(
         sizes=sizes,
         auxiliary_layers=auxiliary,
@@ -42,17 +49,22 @@ def make_bank(module, sizes=(6, 12, 24, 48, 96, 192, 384), auxiliary=(40, 41, 42
         hc_mult=2,
         device="cpu",
         target_layer=target_layer,
+        attention=attention,
     )
 
 
-def target_fixture(tmp_path, monkeypatch, *, capacity=12, layer=None, stage="attn_output", target_layer=None):
+def target_fixture(
+    tmp_path, monkeypatch, *, capacity=12, layer=None, stage="attn_output", target_layer=None, attention_factory=None
+):
     module = load_target(monkeypatch)
-    bank = make_bank(module, target_layer=target_layer)
+    bank = make_bank(module, target_layer=target_layer, attention=attention_factory is not None)
     fault_layer = layer if layer is not None else (40 if target_layer is None else target_layer)
     fault = torch.zeros(capacity, 4)
     layers = [decoder(i, bank if i in bank.layers else None, torch.zeros_like(fault)) for i in range(43)]
     leaf = layers[fault_layer]
-    if stage == "attn_input":
+    if attention_factory is not None:
+        leaf.self_attn = attention_factory(bank, fault)
+    elif stage == "attn_input":
         leaf.input_layernorm.forward = lambda x: x + fault
     elif stage == "attn_output":
         leaf.self_attn = lambda *, hidden_states, **kwargs: hidden_states + fault
@@ -215,7 +227,8 @@ def test_layer_option_requires_target_profile(tmp_path, monkeypatch, mode, layer
 
 
 @pytest.mark.parametrize("layer", [None, "0", "1"])
-def test_shell_control_keeps_single_original_prefix(tmp_path, layer):
+@pytest.mark.parametrize("attention", [False, True])
+def test_shell_control_keeps_single_original_prefix(tmp_path, layer, attention):
     # Intercept only the child Bash command; execute the real control script.
     child = tmp_path / "bash"
     child.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
@@ -228,13 +241,16 @@ def test_shell_control_keeps_single_original_prefix(tmp_path, layer):
         "target-boundaries",
     ]
     result = subprocess.run(
-        args + ([] if layer is None else [layer]),
+        args
+        + ([] if layer is None else [layer])
+        + (["--attention", "--worker-exit"] if attention and layer is not None else []),
         env=dict(os.environ, PATH=str(tmp_path)),
         capture_output=True,
         text=True,
         check=True,
     )
     cmd = result.stdout.splitlines()
+    assert ("--profile-target-attention" in cmd) == (attention and layer is not None)
     assert cmd[cmd.index("--batches") + 1] == "64"
     assert cmd[cmd.index("--profile-stop-after-point") + 1] == "ctx128-n4-t12-skewed"
     assert cmd[cmd.index("--profile-output-tokens") + 1] == "512"

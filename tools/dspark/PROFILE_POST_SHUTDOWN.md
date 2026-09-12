@@ -1,5 +1,8 @@
 # DSpark：显式 shutdown 返回之后的退出审计
 
+后续 Ftmn8d8I 原始 NaN 再次复现；最新 attention 区间及退出日志容量修正见
+[PROFILE_TARGET_ATTENTION.md](PROFILE_TARGET_ATTENTION.md)。以下保留本归档的历史结论。
+
 本轮为**诊断补充**。生成完成、数值未复现、显式清理返回、进程退出分别判定。
 没有生产退出修复，也没有 NaN 修复；两者根因均保留 **UNKNOWN**，新 NPU 复验 **PENDING**。
 没有连接服务器、修改 Core/custom op、模型/attention/confidence、GC、资源释放次序或超时。

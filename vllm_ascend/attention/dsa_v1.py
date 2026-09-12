@@ -2055,6 +2055,9 @@ class AscendDSAImpl(DSAAttentionImpl):
                 batch_split_factor=1,
             )
             o_proj_input = o_proj_input.reshape(num_tokens, -1)
+            probe = getattr(self, "_dspark_attn_probe", None)
+            if probe is not None:
+                probe.write("wo_a", o_proj_input)
             output[...] = self.wo_b(o_proj_input)
         return output
 
@@ -2124,6 +2127,10 @@ class AscendDSAImpl(DSAAttentionImpl):
             partial_slice=[self.nope_head_dim, self.head_dim],
         )
 
+        probe = getattr(self, "_dspark_attn_probe", None)
+        if probe is not None:
+            probe.write("inverse_rope", o_proj_input)
+
         # o
         self._forward_o_proj(o_proj_input, output)
 
@@ -2141,6 +2148,7 @@ class AscendDSAImpl(DSAAttentionImpl):
         Each stream's data is self-contained; no cross-stream sync is needed between blocks.
         Only the tail wait_stream ensures scatter is complete.
         """
+        probe = getattr(self, "_dspark_attn_probe", None) if not is_prefill else None
         main_stream = torch.npu.current_stream()
         aux_stream = dsv4_dsa_overlap_stream()
 
@@ -2189,6 +2197,8 @@ class AscendDSAImpl(DSAAttentionImpl):
             kv = self.kv_norm(kv)
             assert self.rope_head_dim is not None
             kv = kv.view(-1, 1, self.nope_head_dim + self.rope_head_dim)
+            if probe is not None:
+                probe.write("kv_normalized", kv)
             torch.ops._C_ascend.inplace_partial_rotary_mul(
                 kv.unsqueeze(1),
                 cos,
@@ -2196,6 +2206,8 @@ class AscendDSAImpl(DSAAttentionImpl):
                 rotary_mode="interleave",
                 partial_slice=[self.nope_head_dim, self.head_dim],
             )
+            if probe is not None:
+                probe.write("kv_rope", kv)
             DeviceOperator.dsa_kv_compress_scatter(swa_kv_cache, kv, slot_mapping)
 
         if is_prefill:
@@ -2216,6 +2228,8 @@ class AscendDSAImpl(DSAAttentionImpl):
         main_stream.wait_stream(aux_stream)
 
         q = DeviceOperator.apply_dsa_q_rms(q, self.eps, self.q_norm_without_weight)
+        if probe is not None:
+            probe.write("q_normalized", q)
         torch.ops._C_ascend.inplace_partial_rotary_mul(
             q.unsqueeze(1),
             cos,
@@ -2224,6 +2238,8 @@ class AscendDSAImpl(DSAAttentionImpl):
             partial_slice=[self.nope_head_dim, self.head_dim],
         )
 
+        if probe is not None:
+            probe.write("q_rope", q)
         return q, qr, qr_pertoken_scale
 
     def _forward_prefill(
@@ -2587,6 +2603,9 @@ class AscendDSAImpl(DSAAttentionImpl):
         sin = common_decode_metadata.sin[layer_name]
         actual_seq_lengths_query = common_decode_metadata.query_start_loc
         actual_seq_lengths_key = common_decode_metadata.seq_lens
+        probe = getattr(self, "_dspark_attn_probe", None)
+        if probe is not None:
+            probe.inputs(self, layer_name, hidden_states, swa_kv_cache, swa_decode_metadata)
 
         if self.validate_dspark_sharedkv_contract and not swa_decode_metadata.sharedkv_contract_validated:
             assert swa_decode_metadata.slot_mapping is not None
@@ -2659,6 +2678,8 @@ class AscendDSAImpl(DSAAttentionImpl):
                 qr_pertoken_scale = None
 
             q = DeviceOperator.apply_dsa_q_rms(q, self.eps, self.q_norm_without_weight)
+            if probe is not None:
+                probe.write("q_normalized", q)
 
             torch.ops._C_ascend.inplace_partial_rotary_mul(
                 q.unsqueeze(1),
@@ -2667,6 +2688,9 @@ class AscendDSAImpl(DSAAttentionImpl):
                 rotary_mode="interleave",
                 partial_slice=[self.nope_head_dim, self.head_dim],
             )
+
+            if probe is not None:
+                probe.write("q_rope", q)
 
             # win kv & tok_dis
             if share_hs_quant:
@@ -2683,6 +2707,8 @@ class AscendDSAImpl(DSAAttentionImpl):
             kv = self.kv_norm(kv)
             assert self.rope_head_dim is not None
             kv = kv.view(-1, 1, self.nope_head_dim + self.rope_head_dim)
+            if probe is not None:
+                probe.write("kv_normalized", kv)
 
             torch.ops._C_ascend.inplace_partial_rotary_mul(
                 kv.unsqueeze(1),
@@ -2691,6 +2717,9 @@ class AscendDSAImpl(DSAAttentionImpl):
                 rotary_mode="interleave",
                 partial_slice=[self.nope_head_dim, self.head_dim],
             )
+
+            if probe is not None:
+                probe.write("kv_rope", kv)
 
             # swa exec kv
             DeviceOperator.dsa_kv_compress_scatter(swa_kv_cache, kv, swa_decode_metadata.slot_mapping)
@@ -2811,6 +2840,8 @@ class AscendDSAImpl(DSAAttentionImpl):
             if self.compress_ratio == 4 and self.use_index_cache:
                 self._update_indexcache_topk_indices(compress_topk_idxs, offset=0)
 
+        if probe is not None:
+            probe.window(swa_kv_cache, swa_decode_metadata, hidden_states.shape[0], self.window_size)
         attn_op = DeviceOperator.get_dsa_sparse_attn_op()
         extra_attn_kwargs: dict = DeviceOperator.get_dsa_sparse_attn_base_kwargs()
         if self.validate_dspark_sharedkv_contract:
@@ -2883,6 +2914,8 @@ class AscendDSAImpl(DSAAttentionImpl):
                 layout_kv="PA_ND",
                 **extra_attn_kwargs,
             )[0]
+        if probe is not None:
+            probe.write("raw_attention", attn_output)
         return attn_output
 
     def _indexer_qkv_prepare(

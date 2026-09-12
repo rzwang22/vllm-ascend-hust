@@ -436,7 +436,11 @@ def diagnostic_points(points, stop):
     return points[: indices[0] + 1]  # keep every predecessor in the same engine
 
 
-def profile_engine_kwargs(parsed, directory, diagnostic, experiment=None, target_layer=None, worker_exit=False):
+def profile_engine_kwargs(
+    parsed, directory, diagnostic, experiment=None, target_layer=None, worker_exit=False, attention=False
+):
+    if attention and (experiment != "target-boundaries" or target_layer is None):
+        raise ValueError("Attention detail requires target-boundaries and target_layer")
     if worker_exit and experiment != "target-boundaries":
         raise ValueError("Worker exit tracing requires target-boundaries")
     if target_layer is not None and (
@@ -471,6 +475,8 @@ def profile_engine_kwargs(parsed, directory, diagnostic, experiment=None, target
         }
         if target_layer is not None:
             kwargs["additional_config"]["dspark_profile_observation"]["target_layer"] = target_layer
+        if attention:
+            kwargs["additional_config"]["dspark_profile_observation"]["attention"] = True
     if experiment in (
         "metadata-only",
         "numeric-boundaries",
@@ -509,6 +515,7 @@ def run(args):
                 "performance_eligible": False,
                 "experiment": experiment or "full-diagnostic",
                 "target_layer": target_layer,
+                "target_attention": getattr(args, "profile_target_attention", False),
                 "worker_exit_trace": getattr(args, "profile_worker_exit", False),
                 "status": "running",
                 "root_cause": "ROOT_CAUSE_NOT_YET_PROVEN",
@@ -559,6 +566,7 @@ def run(args):
                 experiment,
                 target_layer,
                 getattr(args, "profile_worker_exit", False),
+                getattr(args, "profile_target_attention", False),
             ),
             parsed,
         )
