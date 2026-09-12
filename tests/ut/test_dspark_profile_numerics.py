@@ -305,7 +305,8 @@ def test_cpu_seq_lens_and_id_transition_survive_stage_ring_eviction(tmp_path):
     observer.close()
 
 
-def test_server_entry_invokes_only_original_b64_prefix_with_numeric_mode(tmp_path):
+@pytest.mark.parametrize("mode", ["numeric-boundaries", "upstream-boundaries"])
+def test_server_entry_invokes_only_original_b64_prefix_with_numeric_mode(tmp_path, mode):
     # Execute the real shell entry but replace its child bash with an argv
     # recorder. No server path, model load or NPU access is attempted on CPU.
     child = tmp_path / "bash"
@@ -317,7 +318,7 @@ def test_server_entry_invokes_only_original_b64_prefix_with_numeric_mode(tmp_pat
             str(ROOT / "tools/dspark/run_dspark_profile_control.sh"),
             "test-sha",
             "manifest",
-            "numeric-boundaries",
+            mode,
         ],
         env={"PATH": str(tmp_path)},
         capture_output=True,
@@ -335,7 +336,7 @@ def test_server_entry_invokes_only_original_b64_prefix_with_numeric_mode(tmp_pat
         "--num-prompts",
         "400",
         "--profile-experiment",
-        "numeric-boundaries",
+        mode,
         "--profile-stop-after-point",
         "ctx128-n4-t12-skewed",
         "--capture-sizes",

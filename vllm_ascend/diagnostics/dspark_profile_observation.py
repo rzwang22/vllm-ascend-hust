@@ -25,6 +25,8 @@ import torch
 RING_RECORDS = 128
 NUMERIC_ROUNDS = 3
 TRANSITION_RECORDS = 16
+NUMERIC_MODES = ("numeric-boundaries", "upstream-boundaries")
+METADATA_MODES = ("metadata-only", *NUMERIC_MODES)
 MAX_FIELDS = 128
 MAX_DESCRIPTOR_NODES = 512
 EPOCH_FIELDS = (
@@ -130,7 +132,7 @@ class ProfileObservation:
                 "Profile observation requires an isolated specified-length engine without full diagnostics"
             )
         self.mode = options["mode"]
-        if self.mode not in ("metadata-only", "context-kv-sync", "numeric-boundaries"):
+        if self.mode not in (*METADATA_MODES, "context-kv-sync"):
             raise ValueError("Unsupported profile observation mode")
         self.runner = runner
         self.directory = Path(options["directory"])
@@ -165,7 +167,7 @@ class ProfileObservation:
         self.draft_seq_lens = None
         spec = runner.speculator
         try:
-            if self.mode in ("metadata-only", "numeric-boundaries"):
+            if self.mode in METADATA_MODES:
                 self.wrap(runner, "execute_model", "target_execute")
                 self.wrap(runner.cudagraph_manager, "run_fullgraph", "target_full")
                 self.wrap(spec, "prepare_proposal_inputs", "proposal_prepare")
@@ -197,9 +199,9 @@ class ProfileObservation:
                 self.batch_current = True
             self.record(stage + ".enter", args=args, kwargs=kwargs)
             try:
-                if self.mode == "numeric-boundaries" and stage == "markov":
+                if self.mode in NUMERIC_MODES and stage == "markov":
                     self.numeric_context = args[0] if args else kwargs["proposal_inputs"]
-                if self.mode == "numeric-boundaries" and stage == "base_logits":
+                if self.mode in NUMERIC_MODES and stage == "base_logits":
                     result = self.observe_logits(original, args, kwargs)
                 else:
                     result = original(*args, **kwargs)
@@ -284,9 +286,7 @@ class ProfileObservation:
             # ONE blocking compact D2H per completed head, no wait at hidden.
             # Even if Markov's existing device assertion kills the worker, the
             # host record and first-nonfinite file exist before control returns.
-            self.numeric_transfers += 1
-            host = flags.to(device="cpu", non_blocking=False).tolist()
-            self.numeric_transfers_completed += 1
+            host = self.transfer_numeric(flags)
             rows = []
             for row, values in enumerate(host):
                 request_row, position = divmod(row, identity["num_speculative_tokens"])
@@ -334,6 +334,12 @@ class ProfileObservation:
                 self.first_nonfinite = True
         except Exception as error:
             self.recording_error = f"numeric save: {type(error).__name__}: {error}"
+
+    def transfer_numeric(self, flags):
+        self.numeric_transfers += 1
+        host = flags.to(device="cpu", non_blocking=False).tolist()
+        self.numeric_transfers_completed += 1
+        return host
 
     def retain_transition(self, stage, batch, spec):
         """Keep CPU layout changes outside the ordinary per-stage ring."""
@@ -398,7 +404,7 @@ class ProfileObservation:
         return result
 
     def record(self, stage, **payload):
-        if self.mode not in ("metadata-only", "numeric-boundaries"):
+        if self.mode not in METADATA_MODES:
             return
         try:
             spec = self.runner.speculator
@@ -491,7 +497,7 @@ class ProfileObservation:
             "transitions_seen": self.transition_count,
             "transitions_dropped": max(0, self.transition_count - TRANSITION_RECORDS),
             "numeric": {
-                "enabled": self.mode == "numeric-boundaries",
+                "enabled": self.mode in NUMERIC_MODES,
                 "history_capacity": NUMERIC_ROUNDS,
                 "rounds": list(self.numeric_records),
                 "compact_host_transfers": self.numeric_transfers,
@@ -505,7 +511,7 @@ class ProfileObservation:
             },
             "device_values": (
                 "only per-candidate NaN/Inf flags at hidden/head boundaries"
-                if self.mode == "numeric-boundaries"
+                if self.mode in NUMERIC_MODES
                 else "unavailable; no numeric checks or device copies"
             ),
             "sync": {

@@ -1,0 +1,1443 @@
+{
+  "archive": "dspark-large-batch.4T8j76eT-evidence.tar.gz",
+  "sha256": "9eedf838b7dd3a6347f4d11815ead523a02d3a9a3a11057ca6b5fae8cb27939f",
+  "members": 80,
+  "expanded_bytes": 116463351,
+  "plugin_sha": "7e29173585cd07238cc2b18c3e70fb485b365b69",
+  "core_sha": "897306c43bf800e2480cb5c0f3e2da408d85a2fd",
+  "scope": "Independent offline read of archive; no new NPU execution",
+  "focused_server_passed": 826,
+  "ranks": [
+    {
+      "rank": 0,
+      "source_member": "runs/b64/worker-first-failure/rank-0-first-failure.json",
+      "sha256": "414f4a7b27dbb24550e159e7ebf46a551b9e419a8ecd8ad0b8bca4846be92cf1",
+      "classification_counts": {
+        "both_finite": 97,
+        "hidden_nonfinite": 1
+      },
+      "transfers_completed": 98,
+      "transition_execution": 1796,
+      "transition_pool_before": [
+        61,
+        62,
+        63,
+        60
+      ],
+      "transition_pool_after": [
+        62,
+        61,
+        63
+      ],
+      "transition_selection": {
+        "lengths": {
+          "batch10-1-a3f7a933": 5,
+          "batch10-2-875306bf": 3,
+          "batch10-3-a775c70b": 0
+        },
+        "producer_epochs": {
+          "batch10-1-a3f7a933": 1782,
+          "batch10-2-875306bf": 1782,
+          "batch10-3-a775c70b": 1782
+        },
+        "confidence_epochs": null
+      },
+      "transition_owners": {
+        "batch10-2-875306bf": {
+          "producer_epoch": 1782,
+          "publication_row": 0
+        },
+        "batch10-3-a775c70b": {
+          "producer_epoch": 1782,
+          "publication_row": 1
+        },
+        "batch10-1-a3f7a933": {
+          "producer_epoch": 1782,
+          "publication_row": 2
+        },
+        "batch10-0-ad291a9c": {
+          "producer_epoch": 1782,
+          "publication_row": 3
+        }
+      },
+      "failure": {
+        "stage": "markov",
+        "type": "RuntimeError",
+        "message": "Ascend DSpark Markov base logits contain NaN."
+      },
+      "rounds": [
+        {
+          "execution": 1803,
+          "proposal_epoch": 1790,
+          "request_ids": [
+            "batch10-3-a775c70b",
+            "batch10-2-875306bf",
+            "batch10-1-a3f7a933"
+          ],
+          "classification": "both_finite",
+          "draft_decode_seq_lens": {
+            "proposal_epoch": 1790,
+            "layers": {
+              "mtp.0.self_attn.swa_cache": [
+                226,
+                250,
+                523
+              ],
+              "mtp.1.self_attn.swa_cache": [
+                226,
+                250,
+                523
+              ],
+              "mtp.2.self_attn.swa_cache": [
+                226,
+                250,
+                523
+              ]
+            }
+          },
+          "nan_candidate_rows": [],
+          "target_seq_lens_cpu": [
+            221,
+            245,
+            518
+          ]
+        },
+        {
+          "execution": 1804,
+          "proposal_epoch": 1791,
+          "request_ids": [
+            "batch10-3-a775c70b",
+            "batch10-2-875306bf",
+            "batch10-1-a3f7a933"
+          ],
+          "classification": "both_finite",
+          "draft_decode_seq_lens": {
+            "proposal_epoch": 1791,
+            "layers": {
+              "mtp.0.self_attn.swa_cache": [
+                227,
+                254,
+                529
+              ],
+              "mtp.1.self_attn.swa_cache": [
+                227,
+                254,
+                529
+              ],
+              "mtp.2.self_attn.swa_cache": [
+                227,
+                254,
+                529
+              ]
+            }
+          },
+          "nan_candidate_rows": [],
+          "target_seq_lens_cpu": [
+            222,
+            249,
+            524
+          ]
+        },
+        {
+          "execution": 1805,
+          "proposal_epoch": 1792,
+          "request_ids": [
+            "batch10-3-a775c70b",
+            "batch10-2-875306bf",
+            "batch10-1-a3f7a933"
+          ],
+          "classification": "hidden_nonfinite",
+          "draft_decode_seq_lens": {
+            "proposal_epoch": 1792,
+            "layers": {
+              "mtp.0.self_attn.swa_cache": [
+                228,
+                258,
+                535
+              ],
+              "mtp.1.self_attn.swa_cache": [
+                228,
+                258,
+                535
+              ],
+              "mtp.2.self_attn.swa_cache": [
+                228,
+                258,
+                535
+              ]
+            }
+          },
+          "nan_candidate_rows": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          "target_seq_lens_cpu": [
+            223,
+            253,
+            530
+          ]
+        }
+      ]
+    },
+    {
+      "rank": 1,
+      "source_member": "runs/b64/worker-first-failure/rank-1-first-failure.json",
+      "sha256": "106de0e5973782f952dcfe923b58f3d09bde2dd74e7220eeaab6a04769802b3a",
+      "classification_counts": {
+        "both_finite": 97,
+        "hidden_nonfinite": 1
+      },
+      "transfers_completed": 98,
+      "transition_execution": 1796,
+      "transition_pool_before": [
+        61,
+        62,
+        63,
+        60
+      ],
+      "transition_pool_after": [
+        62,
+        61,
+        63
+      ],
+      "transition_selection": {
+        "lengths": {
+          "batch10-1-a3f7a933": 5,
+          "batch10-2-875306bf": 3,
+          "batch10-3-a775c70b": 0
+        },
+        "producer_epochs": {
+          "batch10-1-a3f7a933": 1782,
+          "batch10-2-875306bf": 1782,
+          "batch10-3-a775c70b": 1782
+        },
+        "confidence_epochs": null
+      },
+      "transition_owners": {
+        "batch10-2-875306bf": {
+          "producer_epoch": 1782,
+          "publication_row": 0
+        },
+        "batch10-3-a775c70b": {
+          "producer_epoch": 1782,
+          "publication_row": 1
+        },
+        "batch10-1-a3f7a933": {
+          "producer_epoch": 1782,
+          "publication_row": 2
+        },
+        "batch10-0-ad291a9c": {
+          "producer_epoch": 1782,
+          "publication_row": 3
+        }
+      },
+      "failure": {
+        "stage": "markov",
+        "type": "RuntimeError",
+        "message": "Ascend DSpark Markov base logits contain NaN."
+      },
+      "rounds": [
+        {
+          "execution": 1803,
+          "proposal_epoch": 1790,
+          "request_ids": [
+            "batch10-3-a775c70b",
+            "batch10-2-875306bf",
+            "batch10-1-a3f7a933"
+          ],
+          "classification": "both_finite",
+          "draft_decode_seq_lens": {
+            "proposal_epoch": 1790,
+            "layers": {
+              "mtp.0.self_attn.swa_cache": [
+                226,
+                250,
+                523
+              ],
+              "mtp.1.self_attn.swa_cache": [
+                226,
+                250,
+                523
+              ],
+              "mtp.2.self_attn.swa_cache": [
+                226,
+                250,
+                523
+              ]
+            }
+          },
+          "nan_candidate_rows": [],
+          "target_seq_lens_cpu": [
+            221,
+            245,
+            518
+          ]
+        },
+        {
+          "execution": 1804,
+          "proposal_epoch": 1791,
+          "request_ids": [
+            "batch10-3-a775c70b",
+            "batch10-2-875306bf",
+            "batch10-1-a3f7a933"
+          ],
+          "classification": "both_finite",
+          "draft_decode_seq_lens": {
+            "proposal_epoch": 1791,
+            "layers": {
+              "mtp.0.self_attn.swa_cache": [
+                227,
+                254,
+                529
+              ],
+              "mtp.1.self_attn.swa_cache": [
+                227,
+                254,
+                529
+              ],
+              "mtp.2.self_attn.swa_cache": [
+                227,
+                254,
+                529
+              ]
+            }
+          },
+          "nan_candidate_rows": [],
+          "target_seq_lens_cpu": [
+            222,
+            249,
+            524
+          ]
+        },
+        {
+          "execution": 1805,
+          "proposal_epoch": 1792,
+          "request_ids": [
+            "batch10-3-a775c70b",
+            "batch10-2-875306bf",
+            "batch10-1-a3f7a933"
+          ],
+          "classification": "hidden_nonfinite",
+          "draft_decode_seq_lens": {
+            "proposal_epoch": 1792,
+            "layers": {
+              "mtp.0.self_attn.swa_cache": [
+                228,
+                258,
+                535
+              ],
+              "mtp.1.self_attn.swa_cache": [
+                228,
+                258,
+                535
+              ],
+              "mtp.2.self_attn.swa_cache": [
+                228,
+                258,
+                535
+              ]
+            }
+          },
+          "nan_candidate_rows": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          "target_seq_lens_cpu": [
+            223,
+            253,
+            530
+          ]
+        }
+      ]
+    },
+    {
+      "rank": 2,
+      "source_member": "runs/b64/worker-first-failure/rank-2-first-failure.json",
+      "sha256": "364c1f59266cfbec714c306d4079a5be6fbfdc62c628a74b97890bea48f1ced4",
+      "classification_counts": {
+        "both_finite": 97,
+        "hidden_nonfinite": 1
+      },
+      "transfers_completed": 98,
+      "transition_execution": 1796,
+      "transition_pool_before": [
+        63,
+        62,
+        61,
+        60
+      ],
+      "transition_pool_after": [
+        62,
+        63,
+        61
+      ],
+      "transition_selection": {
+        "lengths": {
+          "batch10-1-a3f7a933": 5,
+          "batch10-2-875306bf": 3,
+          "batch10-3-a775c70b": 0
+        },
+        "producer_epochs": {
+          "batch10-1-a3f7a933": 1782,
+          "batch10-2-875306bf": 1782,
+          "batch10-3-a775c70b": 1782
+        },
+        "confidence_epochs": null
+      },
+      "transition_owners": {
+        "batch10-2-875306bf": {
+          "producer_epoch": 1782,
+          "publication_row": 0
+        },
+        "batch10-3-a775c70b": {
+          "producer_epoch": 1782,
+          "publication_row": 1
+        },
+        "batch10-1-a3f7a933": {
+          "producer_epoch": 1782,
+          "publication_row": 2
+        },
+        "batch10-0-ad291a9c": {
+          "producer_epoch": 1782,
+          "publication_row": 3
+        }
+      },
+      "failure": {
+        "stage": "markov",
+        "type": "RuntimeError",
+        "message": "Ascend DSpark Markov base logits contain NaN."
+      },
+      "rounds": [
+        {
+          "execution": 1803,
+          "proposal_epoch": 1790,
+          "request_ids": [
+            "batch10-3-a775c70b",
+            "batch10-2-875306bf",
+            "batch10-1-a3f7a933"
+          ],
+          "classification": "both_finite",
+          "draft_decode_seq_lens": {
+            "proposal_epoch": 1790,
+            "layers": {
+              "mtp.0.self_attn.swa_cache": [
+                226,
+                250,
+                523
+              ],
+              "mtp.1.self_attn.swa_cache": [
+                226,
+                250,
+                523
+              ],
+              "mtp.2.self_attn.swa_cache": [
+                226,
+                250,
+                523
+              ]
+            }
+          },
+          "nan_candidate_rows": [],
+          "target_seq_lens_cpu": [
+            221,
+            245,
+            518
+          ]
+        },
+        {
+          "execution": 1804,
+          "proposal_epoch": 1791,
+          "request_ids": [
+            "batch10-3-a775c70b",
+            "batch10-2-875306bf",
+            "batch10-1-a3f7a933"
+          ],
+          "classification": "both_finite",
+          "draft_decode_seq_lens": {
+            "proposal_epoch": 1791,
+            "layers": {
+              "mtp.0.self_attn.swa_cache": [
+                227,
+                254,
+                529
+              ],
+              "mtp.1.self_attn.swa_cache": [
+                227,
+                254,
+                529
+              ],
+              "mtp.2.self_attn.swa_cache": [
+                227,
+                254,
+                529
+              ]
+            }
+          },
+          "nan_candidate_rows": [],
+          "target_seq_lens_cpu": [
+            222,
+            249,
+            524
+          ]
+        },
+        {
+          "execution": 1805,
+          "proposal_epoch": 1792,
+          "request_ids": [
+            "batch10-3-a775c70b",
+            "batch10-2-875306bf",
+            "batch10-1-a3f7a933"
+          ],
+          "classification": "hidden_nonfinite",
+          "draft_decode_seq_lens": {
+            "proposal_epoch": 1792,
+            "layers": {
+              "mtp.0.self_attn.swa_cache": [
+                228,
+                258,
+                535
+              ],
+              "mtp.1.self_attn.swa_cache": [
+                228,
+                258,
+                535
+              ],
+              "mtp.2.self_attn.swa_cache": [
+                228,
+                258,
+                535
+              ]
+            }
+          },
+          "nan_candidate_rows": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          "target_seq_lens_cpu": [
+            223,
+            253,
+            530
+          ]
+        }
+      ]
+    },
+    {
+      "rank": 3,
+      "source_member": "runs/b64/worker-first-failure/rank-3-first-failure.json",
+      "sha256": "265872d37b8e93edbb92c9c4a02745b3836e2eb9be2d250f739cbd4867fa38ff",
+      "classification_counts": {
+        "both_finite": 97,
+        "hidden_nonfinite": 1
+      },
+      "transfers_completed": 98,
+      "transition_execution": 1796,
+      "transition_pool_before": [
+        61,
+        62,
+        63,
+        60
+      ],
+      "transition_pool_after": [
+        62,
+        61,
+        63
+      ],
+      "transition_selection": {
+        "lengths": {
+          "batch10-1-a3f7a933": 5,
+          "batch10-2-875306bf": 3,
+          "batch10-3-a775c70b": 0
+        },
+        "producer_epochs": {
+          "batch10-1-a3f7a933": 1782,
+          "batch10-2-875306bf": 1782,
+          "batch10-3-a775c70b": 1782
+        },
+        "confidence_epochs": null
+      },
+      "transition_owners": {
+        "batch10-2-875306bf": {
+          "producer_epoch": 1782,
+          "publication_row": 0
+        },
+        "batch10-3-a775c70b": {
+          "producer_epoch": 1782,
+          "publication_row": 1
+        },
+        "batch10-1-a3f7a933": {
+          "producer_epoch": 1782,
+          "publication_row": 2
+        },
+        "batch10-0-ad291a9c": {
+          "producer_epoch": 1782,
+          "publication_row": 3
+        }
+      },
+      "failure": {
+        "stage": "markov",
+        "type": "RuntimeError",
+        "message": "Ascend DSpark Markov base logits contain NaN."
+      },
+      "rounds": [
+        {
+          "execution": 1803,
+          "proposal_epoch": 1790,
+          "request_ids": [
+            "batch10-3-a775c70b",
+            "batch10-2-875306bf",
+            "batch10-1-a3f7a933"
+          ],
+          "classification": "both_finite",
+          "draft_decode_seq_lens": {
+            "proposal_epoch": 1790,
+            "layers": {
+              "mtp.0.self_attn.swa_cache": [
+                226,
+                250,
+                523
+              ],
+              "mtp.1.self_attn.swa_cache": [
+                226,
+                250,
+                523
+              ],
+              "mtp.2.self_attn.swa_cache": [
+                226,
+                250,
+                523
+              ]
+            }
+          },
+          "nan_candidate_rows": [],
+          "target_seq_lens_cpu": [
+            221,
+            245,
+            518
+          ]
+        },
+        {
+          "execution": 1804,
+          "proposal_epoch": 1791,
+          "request_ids": [
+            "batch10-3-a775c70b",
+            "batch10-2-875306bf",
+            "batch10-1-a3f7a933"
+          ],
+          "classification": "both_finite",
+          "draft_decode_seq_lens": {
+            "proposal_epoch": 1791,
+            "layers": {
+              "mtp.0.self_attn.swa_cache": [
+                227,
+                254,
+                529
+              ],
+              "mtp.1.self_attn.swa_cache": [
+                227,
+                254,
+                529
+              ],
+              "mtp.2.self_attn.swa_cache": [
+                227,
+                254,
+                529
+              ]
+            }
+          },
+          "nan_candidate_rows": [],
+          "target_seq_lens_cpu": [
+            222,
+            249,
+            524
+          ]
+        },
+        {
+          "execution": 1805,
+          "proposal_epoch": 1792,
+          "request_ids": [
+            "batch10-3-a775c70b",
+            "batch10-2-875306bf",
+            "batch10-1-a3f7a933"
+          ],
+          "classification": "hidden_nonfinite",
+          "draft_decode_seq_lens": {
+            "proposal_epoch": 1792,
+            "layers": {
+              "mtp.0.self_attn.swa_cache": [
+                228,
+                258,
+                535
+              ],
+              "mtp.1.self_attn.swa_cache": [
+                228,
+                258,
+                535
+              ],
+              "mtp.2.self_attn.swa_cache": [
+                228,
+                258,
+                535
+              ]
+            }
+          },
+          "nan_candidate_rows": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          "target_seq_lens_cpu": [
+            223,
+            253,
+            530
+          ]
+        }
+      ]
+    },
+    {
+      "rank": 4,
+      "source_member": "runs/b64/worker-first-failure/rank-4-first-failure.json",
+      "sha256": "0a5c465957556e117dde3cf0f7b76eff9d82a4f11bc3112fb84d285c831e96ea",
+      "classification_counts": {
+        "both_finite": 97,
+        "hidden_nonfinite": 1
+      },
+      "transfers_completed": 98,
+      "transition_execution": 1796,
+      "transition_pool_before": [
+        61,
+        62,
+        63,
+        60
+      ],
+      "transition_pool_after": [
+        62,
+        61,
+        63
+      ],
+      "transition_selection": {
+        "lengths": {
+          "batch10-1-a3f7a933": 5,
+          "batch10-2-875306bf": 3,
+          "batch10-3-a775c70b": 0
+        },
+        "producer_epochs": {
+          "batch10-1-a3f7a933": 1782,
+          "batch10-2-875306bf": 1782,
+          "batch10-3-a775c70b": 1782
+        },
+        "confidence_epochs": null
+      },
+      "transition_owners": {
+        "batch10-2-875306bf": {
+          "producer_epoch": 1782,
+          "publication_row": 0
+        },
+        "batch10-3-a775c70b": {
+          "producer_epoch": 1782,
+          "publication_row": 1
+        },
+        "batch10-1-a3f7a933": {
+          "producer_epoch": 1782,
+          "publication_row": 2
+        },
+        "batch10-0-ad291a9c": {
+          "producer_epoch": 1782,
+          "publication_row": 3
+        }
+      },
+      "failure": {
+        "stage": "markov",
+        "type": "RuntimeError",
+        "message": "Ascend DSpark Markov base logits contain NaN."
+      },
+      "rounds": [
+        {
+          "execution": 1803,
+          "proposal_epoch": 1790,
+          "request_ids": [
+            "batch10-3-a775c70b",
+            "batch10-2-875306bf",
+            "batch10-1-a3f7a933"
+          ],
+          "classification": "both_finite",
+          "draft_decode_seq_lens": {
+            "proposal_epoch": 1790,
+            "layers": {
+              "mtp.0.self_attn.swa_cache": [
+                226,
+                250,
+                523
+              ],
+              "mtp.1.self_attn.swa_cache": [
+                226,
+                250,
+                523
+              ],
+              "mtp.2.self_attn.swa_cache": [
+                226,
+                250,
+                523
+              ]
+            }
+          },
+          "nan_candidate_rows": [],
+          "target_seq_lens_cpu": [
+            221,
+            245,
+            518
+          ]
+        },
+        {
+          "execution": 1804,
+          "proposal_epoch": 1791,
+          "request_ids": [
+            "batch10-3-a775c70b",
+            "batch10-2-875306bf",
+            "batch10-1-a3f7a933"
+          ],
+          "classification": "both_finite",
+          "draft_decode_seq_lens": {
+            "proposal_epoch": 1791,
+            "layers": {
+              "mtp.0.self_attn.swa_cache": [
+                227,
+                254,
+                529
+              ],
+              "mtp.1.self_attn.swa_cache": [
+                227,
+                254,
+                529
+              ],
+              "mtp.2.self_attn.swa_cache": [
+                227,
+                254,
+                529
+              ]
+            }
+          },
+          "nan_candidate_rows": [],
+          "target_seq_lens_cpu": [
+            222,
+            249,
+            524
+          ]
+        },
+        {
+          "execution": 1805,
+          "proposal_epoch": 1792,
+          "request_ids": [
+            "batch10-3-a775c70b",
+            "batch10-2-875306bf",
+            "batch10-1-a3f7a933"
+          ],
+          "classification": "hidden_nonfinite",
+          "draft_decode_seq_lens": {
+            "proposal_epoch": 1792,
+            "layers": {
+              "mtp.0.self_attn.swa_cache": [
+                228,
+                258,
+                535
+              ],
+              "mtp.1.self_attn.swa_cache": [
+                228,
+                258,
+                535
+              ],
+              "mtp.2.self_attn.swa_cache": [
+                228,
+                258,
+                535
+              ]
+            }
+          },
+          "nan_candidate_rows": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          "target_seq_lens_cpu": [
+            223,
+            253,
+            530
+          ]
+        }
+      ]
+    },
+    {
+      "rank": 5,
+      "source_member": "runs/b64/worker-first-failure/rank-5-first-failure.json",
+      "sha256": "04db86e2bb2f3f120c7bc8c1f85bb56ebe02f5422649577511b7ec7999f29d29",
+      "classification_counts": {
+        "both_finite": 97,
+        "hidden_nonfinite": 1
+      },
+      "transfers_completed": 98,
+      "transition_execution": 1796,
+      "transition_pool_before": [
+        63,
+        62,
+        61,
+        60
+      ],
+      "transition_pool_after": [
+        62,
+        63,
+        61
+      ],
+      "transition_selection": {
+        "lengths": {
+          "batch10-1-a3f7a933": 5,
+          "batch10-2-875306bf": 3,
+          "batch10-3-a775c70b": 0
+        },
+        "producer_epochs": {
+          "batch10-1-a3f7a933": 1782,
+          "batch10-2-875306bf": 1782,
+          "batch10-3-a775c70b": 1782
+        },
+        "confidence_epochs": null
+      },
+      "transition_owners": {
+        "batch10-2-875306bf": {
+          "producer_epoch": 1782,
+          "publication_row": 0
+        },
+        "batch10-3-a775c70b": {
+          "producer_epoch": 1782,
+          "publication_row": 1
+        },
+        "batch10-1-a3f7a933": {
+          "producer_epoch": 1782,
+          "publication_row": 2
+        },
+        "batch10-0-ad291a9c": {
+          "producer_epoch": 1782,
+          "publication_row": 3
+        }
+      },
+      "failure": {
+        "stage": "markov",
+        "type": "RuntimeError",
+        "message": "Ascend DSpark Markov base logits contain NaN."
+      },
+      "rounds": [
+        {
+          "execution": 1803,
+          "proposal_epoch": 1790,
+          "request_ids": [
+            "batch10-3-a775c70b",
+            "batch10-2-875306bf",
+            "batch10-1-a3f7a933"
+          ],
+          "classification": "both_finite",
+          "draft_decode_seq_lens": {
+            "proposal_epoch": 1790,
+            "layers": {
+              "mtp.0.self_attn.swa_cache": [
+                226,
+                250,
+                523
+              ],
+              "mtp.1.self_attn.swa_cache": [
+                226,
+                250,
+                523
+              ],
+              "mtp.2.self_attn.swa_cache": [
+                226,
+                250,
+                523
+              ]
+            }
+          },
+          "nan_candidate_rows": [],
+          "target_seq_lens_cpu": [
+            221,
+            245,
+            518
+          ]
+        },
+        {
+          "execution": 1804,
+          "proposal_epoch": 1791,
+          "request_ids": [
+            "batch10-3-a775c70b",
+            "batch10-2-875306bf",
+            "batch10-1-a3f7a933"
+          ],
+          "classification": "both_finite",
+          "draft_decode_seq_lens": {
+            "proposal_epoch": 1791,
+            "layers": {
+              "mtp.0.self_attn.swa_cache": [
+                227,
+                254,
+                529
+              ],
+              "mtp.1.self_attn.swa_cache": [
+                227,
+                254,
+                529
+              ],
+              "mtp.2.self_attn.swa_cache": [
+                227,
+                254,
+                529
+              ]
+            }
+          },
+          "nan_candidate_rows": [],
+          "target_seq_lens_cpu": [
+            222,
+            249,
+            524
+          ]
+        },
+        {
+          "execution": 1805,
+          "proposal_epoch": 1792,
+          "request_ids": [
+            "batch10-3-a775c70b",
+            "batch10-2-875306bf",
+            "batch10-1-a3f7a933"
+          ],
+          "classification": "hidden_nonfinite",
+          "draft_decode_seq_lens": {
+            "proposal_epoch": 1792,
+            "layers": {
+              "mtp.0.self_attn.swa_cache": [
+                228,
+                258,
+                535
+              ],
+              "mtp.1.self_attn.swa_cache": [
+                228,
+                258,
+                535
+              ],
+              "mtp.2.self_attn.swa_cache": [
+                228,
+                258,
+                535
+              ]
+            }
+          },
+          "nan_candidate_rows": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          "target_seq_lens_cpu": [
+            223,
+            253,
+            530
+          ]
+        }
+      ]
+    },
+    {
+      "rank": 6,
+      "source_member": "runs/b64/worker-first-failure/rank-6-first-failure.json",
+      "sha256": "1312b3fde468856256ebb16c26d51032f929486617b1b45649d3606137abf4e9",
+      "classification_counts": {
+        "both_finite": 97,
+        "hidden_nonfinite": 1
+      },
+      "transfers_completed": 98,
+      "transition_execution": 1796,
+      "transition_pool_before": [
+        63,
+        62,
+        61,
+        60
+      ],
+      "transition_pool_after": [
+        62,
+        63,
+        61
+      ],
+      "transition_selection": {
+        "lengths": {
+          "batch10-1-a3f7a933": 5,
+          "batch10-2-875306bf": 3,
+          "batch10-3-a775c70b": 0
+        },
+        "producer_epochs": {
+          "batch10-1-a3f7a933": 1782,
+          "batch10-2-875306bf": 1782,
+          "batch10-3-a775c70b": 1782
+        },
+        "confidence_epochs": null
+      },
+      "transition_owners": {
+        "batch10-2-875306bf": {
+          "producer_epoch": 1782,
+          "publication_row": 0
+        },
+        "batch10-3-a775c70b": {
+          "producer_epoch": 1782,
+          "publication_row": 1
+        },
+        "batch10-1-a3f7a933": {
+          "producer_epoch": 1782,
+          "publication_row": 2
+        },
+        "batch10-0-ad291a9c": {
+          "producer_epoch": 1782,
+          "publication_row": 3
+        }
+      },
+      "failure": {
+        "stage": "markov",
+        "type": "RuntimeError",
+        "message": "Ascend DSpark Markov base logits contain NaN."
+      },
+      "rounds": [
+        {
+          "execution": 1803,
+          "proposal_epoch": 1790,
+          "request_ids": [
+            "batch10-3-a775c70b",
+            "batch10-2-875306bf",
+            "batch10-1-a3f7a933"
+          ],
+          "classification": "both_finite",
+          "draft_decode_seq_lens": {
+            "proposal_epoch": 1790,
+            "layers": {
+              "mtp.0.self_attn.swa_cache": [
+                226,
+                250,
+                523
+              ],
+              "mtp.1.self_attn.swa_cache": [
+                226,
+                250,
+                523
+              ],
+              "mtp.2.self_attn.swa_cache": [
+                226,
+                250,
+                523
+              ]
+            }
+          },
+          "nan_candidate_rows": [],
+          "target_seq_lens_cpu": [
+            221,
+            245,
+            518
+          ]
+        },
+        {
+          "execution": 1804,
+          "proposal_epoch": 1791,
+          "request_ids": [
+            "batch10-3-a775c70b",
+            "batch10-2-875306bf",
+            "batch10-1-a3f7a933"
+          ],
+          "classification": "both_finite",
+          "draft_decode_seq_lens": {
+            "proposal_epoch": 1791,
+            "layers": {
+              "mtp.0.self_attn.swa_cache": [
+                227,
+                254,
+                529
+              ],
+              "mtp.1.self_attn.swa_cache": [
+                227,
+                254,
+                529
+              ],
+              "mtp.2.self_attn.swa_cache": [
+                227,
+                254,
+                529
+              ]
+            }
+          },
+          "nan_candidate_rows": [],
+          "target_seq_lens_cpu": [
+            222,
+            249,
+            524
+          ]
+        },
+        {
+          "execution": 1805,
+          "proposal_epoch": 1792,
+          "request_ids": [
+            "batch10-3-a775c70b",
+            "batch10-2-875306bf",
+            "batch10-1-a3f7a933"
+          ],
+          "classification": "hidden_nonfinite",
+          "draft_decode_seq_lens": {
+            "proposal_epoch": 1792,
+            "layers": {
+              "mtp.0.self_attn.swa_cache": [
+                228,
+                258,
+                535
+              ],
+              "mtp.1.self_attn.swa_cache": [
+                228,
+                258,
+                535
+              ],
+              "mtp.2.self_attn.swa_cache": [
+                228,
+                258,
+                535
+              ]
+            }
+          },
+          "nan_candidate_rows": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          "target_seq_lens_cpu": [
+            223,
+            253,
+            530
+          ]
+        }
+      ]
+    },
+    {
+      "rank": 7,
+      "source_member": "runs/b64/worker-first-failure/rank-7-first-failure.json",
+      "sha256": "d613a2ca8163ca66adc30a66b76d4086cf407ca58a6e7b96e98a3c89fd32825e",
+      "classification_counts": {
+        "both_finite": 97,
+        "hidden_nonfinite": 1
+      },
+      "transfers_completed": 98,
+      "transition_execution": 1796,
+      "transition_pool_before": [
+        61,
+        62,
+        63,
+        60
+      ],
+      "transition_pool_after": [
+        62,
+        61,
+        63
+      ],
+      "transition_selection": {
+        "lengths": {
+          "batch10-1-a3f7a933": 5,
+          "batch10-2-875306bf": 3,
+          "batch10-3-a775c70b": 0
+        },
+        "producer_epochs": {
+          "batch10-1-a3f7a933": 1782,
+          "batch10-2-875306bf": 1782,
+          "batch10-3-a775c70b": 1782
+        },
+        "confidence_epochs": null
+      },
+      "transition_owners": {
+        "batch10-2-875306bf": {
+          "producer_epoch": 1782,
+          "publication_row": 0
+        },
+        "batch10-3-a775c70b": {
+          "producer_epoch": 1782,
+          "publication_row": 1
+        },
+        "batch10-1-a3f7a933": {
+          "producer_epoch": 1782,
+          "publication_row": 2
+        },
+        "batch10-0-ad291a9c": {
+          "producer_epoch": 1782,
+          "publication_row": 3
+        }
+      },
+      "failure": {
+        "stage": "markov",
+        "type": "RuntimeError",
+        "message": "Ascend DSpark Markov base logits contain NaN."
+      },
+      "rounds": [
+        {
+          "execution": 1803,
+          "proposal_epoch": 1790,
+          "request_ids": [
+            "batch10-3-a775c70b",
+            "batch10-2-875306bf",
+            "batch10-1-a3f7a933"
+          ],
+          "classification": "both_finite",
+          "draft_decode_seq_lens": {
+            "proposal_epoch": 1790,
+            "layers": {
+              "mtp.0.self_attn.swa_cache": [
+                226,
+                250,
+                523
+              ],
+              "mtp.1.self_attn.swa_cache": [
+                226,
+                250,
+                523
+              ],
+              "mtp.2.self_attn.swa_cache": [
+                226,
+                250,
+                523
+              ]
+            }
+          },
+          "nan_candidate_rows": [],
+          "target_seq_lens_cpu": [
+            221,
+            245,
+            518
+          ]
+        },
+        {
+          "execution": 1804,
+          "proposal_epoch": 1791,
+          "request_ids": [
+            "batch10-3-a775c70b",
+            "batch10-2-875306bf",
+            "batch10-1-a3f7a933"
+          ],
+          "classification": "both_finite",
+          "draft_decode_seq_lens": {
+            "proposal_epoch": 1791,
+            "layers": {
+              "mtp.0.self_attn.swa_cache": [
+                227,
+                254,
+                529
+              ],
+              "mtp.1.self_attn.swa_cache": [
+                227,
+                254,
+                529
+              ],
+              "mtp.2.self_attn.swa_cache": [
+                227,
+                254,
+                529
+              ]
+            }
+          },
+          "nan_candidate_rows": [],
+          "target_seq_lens_cpu": [
+            222,
+            249,
+            524
+          ]
+        },
+        {
+          "execution": 1805,
+          "proposal_epoch": 1792,
+          "request_ids": [
+            "batch10-3-a775c70b",
+            "batch10-2-875306bf",
+            "batch10-1-a3f7a933"
+          ],
+          "classification": "hidden_nonfinite",
+          "draft_decode_seq_lens": {
+            "proposal_epoch": 1792,
+            "layers": {
+              "mtp.0.self_attn.swa_cache": [
+                228,
+                258,
+                535
+              ],
+              "mtp.1.self_attn.swa_cache": [
+                228,
+                258,
+                535
+              ],
+              "mtp.2.self_attn.swa_cache": [
+                228,
+                258,
+                535
+              ]
+            }
+          },
+          "nan_candidate_rows": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          "target_seq_lens_cpu": [
+            223,
+            253,
+            530
+          ]
+        }
+      ]
+    }
+  ],
+  "retained_points": [
+    {
+      "id": "ctx128-n1-t6-balanced",
+      "sha256": "7f77de350be29dd80594fbe99c91dbac2093bb419a2f829e5bcdb965117e6fa1"
+    },
+    {
+      "id": "ctx128-n1-t6-skewed",
+      "sha256": "a5c265626b87616276d36153f9ae7cf6075d0c3523050e25ac57629e5fd76c90"
+    },
+    {
+      "id": "ctx128-n2-t6-balanced",
+      "sha256": "88ae31b7d8153f5cf429c0930ea1db84f7803a613452cc3f93584fc2ece08eff"
+    },
+    {
+      "id": "ctx128-n2-t6-skewed",
+      "sha256": "44de41b1680374a527ee7865a3ef6046e40f9fba0756b48f3fd65d62f8cc75cd"
+    },
+    {
+      "id": "ctx128-n2-t12-balanced",
+      "sha256": "325a55290fe8e12167624f45adef1d8d9a8d50cf50791cf414b5797cbc436d37"
+    },
+    {
+      "id": "ctx128-n2-t12-skewed",
+      "sha256": "818be902b2eb91de65dd7303516dab8de3c00c4685c7d1257636d70eadba758d"
+    },
+    {
+      "id": "ctx128-n4-t6-balanced",
+      "sha256": "bc0a4fca1bd2222ec1da413466cc0b7f1840e5397bcab4bbe43553376fa45b32"
+    },
+    {
+      "id": "ctx128-n4-t6-skewed",
+      "sha256": "3a2104721f4e4159dcc1f913029b257150f4d0b3386a1fbc29952eb9121d33c7"
+    },
+    {
+      "id": "ctx128-n4-t12-balanced",
+      "sha256": "c4c32e118de1a81bfe321b7c020361b3793fca4861b719266563dcffdce0ff50"
+    }
+  ],
+  "conclusion": "Hidden is already nonfinite before head; original producer upstream remains unproven"
+}

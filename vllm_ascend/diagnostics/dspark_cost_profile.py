@@ -48,7 +48,12 @@ class IsolatedCostProfiler:
         if options is not None:
             from vllm_ascend.diagnostics.dspark_profile_observation import ProfileObservation
 
-            self.observation = ProfileObservation(runner, options)
+            if options["mode"] == "upstream-boundaries":
+                from vllm_ascend.diagnostics.dspark_profile_upstream import UpstreamProfileObservation
+
+                self.observation = UpstreamProfileObservation(runner, options)
+            else:
+                self.observation = ProfileObservation(runner, options)
 
     def timed(self, kind, size, function, argument):
         batch = self.runner.input_batch

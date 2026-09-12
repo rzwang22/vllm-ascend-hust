@@ -163,6 +163,7 @@ def run(args):
             if args.stage == "profile" and getattr(args, "profile_experiment", None) in (
                 "metadata-only",
                 "numeric-boundaries",
+                "upstream-boundaries",
             ):
                 cmd = [
                     sys.executable,
@@ -262,7 +263,7 @@ def main(argv=None):
     observer.add_argument("--profile-nan-diagnostic", action="store_true")
     observer.add_argument(
         "--profile-experiment",
-        choices=("baseline", "metadata-only", "context-kv-sync", "numeric-boundaries"),
+        choices=("baseline", "metadata-only", "context-kv-sync", "numeric-boundaries", "upstream-boundaries"),
         help="Replay the original point prefix; never publish costs or performance",
     )
     parser.add_argument("--profile-stop-after-point", default="ctx128-n4-t12-skewed")

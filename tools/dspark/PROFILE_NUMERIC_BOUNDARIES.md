@@ -239,3 +239,11 @@ worktree and failed on repository-wide existing lint (including unrelated Ruff,
 archived text spelling, shell and forbidden-import issues). It auto-modified
 78 unrelated files and zero delivery files; those changes were discarded.
 This is not a claim that the full repository checks or installed NPU suite pass.
+
+## Server reproduction and upstream follow-up
+
+The new `4T8j76eT` archive **did reproduce** pre-head hidden NaN on all eight
+ranks. The opening implementation status above describes the earlier delivery.
+See [PROFILE_UPSTREAM_BOUNDARIES.md](PROFILE_UPSTREAM_BOUNDARIES.md) for the
+verified evidence, source investigation and independent `upstream-boundaries`
+server command. The producer remains unproven; no production fix is claimed.
