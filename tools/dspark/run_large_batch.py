@@ -15,6 +15,8 @@ from tools.dspark import run_performance_suite as suite
 from tools.dspark.graph64_checks import scan
 from tools.dspark.prepare_performance_data import copy_manifest_assets, input_population, read_manifest
 
+TARGET_DIAGNOSTIC_RUNTIME_SECONDS = 3600
+
 
 def captures(batch, explicit=None):
     sizes = []
@@ -165,7 +167,16 @@ def run(args):
                 "numeric-boundaries",
                 "upstream-boundaries",
                 "auxiliary-transfers",
+                "target-boundaries",
             ):
+                controls = []
+                if args.profile_experiment == "target-boundaries":
+                    controls = [
+                        "--max-runtime-seconds",
+                        str(TARGET_DIAGNOSTIC_RUNTIME_SECONDS),
+                        "--stop-file",
+                        str(args.output_dir.parent / "STOP"),
+                    ]
                 cmd = [
                     sys.executable,
                     "-m",
@@ -174,6 +185,7 @@ def run(args):
                     str(args.output_dir / f"b{batch}"),
                     "--receipt",
                     str(args.output_dir / f"b{batch}-supervisor.json"),
+                    *controls,
                     "--",
                     *cmd,
                 ]
@@ -271,6 +283,7 @@ def main(argv=None):
             "numeric-boundaries",
             "upstream-boundaries",
             "auxiliary-transfers",
+            "target-boundaries",
         ),
         help="Replay the original point prefix; never publish costs or performance",
     )

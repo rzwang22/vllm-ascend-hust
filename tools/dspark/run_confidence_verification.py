@@ -174,6 +174,7 @@ def main(argv=None):
             "numeric-boundaries",
             "upstream-boundaries",
             "auxiliary-transfers",
+            "target-boundaries",
         ),
         help="Replay the original point prefix; never publish costs or performance",
     )

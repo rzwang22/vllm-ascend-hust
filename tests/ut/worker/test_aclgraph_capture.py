@@ -404,3 +404,30 @@ def test_auxiliary_capture_rejects_incompatible_scopes(capture_api, monkeypatch,
             *state.inputs, use_aux_hidden_state_outputs=override != "no_aux", has_lora=override == "lora"
         )
     assert not state.calls and not hasattr(state.manager, "_dspark_auxiliary_capture")
+
+
+def test_target_capture_uses_precompiled_bank(capture_api, monkeypatch):
+    pytest.importorskip("torch")
+    from tests.ut.test_dspark_profile_target import load_target, make_bank
+
+    state = capture_api
+    module = load_target(monkeypatch)
+    monkeypatch.setitem(sys.modules, "vllm_ascend.diagnostics.dspark_profile_target", module)
+    bank = make_bank(module)
+    state.inputs[0] = SimpleNamespace(model=SimpleNamespace(_dspark_layer_snapshots=bank))
+    state.manager.vllm_config = SimpleNamespace(
+        additional_config={
+            "dspark_profile_observation": {"mode": "target-boundaries"},
+            "dspark_confidence_verification": {"mode": "specified_lengths", "profile": True},
+        },
+        parallel_config=SimpleNamespace(data_parallel_size=1),
+    )
+    state.manager.model_runner = SimpleNamespace(
+        ascend_config=SimpleNamespace(enable_flashcomm1=False),
+        speculator=SimpleNamespace(target_layer_ids=(40, 41, 42)),
+    )
+    state.result = {}
+    state.manager.capture(*state.inputs, use_aux_hidden_state_outputs=True)
+    snapshots = state.calls[0]["model"].replay_diagnostics
+    assert snapshots is state.manager._dspark_auxiliary_capture
+    assert isinstance(snapshots, module.TargetCapture) and snapshots.bank is bank

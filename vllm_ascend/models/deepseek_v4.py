@@ -1166,6 +1166,12 @@ class DeepseekV4Model(nn.Module, EagleModelMixin):
             )
             for layer in islice(self.layers, self.start_layer, self.end_layer):
                 layer._dspark_layer_snapshots = self._dspark_layer_snapshots
+        if ((vllm_config.additional_config or {}).get("dspark_profile_observation") or {}).get(
+            "mode"
+        ) == "target-boundaries":
+            from vllm_ascend.diagnostics.dspark_profile_target import install_target_boundaries
+
+            install_target_boundaries(self, vllm_config)
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embed_tokens(input_ids)

@@ -1,5 +1,9 @@
 # DSpark profile: target auxiliary output transfers
 
+The subsequent server run reproduced NaN at the raw Target return. See
+[the target boundary audit and next diagnostic](PROFILE_TARGET_BOUNDARIES.md)
+for the verified `f9kqffNA` evidence, remaining gaps and current runbook.
+
 This delivery is **diagnostic supplementation, not a production repair**.
 The supplied upstream-boundaries run reproduced NaN at the actual auxiliary
 consumer. The original target return and its transfer were unobserved. This

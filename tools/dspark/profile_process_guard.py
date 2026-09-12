@@ -43,8 +43,20 @@ def signal_owned_group(pid, sig):
         os.killpg(pid, sig)
 
 
-def supervise(command, directory, receipt_path, *, grace=FAILURE_GRACE_SECONDS, term_grace=TERM_GRACE_SECONDS):
+def supervise(
+    command,
+    directory,
+    receipt_path,
+    *,
+    grace=FAILURE_GRACE_SECONDS,
+    term_grace=TERM_GRACE_SECONDS,
+    max_runtime=None,
+    stop_file=None,
+):
+    if max_runtime is not None and max_runtime <= 0:
+        raise ValueError("Profile runtime bound must be positive")
     child = subprocess.Popen(command, start_new_session=True)
+    started = time.monotonic()
     receipt = {
         "schema_version": 1,
         "performance_eligible": False,
@@ -56,12 +68,21 @@ def supervise(command, directory, receipt_path, *, grace=FAILURE_GRACE_SECONDS, 
         "raw_returncode": None,
         "failure_grace_seconds": grace,
         "term_grace_seconds": term_grace,
+        "max_runtime_seconds": max_runtime,
+        "stop_file": str(stop_file) if stop_file is not None else None,
+        "started_utc": datetime.now(timezone.utc).isoformat(),
     }
     failure_at = None
     try:
+        write_json(receipt_path, receipt)
         while True:
             rc = child.poll()
             failure = read_failure(directory)
+            if failure is None and rc is None:
+                if stop_file is not None and stop_file.exists():
+                    failure = {"source": "controlled stop file", "path": str(stop_file)}
+                elif max_runtime is not None and time.monotonic() - started >= max_runtime:
+                    failure = {"source": "diagnostic runtime bound", "seconds": max_runtime}
             if failure is not None and receipt["first_failure"] is None:
                 receipt["first_failure"] = failure
                 receipt["observed_utc"] = datetime.now(timezone.utc).isoformat()
@@ -118,12 +139,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--receipt", type=Path, required=True)
+    parser.add_argument("--max-runtime-seconds", type=float)
+    parser.add_argument("--stop-file", type=Path)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
     if not command:
         parser.error("Child command is required")
-    return supervise(command, args.directory, args.receipt)
+    return supervise(
+        command, args.directory, args.receipt, max_runtime=args.max_runtime_seconds, stop_file=args.stop_file
+    )
 
 
 if __name__ == "__main__":

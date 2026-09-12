@@ -350,6 +350,7 @@ class AuxiliaryProfileObservation(ProfileObservation):
             else None,
         }
         self.auxiliary_records.append(record)
+        self.guard(self.complete_record, record, pending)
         self.auxiliary_counts[record["coverage"]] += 1
         valid = [r for b in boundaries for r in b["rows"] if r["valid_target_row"]]
         for suffix, occurs in (
@@ -364,6 +365,9 @@ class AuxiliaryProfileObservation(ProfileObservation):
         if head_flags is not None:
             return head_rows
         return None
+
+    def complete_record(self, record, pending):
+        """Optional graph observer decodes additions from the same host packet."""
 
     @staticmethod
     def map_rows(identity, values, columns):

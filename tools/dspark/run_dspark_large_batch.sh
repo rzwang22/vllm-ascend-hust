@@ -9,7 +9,8 @@ logged() {
     "$@" 2>&1 | tee "$CONF_OUT/$name.log"
     local codes=("${PIPESTATUS[@]}")
     printf '%s\n' "${codes[*]}" > "$CONF_OUT/$name.pipestatus"
-    test "${codes[0]}" -eq 0 && test "${codes[1]}" -eq 0
+    if test "${codes[0]}" -ne 0; then return "${codes[0]}"; fi
+    return "${codes[1]}"
 }
 
 main() {
@@ -17,14 +18,17 @@ main() {
     local sha=$1 manifest=$2
     shift 2
     local plugin=/workspace/vllm-ascend-hust core=/workspace/vllm-hust
-    local model=/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8 previous='' argument
+    local model=/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8 previous='' argument experiment=''
     for argument in "$@"; do
         if test "$previous" = --model; then model=$argument; fi
+        if test "$previous" = --profile-experiment; then experiment=$argument; fi
         case "$argument" in --model=*) model=${argument#--model=} ;; esac
+        case "$argument" in --profile-experiment=*) experiment=${argument#--profile-experiment=} ;; esac
         previous=$argument
     done
     mkdir -p /workspace/dspark-results || return 1
     CONF_OUT=$(mktemp -d /workspace/dspark-results/dspark-large-batch.XXXXXXXX) || return 1
+    printf 'SERVER_RESULT_DIR=%s\n' "$CONF_OUT"
     [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || return 1
     test "$(git -C "$plugin" rev-parse HEAD)" = "$sha" || return 1
     test "$(git -C "$core" rev-parse HEAD)" = 897306c43bf800e2480cb5c0f3e2da408d85a2fd || return 1
@@ -40,16 +44,21 @@ main() {
     export TOKENIZERS_PARALLELISM=false HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 HF_DATASETS_OFFLINE=1
     unset RANK LOCAL_RANK WORLD_SIZE GROUP_RANK ROLE_RANK LOCAL_WORLD_SIZE MASTER_ADDR MASTER_PORT
     cd "$plugin" || return 1
-    logged source python tools/dspark/p08_r8_checks.py source "$plugin" "$core" || return 1
+    logged source python tools/dspark/p08_r8_checks.py source "$plugin" "$core" || return "$?"
     logged checkpoint python tools/dspark/verification_tools.py checkpoint \
         --model "$model" \
-        --output "$CONF_OUT/checkpoint.json" || return 1
+        --output "$CONF_OUT/checkpoint.json" || return "$?"
+    if test "$experiment" = target-boundaries; then
+        logged frozen-inputs python tools/dspark/check_target_profile_inputs.py \
+            "$CONF_OUT/checkpoint.json" "$manifest" || return "$?"
+    fi
     logged focused python -m pytest -q -ra \
         tests/ut/test_dspark_repeated_inputs.py tests/ut/test_dspark_startup_cost_profile.py \
         tests/ut/test_dspark_profile_request_ids.py tests/ut/test_dspark_profile_context.py \
         tests/ut/test_dspark_profile_nan.py tests/ut/test_dspark_profile_observation.py \
         tests/ut/test_dspark_profile_numerics.py tests/ut/test_dspark_profile_upstream.py \
-        tests/ut/test_dspark_profile_auxiliary.py tests/ut/test_dspark_replay_diagnostics.py \
+        tests/ut/test_dspark_profile_auxiliary.py tests/ut/test_dspark_profile_target.py \
+        tests/ut/test_dspark_replay_diagnostics.py \
         tests/ut/test_dspark_nan_diagnostics.py tests/ut/test_dspark_profile_failure.py \
         tests/ut/test_dspark_confidence_verification.py tests/ut/worker/test_dsa_padded_requests.py \
         tests/ut/worker/test_capture_input_aliases.py tests/ut/worker/test_dsa_capture_metadata.py \
@@ -57,7 +66,8 @@ main() {
         tests/ut/worker/test_aclgraph_capture.py tests/ut/test_dspark_draft_config.py \
         tests/ut/test_dspark_graph_rpc.py tests/ut/test_dspark_graph_replay.py \
         tests/ut/test_dspark_acceptance_benchmark.py tests/ut/test_dspark_performance_delivery.py \
-        tests/ut/spec_decode/test_dspark_v2_*.py || return 1
+        tests/ut/spec_decode/test_dspark_v2_*.py || return "$?"
+    if test "$experiment" = target-boundaries && test -f "$CONF_OUT/STOP"; then return 130; fi
     logged generation python tools/dspark/run_large_batch.py \
         --plugin-sha "$sha" --manifest "$manifest" --output-dir "$CONF_OUT/runs" "$@"
 }
@@ -76,5 +86,8 @@ else
     CONF_ARCHIVE_RC=1
     CONF_HASH_CODES=(1 1)
 fi
-test "$CONF_RC" -eq 0 && test "$CONF_ARCHIVE_RC" -eq 0 && \
-    test "${CONF_HASH_CODES[0]}" -eq 0 && test "${CONF_HASH_CODES[1]}" -eq 0
+# Export errors never replace the first failed phase's exit status.
+if test "$CONF_RC" -ne 0; then exit "$CONF_RC"; fi
+if test "$CONF_ARCHIVE_RC" -ne 0; then exit "$CONF_ARCHIVE_RC"; fi
+if test "${CONF_HASH_CODES[0]}" -ne 0; then exit "${CONF_HASH_CODES[0]}"; fi
+exit "${CONF_HASH_CODES[1]}"

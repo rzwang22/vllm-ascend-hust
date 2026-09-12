@@ -379,6 +379,7 @@ def profile_engine_kwargs(parsed, directory, diagnostic, experiment=None):
         "numeric-boundaries",
         "upstream-boundaries",
         "auxiliary-transfers",
+        "target-boundaries",
     ):
         if diagnostic:
             raise ValueError("Full diagnostics and low-interference experiments are mutually exclusive")
@@ -389,7 +390,13 @@ def profile_engine_kwargs(parsed, directory, diagnostic, experiment=None):
             **kwargs["additional_config"],
             "dspark_profile_observation": {"mode": experiment, "directory": str(directory.resolve())},
         }
-    if experiment in ("metadata-only", "numeric-boundaries", "upstream-boundaries", "auxiliary-transfers"):
+    if experiment in (
+        "metadata-only",
+        "numeric-boundaries",
+        "upstream-boundaries",
+        "auxiliary-transfers",
+        "target-boundaries",
+    ):
         kwargs["distributed_executor_backend"] = (
             "vllm_ascend.diagnostics.dspark_profile_executor.ProfileMultiprocExecutor"
         )

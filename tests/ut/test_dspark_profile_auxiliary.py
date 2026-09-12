@@ -41,7 +41,7 @@ def output_copy_body():
     return ns["transfer"]
 
 
-def fixture(tmp_path, monkeypatch, *, capacity=12, mode="auxiliary-transfers"):
+def fixture(tmp_path, monkeypatch, *, capacity=12, mode="auxiliary-transfers", target=None):
     module = load_auxiliary(monkeypatch)
     if not hasattr(torch, "npu"):
         monkeypatch.setattr(torch, "npu", NS(is_current_stream_capturing=lambda: False), raising=False)
@@ -65,7 +65,7 @@ def fixture(tmp_path, monkeypatch, *, capacity=12, mode="auxiliary-transfers"):
         use_aux_hidden_state_outputs=True,
         is_last_pp_rank=True,
     )
-    capture = module.AuxiliaryCapture(manager)
+    capture = module.AuxiliaryCapture(manager) if target is None else target.module.TargetCapture(manager, target.bank)
     manager._dspark_auxiliary_capture = capture
     runner.cudagraph_manager = manager
     tree = ast.parse((ROOT / "vllm_ascend/worker/v2/aclgraph_utils.py").read_text())
@@ -76,6 +76,8 @@ def fixture(tmp_path, monkeypatch, *, capacity=12, mode="auxiliary-transfers"):
 
     def model(**kwargs):
         calls.append("target Python forward")
+        if target is not None:
+            return target.forward(raw_values, **kwargs)
         return torch.ones(capacity, 4), [x + 1 for x in raw_values]
 
     wrapper = ns["ModelWithContext"](model, replay_diagnostics=capture)
@@ -95,7 +97,9 @@ def fixture(tmp_path, monkeypatch, *, capacity=12, mode="auxiliary-transfers"):
     desc = type("Descriptor", (), {"num_tokens": capacity, "cg_mode": NS(name="FULL")})()
     manager.graphs = {desc: graph}
     metadata = NS(
-        query_start_loc=query, seq_lens=seq, decode=NS(query_start_loc=query, seq_lens=seq, positions=positions)
+        query_start_loc=query,
+        seq_lens=seq,
+        decode=NS(query_start_loc=query, seq_lens=seq, positions=positions, input_positions=positions, start_pos=seq),
     )
     capture.finish_capture({desc: NS(captured=NS(attn_metadata={"target.attn": metadata}))})
     actual_replay = _production_method(
@@ -107,6 +111,8 @@ def fixture(tmp_path, monkeypatch, *, capacity=12, mode="auxiliary-transfers"):
     manager.run_fullgraph = lambda d: actual_replay(manager, d)
 
     def execute(scheduler, **kwargs):
+        if target is not None and getattr(target, "before_execute", None) is not None:
+            target.before_execute(scheduler)
         names, lengths = list(scheduler.num_scheduled_tokens), list(scheduler.num_scheduled_tokens.values())
         n, t = len(names), sum(lengths)
         offsets = [0, *np.cumsum(lengths).tolist()]
@@ -157,9 +163,10 @@ def fixture(tmp_path, monkeypatch, *, capacity=12, mode="auxiliary-transfers"):
         return logits
 
     spec._execute_sequential_markov_sampling = markov
-    observer = (module.AuxiliaryProfileObservation if mode == "auxiliary-transfers" else OBS.ProfileObservation)(
-        runner, {"mode": mode, "directory": str(tmp_path)}
-    )
+    observer_cls = module.AuxiliaryProfileObservation if mode == "auxiliary-transfers" else OBS.ProfileObservation
+    if target is not None:
+        observer_cls = target.module.TargetProfileObservation
+    observer = observer_cls(runner, {"mode": mode, "directory": str(tmp_path)})
     observer.begin_point("test-point")
 
     def run(epoch, lengths=(1, 4, 6), names=("third", "second", "first"), mutate=None, proposal=True):
@@ -379,8 +386,15 @@ def test_proposal_identity_mismatch_and_storage_error_preserve_model_error(tmp_p
     other.observer.close()
 
 
-def test_profiler_factory_uses_capture_collector_and_no_draft_layer_hooks(tmp_path, monkeypatch):
-    f = fixture(tmp_path, monkeypatch)
+@pytest.mark.parametrize("mode", ["auxiliary-transfers", "target-boundaries"])
+def test_profiler_factory_uses_capture_collector_and_no_draft_layer_hooks(tmp_path, monkeypatch, mode):
+    if mode == "target-boundaries":
+        from tests.ut.test_dspark_profile_target import target_fixture
+
+        f = target_fixture(tmp_path, monkeypatch)
+        monkeypatch.setitem(sys.modules, "vllm_ascend.diagnostics.dspark_profile_target", f.target_module)
+    else:
+        f = fixture(tmp_path, monkeypatch)
     f.observer.close()
     monkeypatch.setitem(sys.modules, "vllm_ascend.diagnostics.dspark_profile_auxiliary", f.module)
     monkeypatch.setitem(sys.modules, "vllm_ascend.spec_decode.dspark_verification", NS(COST_CONTEXT_SEMANTICS="test"))
@@ -393,7 +407,7 @@ def test_profiler_factory_uses_capture_collector_and_no_draft_layer_hooks(tmp_pa
     monkeypatch.setattr(torch.npu, "synchronize", lambda: None, raising=False)
     monkeypatch.setattr(torch.npu, "get_device_name", lambda d: "mock", raising=False)
     f.runner.vllm_config.additional_config["dspark_profile_observation"] = {
-        "mode": "auxiliary-transfers",
+        "mode": mode,
         "directory": str(tmp_path),
     }
     f.runner.vllm_config.model_config = NS(max_model_len=8192)

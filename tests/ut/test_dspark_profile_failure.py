@@ -417,3 +417,52 @@ def test_guarded_child_failure_finishes_tee_and_keeps_pipestatus(tmp_path):
     assert "worker failure retained" in log.read_text()
     assert log.with_suffix(".pipestatus").read_text().strip() == "1 0"
     assert json.loads((tmp_path / "supervisor.json").read_text())["raw_returncode"] == 7
+
+
+@pytest.mark.parametrize("trigger", ["deadline", "stop", "first_error_then_stop"])
+def test_optional_runtime_bound_and_controlled_stop_keep_first_error(tmp_path, monkeypatch, trigger):
+    monkeypatch.setattr(process_guard, "POLL_SECONDS", 0.005)
+    stop = tmp_path / "STOP"
+    if trigger != "deadline":
+        stop.touch()
+    if trigger == "first_error_then_stop":
+        (tmp_path / "engine-failure.json").write_text(json.dumps({"error": "original NaN"}))
+    rc = process_guard.supervise(
+        [sys.executable, "-c", "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(30)"],
+        tmp_path,
+        tmp_path / "supervisor.json",
+        grace=0.15,
+        term_grace=0.1,
+        max_runtime=0.03,
+        stop_file=stop,
+    )
+    receipt = json.loads((tmp_path / "supervisor.json").read_text())
+    assert rc == 1 and receipt["raw_returncode"] is not None
+    expected = {
+        "deadline": "diagnostic runtime bound",
+        "stop": "controlled stop file",
+        "first_error_then_stop": "engine-failure.json",
+    }
+    assert receipt["first_failure"]["source"] == expected[trigger]
+    assert receipt["signals_sent"][0] == "SIGTERM"
+    if trigger == "first_error_then_stop":
+        assert receipt["first_failure"]["receipt"]["error"] == "original NaN"
+
+
+@pytest.mark.parametrize("main_rc,archive_rc,expected", [(7, 9, 7), (7, 0, 7), (0, 9, 9), (0, 0, 0)])
+def test_real_shell_export_footer_preserves_first_exit(tmp_path, main_rc, archive_rc, expected):
+    # Execute the actual footer with local shell stubs, never /workspace setup.
+    import subprocess
+
+    source = (ROOT / "tools/dspark/run_dspark_large_batch.sh").read_text()
+    footer = source[source.index('main "$@"\n') :]
+    script = tmp_path / "footer.sh"
+    script.write_text(
+        "set -o pipefail\nCONF_OUT=$1\n"
+        f"main() {{ return {main_rc}; }}\n"
+        f"tar() {{ return {archive_rc}; }}\n"
+        'sha256sum() { printf "mock hash\\n"; }\n' + footer
+    )
+    result = subprocess.run(["bash", str(script), str(tmp_path)], capture_output=True, text=True, timeout=5)
+    assert result.returncode == expected
+    assert f"MAIN_RC={main_rc}" in (tmp_path / "status.txt").read_text()

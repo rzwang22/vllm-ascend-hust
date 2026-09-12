@@ -25,7 +25,7 @@ import torch
 RING_RECORDS = 128
 NUMERIC_ROUNDS = 3
 TRANSITION_RECORDS = 16
-NUMERIC_MODES = ("numeric-boundaries", "upstream-boundaries", "auxiliary-transfers")
+NUMERIC_MODES = ("numeric-boundaries", "upstream-boundaries", "auxiliary-transfers", "target-boundaries")
 METADATA_MODES = ("metadata-only", *NUMERIC_MODES)
 MAX_FIELDS = 128
 MAX_DESCRIPTOR_NODES = 512

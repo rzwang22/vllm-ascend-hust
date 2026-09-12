@@ -52,6 +52,10 @@ class IsolatedCostProfiler:
                 from vllm_ascend.diagnostics.dspark_profile_upstream import UpstreamProfileObservation
 
                 self.observation = UpstreamProfileObservation(runner, options)
+            elif options["mode"] == "target-boundaries":
+                from vllm_ascend.diagnostics.dspark_profile_target import TargetProfileObservation
+
+                self.observation = TargetProfileObservation(runner, options)
             elif options["mode"] == "auxiliary-transfers":
                 from vllm_ascend.diagnostics.dspark_profile_auxiliary import AuxiliaryProfileObservation
 

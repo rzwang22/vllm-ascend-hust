@@ -305,7 +305,9 @@ def test_cpu_seq_lens_and_id_transition_survive_stage_ring_eviction(tmp_path):
     observer.close()
 
 
-@pytest.mark.parametrize("mode", ["numeric-boundaries", "upstream-boundaries", "auxiliary-transfers"])
+@pytest.mark.parametrize(
+    "mode", ["numeric-boundaries", "upstream-boundaries", "auxiliary-transfers", "target-boundaries"]
+)
 def test_server_entry_invokes_only_original_b64_prefix_with_numeric_mode(tmp_path, mode):
     # Execute the real shell entry but replace its child bash with an argv
     # recorder. No server path, model load or NPU access is attempted on CPU.

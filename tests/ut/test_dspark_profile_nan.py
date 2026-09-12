@@ -214,6 +214,7 @@ def test_worker_rejects_profile_observer_for_formal_mode(tmp_path):
         "numeric-boundaries",
         "upstream-boundaries",
         "auxiliary-transfers",
+        "target-boundaries",
     ],
 )
 def test_diagnostic_run_never_compiles_costs(tmp_path, monkeypatch, fails, mode):
