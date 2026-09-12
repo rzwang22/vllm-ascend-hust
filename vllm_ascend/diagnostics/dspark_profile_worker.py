@@ -71,8 +71,15 @@ def install_proc_exit_trace(trace, worker_proc):
 
     @wraps(original_shutdown)
     def shutdown(proc):
+        from vllm_ascend.diagnostics.dspark_post_shutdown import PostShutdownTrace
         from vllm_ascend.patch.worker import patch_distributed
 
+        post = None
+        try:
+            post = PostShutdownTrace(trace)
+            post.capture(proc)
+        except Exception as exc:
+            trace.record("post_shutdown.setup", "unavailable", error=f"{type(exc).__name__}: {exc}")
         with ExitStack() as scope:
             scope.enter_context(trace.wrapping(proc.worker, "shutdown", "WorkerWrapperBase.shutdown"))
             for name in ("destroy_model_parallel", "destroy_distributed_environment"):
@@ -109,7 +116,15 @@ def install_proc_exit_trace(trace, worker_proc):
                             return f"group.{groups.get(id(group), 'unmapped')}.{method}"
 
                         scope.enter_context(trace.wrapping(cls, method, label))
-            return trace.call("WorkerProc.shutdown", original_shutdown, proc)
+            result = trace.call("WorkerProc.shutdown", original_shutdown, proc)
+        # The previous 'returned' receipt precedes ExitStack restoration. This
+        # marker follows it; multiprocessing's next phase proves target unwind.
+        if post is not None:
+            try:
+                post.arm()
+            except Exception as exc:
+                trace.record("post_shutdown.arm", "unavailable", error=f"{type(exc).__name__}: {exc}")
+        return result
 
     worker_proc.monitor_death_pipe = monitor
     worker_proc.worker_busy_loop = busy

@@ -1,5 +1,8 @@
 # DSpark：po6aUaSP worker 退出阶段审计与观测
 
+后续 vl70uUqj 已确认显式清理返回，退出问题进入其后的生命周期范围；见
+[PROFILE_POST_SHUTDOWN.md](PROFILE_POST_SHUTDOWN.md)。本文保留 po6aUaSP 的历史结论。
+
 本轮交付是**退出阶段诊断补充**，没有已证明的 worker 根因或生产退出修复。
 原 Target NaN 本次未复现，根因仍为 **UNKNOWN**。新诊断的 NPU 复验 **PENDING**。
 没有连接服务器、改 Core/custom op、改超时、调整退出顺序或增加模型数值观测。

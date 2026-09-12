@@ -171,6 +171,10 @@ def load_integration(monkeypatch, trace_module):
     module("vllm.v1.executor", multiproc_executor=core)
     module("vllm.distributed", parallel_state=parallel)
     monkeypatch.setitem(sys.modules, "vllm_ascend.diagnostics.dspark_worker_exit", trace_module)
+    post = load_source("post_shutdown_test", ROOT / "vllm_ascend/diagnostics/dspark_post_shutdown.py")
+    monkeypatch.setitem(sys.modules, "vllm_ascend.diagnostics.dspark_post_shutdown", post)
+    # Interpreter hooks are exercised in disposable subprocesses, not pytest.
+    monkeypatch.setattr(post.PostShutdownTrace, "arm", lambda self: self.close())
     implementation = load_source("profile_worker_test", ROOT / "vllm_ascend/diagnostics/dspark_profile_worker.py")
     return implementation, proc, worker_module, torch, calls
 
