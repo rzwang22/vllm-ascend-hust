@@ -12,15 +12,14 @@ from contextlib import suppress
 from datetime import datetime, timezone
 from pathlib import Path
 
-from tools.dspark.profile_failure import write_json
+from tools.dspark.profile_failure import FAILURE_GRACE_SECONDS, write_json
 
-FAILURE_GRACE_SECONDS = 20
 TERM_GRACE_SECONDS = 5
 POLL_SECONDS = 0.1
 
 
 def read_failure(directory):
-    for name in ("worker-exit.json", "engine-failure.json", "profile-failure.json"):
+    for name in ("worker-exit.json", "engine-failure.json", "profile-failure.json", "cleanup-failure.json"):
         try:
             return {"source": name, "receipt": json.loads((directory / name).read_text())}
         except (OSError, ValueError):

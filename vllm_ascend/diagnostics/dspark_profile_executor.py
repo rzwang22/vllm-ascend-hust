@@ -8,12 +8,16 @@ signals. Only that parent's multiprocessing handles provide raw exit codes.
 """
 
 import json
+import logging
 import os
 import signal
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 from vllm.v1.executor.multiproc_executor import MultiprocExecutor
+
+from vllm_ascend.diagnostics.dspark_cleanup import EXECUTOR_FORCE_MESSAGES, ShutdownForceObserver
 
 
 def process_status(handle):
@@ -44,6 +48,7 @@ class ProfileMultiprocExecutor(MultiprocExecutor):
         self._profile_directory.mkdir(parents=True, exist_ok=True)
         self._profile_point = None
         self._profile_operation = None
+        self._profile_cleanup_observed = False
         super().__init__(vllm_config, monitor_workers=monitor_workers)
 
     def collective_rpc(
@@ -102,4 +107,60 @@ class ProfileMultiprocExecutor(MultiprocExecutor):
             except Exception as error:
                 # Never prevent the original executor's failure callback/cleanup.
                 print(f"PROFILE_EXIT_RECEIPT_UNAVAILABLE: {type(error).__name__}: {error}", flush=True)
-        return super().shutdown()
+        if self._profile_cleanup_observed:
+            return super().shutdown()
+        self._profile_cleanup_observed = True
+        return self._shutdown_with_receipt()
+
+    def _shutdown_with_receipt(self):
+        # Observe the original executor shutdown; do not duplicate its wait,
+        # termination, queue cleanup or worker-monitor implementation.
+        started = time.monotonic()
+        logger = logging.getLogger("vllm.v1.executor.multiproc_executor")
+        workers = tuple(getattr(self, "workers", ()))
+        state = {
+            "performance_eligible": False,
+            "parent_pid": os.getpid(),
+            "point": self._profile_point,
+            "started_utc": datetime.now(timezone.utc).isoformat(),
+            "status": "running",
+            "force_events": [],
+            "forced_cleanup": False if logger.isEnabledFor(logging.WARNING) and not logger.filters else None,
+            "error": None,
+            "recording_error": None,
+        }
+
+        def save():
+            try:
+                path = self._profile_directory / "worker-cleanup.json"
+                temporary = path.with_suffix(".tmp")
+                temporary.write_text(json.dumps(state))
+                temporary.replace(path)
+            except Exception as error:
+                state["recording_error"] = f"{type(error).__name__}: {error}"
+                print(f"PROFILE_CLEANUP_RECEIPT_UNAVAILABLE: {state['recording_error']}", flush=True)
+
+        def publish(events):
+            state.update(force_events=events, forced_cleanup=True)
+            save()  # retain escalation even if EngineCore is killed before return
+
+        observer = ShutdownForceObserver(EXECUTOR_FORCE_MESSAGES, publish)
+        save()
+        logger.addHandler(observer)
+        try:
+            result = super().shutdown()
+            state["status"] = "returned"
+            return result
+        except BaseException as error:
+            state.update(status="error", error=f"{type(error).__name__}: {error}")
+            raise
+        finally:
+            logger.removeHandler(observer)
+            state.update(
+                elapsed_seconds=time.monotonic() - started, finished_utc=datetime.now(timezone.utc).isoformat()
+            )
+            try:
+                state["workers"] = [process_status(h) for h in workers]
+            except Exception as error:
+                state["worker_status_error"] = str(error)
+            save()

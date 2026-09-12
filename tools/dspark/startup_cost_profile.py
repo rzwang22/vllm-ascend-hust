@@ -249,6 +249,28 @@ def compile_startup(records, identity, request_grid, *, checkpoint, plugin_sha, 
     }
 
 
+def point_numeric_status(snapshots):
+    observations = [(s.get("cost_profile") or {}).get("observation") for s in snapshots]
+    if not observations or any(
+        not o
+        or o.get("recording_error")
+        or not (o.get("numeric") or {}).get("enabled")
+        or o["numeric"].get("nan_rounds") is None
+        or not o["numeric"].get("compact_host_transfers")
+        or o["numeric"].get("compact_host_transfers_completed") != o["numeric"].get("compact_host_transfers")
+        for o in observations
+    ):
+        return "unavailable"
+    if any(
+        o["numeric"].get("nan_rounds", 0) or (o.get("auxiliary") or {}).get("counts", {}).get("nan_rounds", 0)
+        for o in observations
+    ):
+        return "nan_observed"
+    if any((o.get("target_internal") or {}).get("counts", {}).get("nonfinite_rounds", 0) for o in observations):
+        return "nonfinite_observed"
+    return "no_nan_observed_at_enabled_boundaries"
+
+
 def collect(engine_factory, points, sampling, directory, *, warmup, samples, ranks=8):
     """Injected factory for CPU lifecycle tests; one construction, unconditional shutdown."""
     lifecycle = {"engine_initialization_attempts": 1, "engine_initializations": 0, "shutdown": False}
@@ -261,7 +283,15 @@ def collect(engine_factory, points, sampling, directory, *, warmup, samples, ran
     point = None
     request_history = {}
     raw = None
+    primary_error = None
+    progress = {
+        "performance_eligible": False,
+        "status": "running",
+        "planned_points": len(points),
+        "completed_points": [],
+    }
     try:
+        benchmark._atomic_write_json(directory / "point-completion.json", progress)
         engine.collective_rpc("dspark_benchmark_replay_snapshot")  # install after capture
         token = engine.get_tokenizer().encode("x", add_special_tokens=False)[0]
         for point in points:
@@ -298,8 +328,28 @@ def collect(engine_factory, points, sampling, directory, *, warmup, samples, ran
                 }
             )
             benchmark._atomic_write_json(directory / "retained.json", records)
+            progress["completed_points"].append(
+                {
+                    "point": point["id"],
+                    "raw_sha256": records[-1]["raw_sha256"],
+                    "numeric_result": point_numeric_status(snapshots),
+                    "stream_error": engine.last_batch.get("error"),
+                    "generated_tokens": [
+                        len(r["output_token_ids"]) if "output_token_ids" in r else None
+                        for r in engine.last_batch.get("requests", [])
+                    ],
+                }
+            )
+            progress["status"] = "completed" if len(records) == len(points) else "running"
+            benchmark._atomic_write_json(directory / "point-completion.json", progress)
         return records, identity
     except BaseException as error:
+        primary_error = error
+        progress.update(status="failed", error=f"{type(error).__name__}: {error}")
+        try:
+            benchmark._atomic_write_json(directory / "point-completion.json", progress)
+        except OSError as evidence_error:
+            lifecycle["progress_evidence_error"] = str(evidence_error)
         if point is not None:
             if raw is None:
                 raw = {"point": point, "streaming": engine.last_batch, "performance_eligible": False}
@@ -340,20 +390,43 @@ def collect(engine_factory, points, sampling, directory, *, warmup, samples, ran
         try:
             engine.shutdown()
             cleanup = getattr(engine, "cleanup_result", None)
-            if cleanup is not None and not cleanup["shutdown_completed"]:
-                raise RuntimeError("Profile engine cleanup did not complete")
+            if cleanup is not None and not cleanup.get("success", cleanup["shutdown_completed"]):
+                raise RuntimeError(f"Profile engine cleanup failed: {cleanup.get('status', 'incomplete')}")
         except BaseException as cleanup_error:
             lifecycle["cleanup_error"] = f"{type(cleanup_error).__name__}: {cleanup_error}"
-            if not (directory / "profile-failure.json").exists():
+            try:
+                benchmark._atomic_write_json(
+                    directory / "cleanup-failure.json",
+                    {
+                        "performance_eligible": False,
+                        "phase": "cleanup",
+                        "error": lifecycle["cleanup_error"],
+                        "prior_error": f"{type(primary_error).__name__}: {primary_error}" if primary_error else None,
+                        "points_status": progress["status"],
+                        "completed_points": len(records),
+                    },
+                )
+            except OSError as evidence_error:
+                lifecycle["cleanup_evidence_error"] = str(evidence_error)
+            if primary_error is None:
                 raise
         finally:
             cleanup = getattr(engine, "cleanup_result", None)
             lifecycle["shutdown"] = (
-                cleanup.get("shutdown_completed", False) if cleanup else "cleanup_error" not in lifecycle
+                cleanup.get("success", cleanup.get("shutdown_completed", False))
+                if cleanup
+                else "cleanup_error" not in lifecycle
             )
             if cleanup is not None:
                 lifecycle["cleanup"] = cleanup
-            benchmark._atomic_write_json(directory / "lifecycle.json", lifecycle)
+            lifecycle["points_status"] = progress["status"]
+            lifecycle["completed_points"] = len(records)
+            try:
+                benchmark._atomic_write_json(directory / "lifecycle.json", lifecycle)
+            except OSError as evidence_error:
+                if primary_error is None and "cleanup_error" not in lifecycle:
+                    raise
+                print(f"PROFILE_LIFECYCLE_EVIDENCE_UNAVAILABLE: {evidence_error}", flush=True)
 
 
 def diagnostic_points(points, stop):
@@ -511,11 +584,19 @@ def run(args):
                 first_failure=first,
                 propagated_error=f"{type(error).__name__}: {error}",
             )
+            for name in ("point-completion", "cleanup"):
+                path = root / f"{name}.json"
+                if path.exists():
+                    receipt[name] = json.loads(path.read_text())
             benchmark._atomic_write_json(root / "diagnostic.json", receipt)
         raise
     if isolated:
         receipt = json.loads((root / "diagnostic.json").read_text())
         receipt["status"] = "completed_without_observed_failure"
+        for name in ("point-completion", "cleanup"):
+            path = root / f"{name}.json"
+            if path.exists():
+                receipt[name] = json.loads(path.read_text())
         benchmark._atomic_write_json(root / "diagnostic.json", receipt)
         return 0  # diagnostic timings must never become a usable cost table
     suite.resources_idle(root / "npu-after.log")

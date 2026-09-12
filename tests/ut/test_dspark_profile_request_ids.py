@@ -347,4 +347,6 @@ def test_collect_actual_admission_receipts_and_failure_artifacts(core_engine, tm
         "engine_initialization_attempts": 1,
         "engine_initializations": 1,
         "shutdown": True,
+        "points_status": "completed" if problem is None else "failed",
+        "completed_points": 2 if problem is None else 1,
     }

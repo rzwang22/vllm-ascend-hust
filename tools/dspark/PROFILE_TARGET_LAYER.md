@@ -1,5 +1,9 @@
 # DSpark：从 layer 0 → layer 1 区间继续定位
 
+后续实际运行 vZQfCb3q 已完成十点，已观测数值边界未复现异常，但 cleanup 失败。
+独立归档审计、清理计时修复及下一次同配置命令见 [PROFILE_CLEANUP.md](PROFILE_CLEANUP.md)。
+下文保留本次局部诊断最初交付时的证据与状态，不代表已有 NaN 生产修复。
+
 本轮交付是**诊断补充**。已有 NPU 故障复现和定位区间已核验；具体根因仍为
 **UNKNOWN**，新局部切点的 NPU 复验为 **PENDING**。没有生产修复、成本表或性能结论。
 Core、custom op、权重、confidence 分配、采样、混合长度、ACLGraph 调度与退出保障均未修改。

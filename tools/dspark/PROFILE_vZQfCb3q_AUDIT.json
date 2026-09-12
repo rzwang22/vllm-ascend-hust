@@ -1,0 +1,1481 @@
+{
+  "archive": "dspark-large-batch.vZQfCb3q-evidence.tar.gz",
+  "sha256": "971aab92e76ec030bfb6d6770b1e61e0099cbfd891e67cc7d2403b92794795ef",
+  "members": 57,
+  "expanded_bytes": 49542480,
+  "assertion_kind": "offline original archive verification, not a new NPU test",
+  "points": [
+    {
+      "id": "ctx128-n1-t6-balanced",
+      "raw_sha256": "8ef8a9f5754cded533fc4008140e6d008d2bd5a8665e25b94af676254bbce63f",
+      "requests": 1,
+      "output_tokens_each": 512,
+      "stream_error": null,
+      "all_eight_rank_observation_counters_checked": true
+    },
+    {
+      "id": "ctx128-n1-t6-skewed",
+      "raw_sha256": "682e7b5f1c13a2306d0e8d6ec418a8544cc26c1d2c467f89d59733215f1ac24f",
+      "requests": 1,
+      "output_tokens_each": 512,
+      "stream_error": null,
+      "all_eight_rank_observation_counters_checked": true
+    },
+    {
+      "id": "ctx128-n2-t6-balanced",
+      "raw_sha256": "621494dde0e5457f6c96e04925e4349b53db2df9b99ff1dd4a4b319bfdfc7b64",
+      "requests": 2,
+      "output_tokens_each": 512,
+      "stream_error": null,
+      "all_eight_rank_observation_counters_checked": true
+    },
+    {
+      "id": "ctx128-n2-t6-skewed",
+      "raw_sha256": "85fa7428f94aacd56a3c83c943b4024acb86c6f0862246563ed205a6c030cdb3",
+      "requests": 2,
+      "output_tokens_each": 512,
+      "stream_error": null,
+      "all_eight_rank_observation_counters_checked": true
+    },
+    {
+      "id": "ctx128-n2-t12-balanced",
+      "raw_sha256": "5c8953d7dc3389e65833341a2815dfcf76cc2cd9e278a7f522f831297188e138",
+      "requests": 2,
+      "output_tokens_each": 512,
+      "stream_error": null,
+      "all_eight_rank_observation_counters_checked": true
+    },
+    {
+      "id": "ctx128-n2-t12-skewed",
+      "raw_sha256": "e7ac40100371be72489660f108f7b9cd14aeadbeee2c5d563bb5841bdc447733",
+      "requests": 2,
+      "output_tokens_each": 512,
+      "stream_error": null,
+      "all_eight_rank_observation_counters_checked": true
+    },
+    {
+      "id": "ctx128-n4-t6-balanced",
+      "raw_sha256": "50a6df24f4195de104649b597e9d7fd42d9bea2227b0187167e7271f1e4a98f2",
+      "requests": 4,
+      "output_tokens_each": 512,
+      "stream_error": null,
+      "all_eight_rank_observation_counters_checked": true
+    },
+    {
+      "id": "ctx128-n4-t6-skewed",
+      "raw_sha256": "54b5cd150fb2a38b73ee57d072e4cb5297f22f23f14eb7b7a41bbe3660826692",
+      "requests": 4,
+      "output_tokens_each": 512,
+      "stream_error": null,
+      "all_eight_rank_observation_counters_checked": true
+    },
+    {
+      "id": "ctx128-n4-t12-balanced",
+      "raw_sha256": "56a92f9ab3393e3f2ebe40b0964021d0ee09f59a1e78cd3ad1f5edcafdbaedba",
+      "requests": 4,
+      "output_tokens_each": 512,
+      "stream_error": null,
+      "all_eight_rank_observation_counters_checked": true
+    },
+    {
+      "id": "ctx128-n4-t12-skewed",
+      "raw_sha256": "66c14e848cd40050a9f5d0b6f56d4b4ef105f07bea0c77159f87caa71ae2ef94",
+      "requests": 4,
+      "output_tokens_each": 512,
+      "stream_error": null,
+      "all_eight_rank_observation_counters_checked": true
+    }
+  ],
+  "ranks": [
+    {
+      "rank": 0,
+      "latest_sha256": "50746a08e47e6c7bdbac9e58c9b15896582c371da033c8f0d70a4fadd2b5476e",
+      "counts": {
+        "NON_FULL_UNOBSERVED": 3,
+        "nonfinite_rounds": 0,
+        "FULL": 200
+      },
+      "numeric_counts": {
+        "both_finite": 203
+      },
+      "rounds": [
+        {
+          "execution": 1908,
+          "proposal_epoch": 1895,
+          "request_ids": [
+            "batch10-3-a1dd0cd8"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            62
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "consume_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "target_internal.receipts": [
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1909,
+          "proposal_epoch": 1896,
+          "request_ids": [
+            "batch10-3-a1dd0cd8"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            62
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "consume_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "target_internal.receipts": [
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1910,
+          "proposal_epoch": 1897,
+          "request_ids": [
+            "batch10-3-a1dd0cd8"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            62
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1910,
+              1910,
+              1910
+            ],
+            "consume_receipts": [
+              1910,
+              1910,
+              1910
+            ],
+            "target_internal.receipts": [
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910
+            ]
+          },
+          "all_recorded_rows_finite": true
+        }
+      ]
+    },
+    {
+      "rank": 1,
+      "latest_sha256": "bd87166f84182d27ad997270e7a336b4f623d06cffd980be517c2e7a55d8b0c0",
+      "counts": {
+        "NON_FULL_UNOBSERVED": 3,
+        "nonfinite_rounds": 0,
+        "FULL": 200
+      },
+      "numeric_counts": {
+        "both_finite": 203
+      },
+      "rounds": [
+        {
+          "execution": 1908,
+          "proposal_epoch": 1895,
+          "request_ids": [
+            "batch10-3-a1dd0cd8"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "consume_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "target_internal.receipts": [
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1909,
+          "proposal_epoch": 1896,
+          "request_ids": [
+            "batch10-3-a1dd0cd8"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "consume_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "target_internal.receipts": [
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1910,
+          "proposal_epoch": 1897,
+          "request_ids": [
+            "batch10-3-a1dd0cd8"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1910,
+              1910,
+              1910
+            ],
+            "consume_receipts": [
+              1910,
+              1910,
+              1910
+            ],
+            "target_internal.receipts": [
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910
+            ]
+          },
+          "all_recorded_rows_finite": true
+        }
+      ]
+    },
+    {
+      "rank": 2,
+      "latest_sha256": "cf45e9dbf643728616fa5feb5987c429a4d69820e443a892196bdf962994e211",
+      "counts": {
+        "NON_FULL_UNOBSERVED": 3,
+        "nonfinite_rounds": 0,
+        "FULL": 200
+      },
+      "numeric_counts": {
+        "both_finite": 203
+      },
+      "rounds": [
+        {
+          "execution": 1908,
+          "proposal_epoch": 1895,
+          "request_ids": [
+            "batch10-3-a1dd0cd8"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            62
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "consume_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "target_internal.receipts": [
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1909,
+          "proposal_epoch": 1896,
+          "request_ids": [
+            "batch10-3-a1dd0cd8"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            62
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "consume_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "target_internal.receipts": [
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1910,
+          "proposal_epoch": 1897,
+          "request_ids": [
+            "batch10-3-a1dd0cd8"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            62
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1910,
+              1910,
+              1910
+            ],
+            "consume_receipts": [
+              1910,
+              1910,
+              1910
+            ],
+            "target_internal.receipts": [
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910
+            ]
+          },
+          "all_recorded_rows_finite": true
+        }
+      ]
+    },
+    {
+      "rank": 3,
+      "latest_sha256": "306e862b66a544ea903f3c511f88b3fac76255d987b7d672a8fc434b5569c49b",
+      "counts": {
+        "NON_FULL_UNOBSERVED": 3,
+        "nonfinite_rounds": 0,
+        "FULL": 200
+      },
+      "numeric_counts": {
+        "both_finite": 203
+      },
+      "rounds": [
+        {
+          "execution": 1908,
+          "proposal_epoch": 1895,
+          "request_ids": [
+            "batch10-3-a1dd0cd8"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "consume_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "target_internal.receipts": [
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1909,
+          "proposal_epoch": 1896,
+          "request_ids": [
+            "batch10-3-a1dd0cd8"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "consume_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "target_internal.receipts": [
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1910,
+          "proposal_epoch": 1897,
+          "request_ids": [
+            "batch10-3-a1dd0cd8"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1910,
+              1910,
+              1910
+            ],
+            "consume_receipts": [
+              1910,
+              1910,
+              1910
+            ],
+            "target_internal.receipts": [
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910
+            ]
+          },
+          "all_recorded_rows_finite": true
+        }
+      ]
+    },
+    {
+      "rank": 4,
+      "latest_sha256": "385a70713b826e9f49c49015566df8255ef32cfefeae79a0eab8ce603da7d132",
+      "counts": {
+        "NON_FULL_UNOBSERVED": 3,
+        "nonfinite_rounds": 0,
+        "FULL": 200
+      },
+      "numeric_counts": {
+        "both_finite": 203
+      },
+      "rounds": [
+        {
+          "execution": 1908,
+          "proposal_epoch": 1895,
+          "request_ids": [
+            "batch10-3-a1dd0cd8"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "consume_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "target_internal.receipts": [
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1909,
+          "proposal_epoch": 1896,
+          "request_ids": [
+            "batch10-3-a1dd0cd8"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "consume_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "target_internal.receipts": [
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1910,
+          "proposal_epoch": 1897,
+          "request_ids": [
+            "batch10-3-a1dd0cd8"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1910,
+              1910,
+              1910
+            ],
+            "consume_receipts": [
+              1910,
+              1910,
+              1910
+            ],
+            "target_internal.receipts": [
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910
+            ]
+          },
+          "all_recorded_rows_finite": true
+        }
+      ]
+    },
+    {
+      "rank": 5,
+      "latest_sha256": "d34640d7415c04713c06dc4b993a1c7e52524a3a85bf9f739f5a7c601b22efb4",
+      "counts": {
+        "NON_FULL_UNOBSERVED": 3,
+        "nonfinite_rounds": 0,
+        "FULL": 200
+      },
+      "numeric_counts": {
+        "both_finite": 203
+      },
+      "rounds": [
+        {
+          "execution": 1908,
+          "proposal_epoch": 1895,
+          "request_ids": [
+            "batch10-3-a1dd0cd8"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "consume_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "target_internal.receipts": [
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1909,
+          "proposal_epoch": 1896,
+          "request_ids": [
+            "batch10-3-a1dd0cd8"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "consume_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "target_internal.receipts": [
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1910,
+          "proposal_epoch": 1897,
+          "request_ids": [
+            "batch10-3-a1dd0cd8"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1910,
+              1910,
+              1910
+            ],
+            "consume_receipts": [
+              1910,
+              1910,
+              1910
+            ],
+            "target_internal.receipts": [
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910
+            ]
+          },
+          "all_recorded_rows_finite": true
+        }
+      ]
+    },
+    {
+      "rank": 6,
+      "latest_sha256": "b3cb72a637ce9c17aae0e88da33bfb9156ab3815106faaa3864a287a90a01114",
+      "counts": {
+        "NON_FULL_UNOBSERVED": 3,
+        "nonfinite_rounds": 0,
+        "FULL": 200
+      },
+      "numeric_counts": {
+        "both_finite": 203
+      },
+      "rounds": [
+        {
+          "execution": 1908,
+          "proposal_epoch": 1895,
+          "request_ids": [
+            "batch10-3-a1dd0cd8"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            62
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "consume_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "target_internal.receipts": [
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1909,
+          "proposal_epoch": 1896,
+          "request_ids": [
+            "batch10-3-a1dd0cd8"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            62
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "consume_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "target_internal.receipts": [
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1910,
+          "proposal_epoch": 1897,
+          "request_ids": [
+            "batch10-3-a1dd0cd8"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            62
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1910,
+              1910,
+              1910
+            ],
+            "consume_receipts": [
+              1910,
+              1910,
+              1910
+            ],
+            "target_internal.receipts": [
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910
+            ]
+          },
+          "all_recorded_rows_finite": true
+        }
+      ]
+    },
+    {
+      "rank": 7,
+      "latest_sha256": "9516592f2cf46cff435bf56ac8d4f359709d2a997dcfe2b5b222967ed395822f",
+      "counts": {
+        "NON_FULL_UNOBSERVED": 3,
+        "nonfinite_rounds": 0,
+        "FULL": 200
+      },
+      "numeric_counts": {
+        "both_finite": 203
+      },
+      "rounds": [
+        {
+          "execution": 1908,
+          "proposal_epoch": 1895,
+          "request_ids": [
+            "batch10-3-a1dd0cd8"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "consume_receipts": [
+              1908,
+              1908,
+              1908
+            ],
+            "target_internal.receipts": [
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908,
+              1908
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1909,
+          "proposal_epoch": 1896,
+          "request_ids": [
+            "batch10-3-a1dd0cd8"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "consume_receipts": [
+              1909,
+              1909,
+              1909
+            ],
+            "target_internal.receipts": [
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909,
+              1909
+            ]
+          },
+          "all_recorded_rows_finite": true
+        },
+        {
+          "execution": 1910,
+          "proposal_epoch": 1897,
+          "request_ids": [
+            "batch10-3-a1dd0cd8"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            6
+          ],
+          "pool_rows_cpu": [
+            63
+          ],
+          "target_rows": 6,
+          "graph_capacity": 6,
+          "raw_replay_verified": true,
+          "coverage": "FULL",
+          "receipts": {
+            "raw_receipts": [
+              1910,
+              1910,
+              1910
+            ],
+            "consume_receipts": [
+              1910,
+              1910,
+              1910
+            ],
+            "target_internal.receipts": [
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910,
+              1910
+            ]
+          },
+          "all_recorded_rows_finite": true
+        }
+      ]
+    }
+  ],
+  "versions": {
+    "plugin_sha": "f25ac779f5e1d4fbe5f4cccd31bf3519faf1416c",
+    "core_sha": "897306c43bf800e2480cb5c0f3e2da408d85a2fd"
+  },
+  "runs/b64/cleanup.json": {
+    "performance_eligible": false,
+    "timeout_seconds": 8,
+    "shutdown_completed": false,
+    "error": null,
+    "timed_out": true
+  },
+  "runs/b64/lifecycle.json": {
+    "cleanup": {
+      "error": null,
+      "performance_eligible": false,
+      "shutdown_completed": false,
+      "timed_out": true,
+      "timeout_seconds": 8
+    },
+    "cleanup_error": "RuntimeError: Profile engine cleanup did not complete",
+    "engine_initialization_attempts": 1,
+    "engine_initializations": 1,
+    "shutdown": false
+  },
+  "runs/b64/engine-failure.json": {
+    "schema_version": 1,
+    "performance_eligible": false,
+    "observed_utc": "2026-09-12T12:50:04.828976+00:00",
+    "point": "ctx128-n4-t12-skewed",
+    "pending_operation": null,
+    "error": "RuntimeError: Profile cleanup incomplete",
+    "observed_frontend_error": "RuntimeError: Profile cleanup incomplete"
+  },
+  "runs/b64/diagnostic.json": {
+    "effective_benchmark_argv": [
+      "--model-dir",
+      "/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8",
+      "--revision",
+      "9e8679a9db7eec11efed9925f7efb96549077545",
+      "--mode",
+      "dspark",
+      "--num-spec-tokens",
+      "5",
+      "--measurement-protocol",
+      "async_stream",
+      "--dataset-name",
+      "jsonl",
+      "--dataset-path",
+      "/workspace/dspark-results/dspark-large-batch.vZQfCb3q/runs/b64/synthetic.jsonl",
+      "--prompt-field",
+      "prompt_token_ids",
+      "--num-prompts",
+      "64",
+      "--warmup-prompts",
+      "0",
+      "--output-len",
+      "512",
+      "--ignore-eos",
+      "--temperature",
+      "0",
+      "--top-p",
+      "1",
+      "--top-k",
+      "-1",
+      "--seed",
+      "0",
+      "--tensor-parallel-size",
+      "8",
+      "--enable-expert-parallel",
+      "--async-scheduling",
+      "--dtype",
+      "bfloat16",
+      "--quantization",
+      "ascend",
+      "--max-num-seqs",
+      "64",
+      "--max-num-batched-tokens",
+      "8192",
+      "--max-model-len",
+      "8192",
+      "--gpu-memory-utilization",
+      "0.9",
+      "--block-size",
+      "32",
+      "--target-execution-mode",
+      "full_decode_only",
+      "--result-json",
+      "/workspace/dspark-results/dspark-large-batch.vZQfCb3q/runs/b64/s64-dspark_confidence_graph-r1/result.json",
+      "--confidence-verification",
+      "/workspace/dspark-results/dspark-large-batch.vZQfCb3q/runs/b64/verification.json",
+      "--cudagraph-capture-sizes",
+      "6",
+      "12",
+      "24",
+      "48",
+      "96",
+      "192",
+      "384"
+    ],
+    "error": "RuntimeError: Profile cleanup incomplete",
+    "experiment": "target-boundaries",
+    "first_failure": {
+      "error": "RuntimeError: Profile cleanup incomplete",
+      "observed_frontend_error": "RuntimeError: Profile cleanup incomplete",
+      "observed_utc": "2026-09-12T12:50:04.828976+00:00",
+      "pending_operation": null,
+      "performance_eligible": false,
+      "point": "ctx128-n4-t12-skewed",
+      "schema_version": 1
+    },
+    "observation_effect": "Any observation/wait may change reproduction; completion is not a repair; no cost table",
+    "performance_eligible": false,
+    "points": [
+      "ctx128-n1-t6-balanced",
+      "ctx128-n1-t6-skewed",
+      "ctx128-n2-t6-balanced",
+      "ctx128-n2-t6-skewed",
+      "ctx128-n2-t12-balanced",
+      "ctx128-n2-t12-skewed",
+      "ctx128-n4-t6-balanced",
+      "ctx128-n4-t6-skewed",
+      "ctx128-n4-t12-balanced",
+      "ctx128-n4-t12-skewed"
+    ],
+    "propagated_error": "RuntimeError: Profile engine cleanup did not complete",
+    "root_cause": "ROOT_CAUSE_NOT_YET_PROVEN",
+    "status": "failed",
+    "target_layer": 1,
+    "worker_directory": "/workspace/dspark-results/dspark-large-batch.vZQfCb3q/runs/b64/worker-first-failure"
+  },
+  "runs/b64-supervisor.json": {
+    "schema_version": 1,
+    "performance_eligible": false,
+    "child_pid": 98299,
+    "owned_process_group": 98299,
+    "command": [
+      "/usr/local/python3.12.13/bin/python",
+      "/workspace/vllm-ascend-hust/tools/dspark/run_confidence_verification.py",
+      "--plugin",
+      "/workspace/vllm-ascend-hust",
+      "--core",
+      "/workspace/vllm-hust",
+      "--plugin-sha",
+      "f25ac779f5e1d4fbe5f4cccd31bf3519faf1416c",
+      "--model",
+      "/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8",
+      "--manifest",
+      "/workspace/dspark-results/dspark-repeated-input.WSJur2Ev/input/manifest.json",
+      "--num-prompts",
+      "400",
+      "--output-len",
+      "256",
+      "--warmup-prompts",
+      "4",
+      "--max-model-len",
+      "8192",
+      "--max-num-batched-tokens",
+      "8192",
+      "--gpu-memory-utilization",
+      "0.9",
+      "--stage",
+      "profile",
+      "--batch",
+      "64",
+      "--capture",
+      "6",
+      "12",
+      "24",
+      "48",
+      "96",
+      "192",
+      "384",
+      "--output-dir",
+      "/workspace/dspark-results/dspark-large-batch.vZQfCb3q/runs/b64",
+      "--profile-experiment",
+      "target-boundaries",
+      "--profile-stop-after-point",
+      "ctx128-n4-t12-skewed",
+      "--profile-target-layer",
+      "1",
+      "--profile-contexts",
+      "128",
+      "2048",
+      "--profile-output-tokens",
+      "512",
+      "--profile-warmup",
+      "2",
+      "--profile-samples",
+      "5"
+    ],
+    "first_failure": {
+      "source": "engine-failure.json",
+      "receipt": {
+        "schema_version": 1,
+        "performance_eligible": false,
+        "observed_utc": "2026-09-12T12:50:04.828976+00:00",
+        "point": "ctx128-n4-t12-skewed",
+        "pending_operation": null,
+        "error": "RuntimeError: Profile cleanup incomplete",
+        "observed_frontend_error": "RuntimeError: Profile cleanup incomplete"
+      }
+    },
+    "signals_sent": [],
+    "raw_returncode": 1,
+    "failure_grace_seconds": 20,
+    "term_grace_seconds": 5,
+    "max_runtime_seconds": 3600.0,
+    "stop_file": "/workspace/dspark-results/dspark-large-batch.vZQfCb3q/STOP",
+    "started_utc": "2026-09-12T12:34:05.940495+00:00",
+    "observed_utc": "2026-09-12T12:50:04.843871+00:00",
+    "completed_utc": "2026-09-12T12:50:07.451064+00:00"
+  },
+  "shutdown_log_anchors": [
+    {
+      "line": 767,
+      "text": "INFO 09-12 12:49:56 [core_client.py:659] [shutdown] MPClient: start timeout=8s"
+    },
+    {
+      "line": 768,
+      "text": "INFO 09-12 12:49:56 [core_client.py:661] [shutdown] MPClient: stopping engine manager"
+    },
+    {
+      "line": 769,
+      "text": "(EngineCore pid=98461) INFO 09-12 12:49:56 [core.py:1298] [shutdown] EngineCore: trigger received signal=SIGTERM"
+    },
+    {
+      "line": 770,
+      "text": "(EngineCore pid=98461) INFO 09-12 12:49:56 [core.py:1417] [shutdown] EngineCore: start mode=abort timeout=0s"
+    },
+    {
+      "line": 771,
+      "text": "(EngineCore pid=98461) INFO 09-12 12:49:56 [core.py:1448] [shutdown] EngineCore: request processing complete; starting resource teardown"
+    },
+    {
+      "line": 772,
+      "text": "(EngineCore pid=98461) INFO 09-12 12:49:56 [core.py:1311] [shutdown] EngineCore: exiting busy loop"
+    },
+    {
+      "line": 773,
+      "text": "(EngineCore pid=98461) INFO 09-12 12:49:56 [multiproc_executor.py:426] [shutdown] Executor: waiting for worker exit count=8"
+    },
+    {
+      "line": 775,
+      "text": "(EngineCore pid=98461) WARNING 09-12 12:50:01 [multiproc_executor.py:438] [shutdown] Executor: workers still running after grace period; sending SIGTERM count=8"
+    },
+    {
+      "line": 776,
+      "text": "WARNING 09-12 12:50:04 [utils.py:635] [shutdown] Process manager: force killing remaining processes count=1"
+    },
+    {
+      "line": 777,
+      "text": "INFO 09-12 12:50:04 [core_client.py:663] [shutdown] MPClient: engine manager stopped"
+    },
+    {
+      "line": 778,
+      "text": "INFO 09-12 12:50:04 [core_client.py:664] [shutdown] MPClient: cleaning up background resources"
+    },
+    {
+      "line": 779,
+      "text": "INFO 09-12 12:50:04 [core_client.py:666] [shutdown] MPClient: complete"
+    },
+    {
+      "line": 780,
+      "text": "VERIFICATION_FAILED=RuntimeError: Profile engine cleanup did not complete"
+    }
+  ],
+  "focused_result": "997 passed, 14 warnings in 242.87s (0:04:02)",
+  "numeric_result": "not reproduced in observed boundaries; not a repair",
+  "cleanup_result": "outer timeout; Core force-kill log followed by MPClient complete; exact thread return unavailable",
+  "residual_check": "No separate residual-process enumeration in archive; supervisor signals_sent=[] is consistent with group absent when checked, not proof of graceful exit."
+}

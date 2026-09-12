@@ -216,7 +216,7 @@ class StreamingEngine:
             raise
         failure_directory = (kwargs.get("additional_config") or {}).get("dspark_profile_failure_dir")
         if failure_directory is not None:
-            self.profile_guard = ProfileFailureGuard(self.engine, failure_directory)
+            self.profile_guard = ProfileFailureGuard(self.engine, failure_directory, require_worker_receipt=True)
         # Adapt only the read-only config/utility interface used by the existing benchmark.
         self.llm_engine = SimpleNamespace(
             vllm_config=self.engine.vllm_config, engine_core=SimpleNamespace(call_utility=self.call_utility)
@@ -331,6 +331,11 @@ class StreamingEngine:
                 self.engine.shutdown()
             else:
                 self.cleanup_result = await self.profile_guard.shutdown()
+                if not self.cleanup_result["thread_completed"]:
+                    return  # the supervisor owns the stuck thread/process bound
+                # Frozen Core schedules socket/task cleanup with
+                # call_soon_threadsafe immediately before shutdown returns.
+                await asyncio.sleep(0)
             pending = [task for task in asyncio.all_tasks() if task is not asyncio.current_task()]
             for task in pending:
                 task.cancel()
@@ -338,9 +343,23 @@ class StreamingEngine:
                 if self.profile_guard is None:
                     await asyncio.gather(*pending, return_exceptions=True)
                 else:
-                    await asyncio.wait(pending, timeout=CANCEL_TIMEOUT_SECONDS)
+                    _, remaining = await asyncio.wait(pending, timeout=CANCEL_TIMEOUT_SECONDS)
+                    self.cleanup_result["pending_loop_tasks"] = len(remaining)
+                    if remaining:
+                        self.cleanup_result["success"] = False
+                        self.cleanup_result["loop_error"] = "Task cancellation exceeded the loop drain budget"
+                        self.profile_guard.remember(RuntimeError(self.cleanup_result["loop_error"]))
+            if self.profile_guard is not None:
+                await asyncio.sleep(0)  # run completion callbacks before closing the loop
 
         try:
             self.loop.run_until_complete(close())
         finally:
-            self.loop.close()
+            if self.profile_guard is None:
+                self.loop.close()
+            elif self.cleanup_result is not None:
+                safe = self.cleanup_result["thread_completed"] and not self.cleanup_result.get("pending_loop_tasks")
+                if safe:
+                    self.loop.close()
+                self.cleanup_result["event_loop"] = "closed" if safe else "retained_for_supervisor"
+                self.profile_guard.save_cleanup(self.cleanup_result)
