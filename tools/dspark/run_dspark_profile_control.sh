@@ -3,12 +3,19 @@
 # One experiment per invocation. No automatic control sweep or later batches.
 set -o pipefail
 main() {
-    test "$#" -eq 3 || return 1
+    test "$#" -eq 3 || test "$#" -eq 4 || return 1
     local sha=$1 manifest=$2 mode=$3
+    local detail_args=()
+    if test "$#" -eq 4; then
+        test "$mode" = target-boundaries || return 1
+        [[ "$4" =~ ^[0-9]+$ ]] || return 1
+        detail_args=(--profile-target-layer "$4")
+    fi
     case "$mode" in baseline|metadata-only|context-kv-sync|numeric-boundaries|upstream-boundaries|auxiliary-transfers|target-boundaries) ;; *) return 1 ;; esac
     bash /workspace/vllm-ascend-hust/tools/dspark/run_dspark_large_batch.sh "$sha" "$manifest" \
         --stage profile --batches 64 --num-prompts 400 \
         --profile-experiment "$mode" --profile-stop-after-point ctx128-n4-t12-skewed \
+        "${detail_args[@]}" \
         --capture-sizes 6 12 24 48 96 192 384 \
         --profile-contexts 128 2048 --profile-output-tokens 512 \
         --profile-warmup 2 --profile-samples 5 \

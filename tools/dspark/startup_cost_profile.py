@@ -363,7 +363,11 @@ def diagnostic_points(points, stop):
     return points[: indices[0] + 1]  # keep every predecessor in the same engine
 
 
-def profile_engine_kwargs(parsed, directory, diagnostic, experiment=None):
+def profile_engine_kwargs(parsed, directory, diagnostic, experiment=None, target_layer=None):
+    if target_layer is not None and (
+        experiment != "target-boundaries" or type(target_layer) is not int or target_layer < 0
+    ):
+        raise ValueError("A nonnegative target detail layer requires target-boundaries")
     kwargs = benchmark.build_engine_kwargs(parsed)
     if diagnostic:
         options = kwargs.get("additional_config", {}).get("dspark_confidence_verification", {})
@@ -390,6 +394,8 @@ def profile_engine_kwargs(parsed, directory, diagnostic, experiment=None):
             **kwargs["additional_config"],
             "dspark_profile_observation": {"mode": experiment, "directory": str(directory.resolve())},
         }
+        if target_layer is not None:
+            kwargs["additional_config"]["dspark_profile_observation"]["target_layer"] = target_layer
     if experiment in (
         "metadata-only",
         "numeric-boundaries",
@@ -413,6 +419,7 @@ def run(args):
     counts, points = grid(args.batch, args.capture, args.profile_contexts, args.profile_output_tokens)
     diagnostic = getattr(args, "profile_nan_diagnostic", False)
     experiment = getattr(args, "profile_experiment", None)
+    target_layer = getattr(args, "profile_target_layer", None)
     if diagnostic and experiment:
         raise ValueError("Full diagnostics and low-interference experiments are mutually exclusive")
     isolated = diagnostic or experiment is not None
@@ -423,6 +430,7 @@ def run(args):
             {
                 "performance_eligible": False,
                 "experiment": experiment or "full-diagnostic",
+                "target_layer": target_layer,
                 "status": "running",
                 "root_cause": "ROOT_CAUSE_NOT_YET_PROVEN",
                 "points": [point["id"] for point in points],
@@ -465,7 +473,7 @@ def run(args):
 
     def initialize():
         engine = StreamingEngine(
-            profile_engine_kwargs(parsed, root / "worker-first-failure", diagnostic, experiment), parsed
+            profile_engine_kwargs(parsed, root / "worker-first-failure", diagnostic, experiment, target_layer), parsed
         )
         try:
             runtime = benchmark._collect_worker_graph_runtime(engine, parsed)

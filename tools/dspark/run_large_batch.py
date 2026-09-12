@@ -86,6 +86,11 @@ def command(args, batch, root):
                 if getattr(args, "profile_experiment", None)
                 else []
             ),
+            *(
+                ["--profile-target-layer", str(args.profile_target_layer)]
+                if getattr(args, "profile_target_layer", None) is not None
+                else []
+            ),
             "--profile-contexts",
             *map(str, args.profile_contexts),
             "--profile-output-tokens",
@@ -288,7 +293,12 @@ def main(argv=None):
         help="Replay the original point prefix; never publish costs or performance",
     )
     parser.add_argument("--profile-stop-after-point", default="ctx128-n4-t12-skewed")
+    parser.add_argument("--profile-target-layer", type=int, help="Opt-in local target-boundaries decoder index")
     args = parser.parse_args(argv)
+    if args.profile_target_layer is not None and (
+        args.profile_experiment != "target-boundaries" or args.profile_target_layer < 0
+    ):
+        parser.error("--profile-target-layer requires target-boundaries and a nonnegative decoder index")
     if (args.profile_nan_diagnostic or args.profile_experiment) and (args.stage != "profile" or args.batches != [64]):
         parser.error("NaN diagnostics require the isolated B64 profile stage")
     args.repeats = args.repeats if args.repeats is not None else (3 if args.stage == "repeat" else 1)

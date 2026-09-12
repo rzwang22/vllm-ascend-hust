@@ -1,5 +1,9 @@
 # DSpark profile: bounded target internal boundaries
 
+The resulting PQHA55hF run narrowed the interval to layer 0 output → layer 1
+output. See [the new audit and local layer runbook](PROFILE_TARGET_LAYER.md).
+The evidence and PENDING labels below describe the preceding delivery.
+
 **Diagnostic supplementation. Root cause UNKNOWN. New NPU verification PENDING.**
 This follows the `auxiliary-transfers` reproduction. It changes neither Core,
 custom operators, weights, confidence allocation, sampling, mixed verification

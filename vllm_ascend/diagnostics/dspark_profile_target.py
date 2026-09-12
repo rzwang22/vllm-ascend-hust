@@ -26,7 +26,9 @@ class TargetBoundaryFlags:
     replay can overwrite this bank. Profile calls have no execution receipt.
     """
 
-    def __init__(self, *, sizes, auxiliary_layers, start_layer, end_layer, hidden_size, hc_mult, device):
+    def __init__(
+        self, *, sizes, auxiliary_layers, start_layer, end_layer, hidden_size, hc_mult, device, target_layer=None
+    ):
         if (
             not sizes
             or min(sizes) <= 0
@@ -36,22 +38,30 @@ class TargetBoundaryFlags:
             or any(type(i) is not int or not start_layer <= i < end_layer for i in auxiliary_layers)
         ):
             raise ValueError("Target boundaries require PP1, valid auxiliary layers and capture sizes within 384")
-        anchor = min(auxiliary_layers)
-        checkpoints = set(range(min(EARLY_LAYER_COUNT, anchor)))
-        checkpoints.update(range(LAYER_CHECKPOINT_INTERVAL - 1, anchor, LAYER_CHECKPOINT_INTERVAL))
-        if anchor:
-            checkpoints.add(anchor - 1)
+        if target_layer is not None and (type(target_layer) is not int or not start_layer <= target_layer < end_layer):
+            raise ValueError("Target detail layer must be a zero-based decoder index within the target model")
+        self.target_layer = target_layer
+        # Keep the original broad plan when no detail layer is requested.
+        # A local plan replaces its distant cuts, while AuxiliaryCapture still
+        # observes all configured raw/persistent/consumed auxiliary outputs.
+        anchor = min(auxiliary_layers) if target_layer is None else target_layer
+        checkpoints = {anchor - 1} if anchor else set()
+        if target_layer is None:
+            checkpoints.update(range(min(EARLY_LAYER_COUNT, anchor)))
+            checkpoints.update(range(LAYER_CHECKPOINT_INTERVAL - 1, anchor, LAYER_CHECKPOINT_INTERVAL))
+        self.observe_layer_input = target_layer is not None
         self.layers = tuple(sorted(checkpoints | {anchor}))
         self.names = (
             ("embedding",)
             + tuple(f"layer.{i}.output" for i in sorted(checkpoints))
+            + ((f"layer.{anchor}.input",) if self.observe_layer_input else ())
             + tuple(f"layer.{anchor}.{stage}" for stage in DETAILED_BOUNDARIES)
         )
         if len(self.names) > MAX_TARGET_BOUNDARIES:
             raise ValueError("Target diagnostic boundary budget exceeded")
         self.max_tokens = max(sizes)
         self.tails = {
-            name: [hc_mult, hidden_size] if name.endswith((".residual", ".output")) else [hidden_size]
+            name: [hc_mult, hidden_size] if name.endswith((".input", ".residual", ".output")) else [hidden_size]
             for name in self.names
         }
         self.flags = torch.empty((len(self.names), self.max_tokens, 2), dtype=torch.bool, device=device)
@@ -96,6 +106,7 @@ def install_target_boundaries(model, config):
         hidden_size=model.config.hidden_size,
         hc_mult=model.hc_mult,
         device=model.device,
+        target_layer=additional["dspark_profile_observation"].get("target_layer"),
     )
     model._dspark_layer_snapshots = bank
     for index in bank.layers:
@@ -224,6 +235,7 @@ class TargetProfileObservation(AuxiliaryProfileObservation):
             "target_internal": {
                 "enabled": True,
                 "boundary_order": self.capture.bank.names,
+                "target_layer": self.capture.bank.target_layer,
                 "bank_bytes": self.capture.bank.allocated_bytes,
                 "counts": dict(self.target_counts),
                 "root_cause": "UNKNOWN",

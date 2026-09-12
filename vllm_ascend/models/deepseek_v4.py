@@ -1036,10 +1036,12 @@ class DeepseekV2DecoderLayer(nn.Module):
         llama_4_scaling: torch.Tensor | None = None,
         input_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        diagnostic = self._dspark_layer_snapshots
+        if diagnostic is not None and getattr(diagnostic, "observe_layer_input", False):
+            diagnostic.write(f"layer.{self.layer_idx}.input", hidden_states)
         residual = hidden_states.clone()
         hidden_states, post, comb = self.hc_pre(hidden_states, self.hc_attn_fn, self.hc_attn_scale, self.hc_attn_base)
         hidden_states = self.input_layernorm(hidden_states)
-        diagnostic = self._dspark_layer_snapshots
         if diagnostic is not None:
             diagnostic.write(f"layer.{self.layer_idx}.attn_input", hidden_states)
         attn_kwargs = {"positions": positions, "hidden_states": hidden_states, "llama_4_scaling": llama_4_scaling}
