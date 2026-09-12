@@ -253,3 +253,12 @@ also passes: **61 passed**. Full `bash format.sh ci` was run in a disposable
 worktree with this patch: it remains failing on repository-wide lint/format
 issues (78 other files automatically modified; zero task files modified).
 Those unrelated changes were not included. Changed-file checks pass independently.
+
+## Targeted numeric follow-up
+
+The QKmLESDh archive audit and the opt-in `numeric-boundaries` experiment are
+documented in [PROFILE_NUMERIC_BOUNDARIES.md](PROFILE_NUMERIC_BOUNDARIES.md).
+It observes only the actual hidden input and returned base logits around
+`compute_draft_logits`, with one compact D2H wait per returned head. It retains
+first-NaN evidence, prior rounds and CPU request-set transitions. Existing
+controls retain their device behavior; this is diagnosis, not a validated fix.

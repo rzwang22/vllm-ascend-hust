@@ -160,7 +160,10 @@ def run(args):
         try:
             cmd = command(args, batch, args.output_dir / f"b{batch}")
             row["command"] = cmd
-            if args.stage == "profile" and getattr(args, "profile_experiment", None) == "metadata-only":
+            if args.stage == "profile" and getattr(args, "profile_experiment", None) in (
+                "metadata-only",
+                "numeric-boundaries",
+            ):
                 cmd = [
                     sys.executable,
                     "-m",
@@ -259,7 +262,7 @@ def main(argv=None):
     observer.add_argument("--profile-nan-diagnostic", action="store_true")
     observer.add_argument(
         "--profile-experiment",
-        choices=("baseline", "metadata-only", "context-kv-sync"),
+        choices=("baseline", "metadata-only", "context-kv-sync", "numeric-boundaries"),
         help="Replay the original point prefix; never publish costs or performance",
     )
     parser.add_argument("--profile-stop-after-point", default="ctx128-n4-t12-skewed")

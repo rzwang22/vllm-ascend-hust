@@ -72,6 +72,9 @@ class Speculator:
     def _run_draft_model_forward(self, proposal, metadata):
         return self.hidden
 
+    def _build_draft_forward_metadata(self, execution):
+        return {}
+
     def _execute_sequential_markov_sampling(self, proposal, hidden):
         logits = self.model.compute_draft_logits(hidden)
         if self.error is not None:
@@ -241,7 +244,7 @@ def test_sync_control_changes_only_context_return_and_counts(tmp_path, monkeypat
     assert len(waits) == 3
 
 
-@pytest.mark.parametrize("mode", ["baseline", "metadata-only", "context-kv-sync"])
+@pytest.mark.parametrize("mode", ["baseline", "metadata-only", "context-kv-sync", "numeric-boundaries"])
 def test_prefix_controls_and_cli_do_not_enable_full_diagnostic(tmp_path, monkeypatch, mode):
     monkeypatch.setattr(
         benchmark,
@@ -253,9 +256,11 @@ def test_prefix_controls_and_cli_do_not_enable_full_diagnostic(tmp_path, monkeyp
     kwargs = profile.profile_engine_kwargs(None, tmp_path, False, mode)
     assert "dspark_profile_nan_diagnostic_dir" not in kwargs["additional_config"]
     assert ("dspark_profile_observation" in kwargs["additional_config"]) == (mode != "baseline")
-    assert ("distributed_executor_backend" in kwargs) == (mode == "metadata-only")
-    assert ("dspark_profile_failure_dir" in kwargs["additional_config"]) == (mode == "metadata-only")
-    if mode == "metadata-only":
+    assert ("distributed_executor_backend" in kwargs) == (mode in ("metadata-only", "numeric-boundaries"))
+    assert ("dspark_profile_failure_dir" in kwargs["additional_config"]) == (
+        mode in ("metadata-only", "numeric-boundaries")
+    )
+    if mode in ("metadata-only", "numeric-boundaries"):
         assert kwargs["distributed_executor_backend"].endswith("dspark_profile_executor.ProfileMultiprocExecutor")
     base = ["--plugin-sha", "abc", "--manifest", str(tmp_path / "manifest"), "--output-dir", str(tmp_path)]
     observed = []
@@ -273,7 +278,7 @@ def test_prefix_controls_and_cli_do_not_enable_full_diagnostic(tmp_path, monkeyp
         )
 
 
-@pytest.mark.parametrize("mode", ["metadata-only", "context-kv-sync"])
+@pytest.mark.parametrize("mode", ["metadata-only", "context-kv-sync", "numeric-boundaries"])
 def test_reject_performance_and_full_diagnostic_engines(tmp_path, mode):
     runner = Runner()
     runner.speculator.confidence_verification.options["profile"] = False

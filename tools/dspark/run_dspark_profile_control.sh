@@ -5,7 +5,7 @@ set -o pipefail
 main() {
     test "$#" -eq 3 || return 1
     local sha=$1 manifest=$2 mode=$3
-    case "$mode" in baseline|metadata-only|context-kv-sync) ;; *) return 1 ;; esac
+    case "$mode" in baseline|metadata-only|context-kv-sync|numeric-boundaries) ;; *) return 1 ;; esac
     bash /workspace/vllm-ascend-hust/tools/dspark/run_dspark_large_batch.sh "$sha" "$manifest" \
         --stage profile --batches 64 --num-prompts 400 \
         --profile-experiment "$mode" --profile-stop-after-point ctx128-n4-t12-skewed \

@@ -12,6 +12,7 @@ import json
 import os
 from collections import Counter, deque
 from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import fields, is_dataclass
 from datetime import datetime, timezone
 from functools import wraps
@@ -22,6 +23,8 @@ import numpy as np
 import torch
 
 RING_RECORDS = 128
+NUMERIC_ROUNDS = 3
+TRANSITION_RECORDS = 16
 MAX_FIELDS = 128
 MAX_DESCRIPTOR_NODES = 512
 EPOCH_FIELDS = (
@@ -127,7 +130,7 @@ class ProfileObservation:
                 "Profile observation requires an isolated specified-length engine without full diagnostics"
             )
         self.mode = options["mode"]
-        if self.mode not in ("metadata-only", "context-kv-sync"):
+        if self.mode not in ("metadata-only", "context-kv-sync", "numeric-boundaries"):
             raise ValueError("Unsupported profile observation mode")
         self.runner = runner
         self.directory = Path(options["directory"])
@@ -147,14 +150,28 @@ class ProfileObservation:
         self.first_failure = False
         self.hooks = []
         self.recording_error = None
+        self.numeric_records = deque(maxlen=NUMERIC_ROUNDS)
+        self.numeric_context = None
+        self.numeric_transfers = 0
+        self.numeric_transfers_completed = 0
+        self.numeric_counts = Counter()
+        self.numeric_nan_rounds = 0
+        self.first_nonfinite = False
+        self.first_nan = False
+        self.transitions = deque(maxlen=TRANSITION_RECORDS)
+        self.transition_count = 0
+        self.last_layout = None
+        self.last_scheduler = None
+        self.draft_seq_lens = None
         spec = runner.speculator
         try:
-            if self.mode == "metadata-only":
+            if self.mode in ("metadata-only", "numeric-boundaries"):
                 self.wrap(runner, "execute_model", "target_execute")
                 self.wrap(runner.cudagraph_manager, "run_fullgraph", "target_full")
                 self.wrap(spec, "prepare_proposal_inputs", "proposal_prepare")
                 self.wrap(spec, "propose", "proposal_publish")
                 self.wrap(spec, "_run_draft_model_forward", "draft_forward")
+                self.wrap(spec, "_build_draft_forward_metadata", "draft_metadata")
                 self.wrap(spec, "_execute_sequential_markov_sampling", "markov")
                 self.wrap(spec.model, "combine_hidden_states", "combined_context")
                 self.wrap(spec.model, "precompute_and_store_context_kv", "context_kv")
@@ -180,7 +197,12 @@ class ProfileObservation:
                 self.batch_current = True
             self.record(stage + ".enter", args=args, kwargs=kwargs)
             try:
-                result = original(*args, **kwargs)
+                if self.mode == "numeric-boundaries" and stage == "markov":
+                    self.numeric_context = args[0] if args else kwargs["proposal_inputs"]
+                if self.mode == "numeric-boundaries" and stage == "base_logits":
+                    result = self.observe_logits(original, args, kwargs)
+                else:
+                    result = original(*args, **kwargs)
                 if stage == "target_execute":
                     self.batch_current = getattr(self.runner, "execute_model_state", None) is not None
                 if self.mode == "context-kv-sync":
@@ -196,9 +218,155 @@ class ProfileObservation:
             except BaseException as error:
                 self.failed(stage, error)
                 raise
+            finally:
+                if stage == "markov":
+                    self.numeric_context = None
 
         setattr(obj, name, observed)
         self.hooks.append((obj, name, original, observed, had_local, local))
+
+    def numeric_identity(self):
+        """Bind candidate rows to the live Markov argument, never target spans."""
+        inputs = self.numeric_context
+        spec = self.runner.speculator
+        if inputs is None or inputs.step_epoch != spec._markov_attempt_step_epoch:
+            raise ValueError("Numeric observation lacks the current Markov proposal epoch")
+        ids = list(inputs.request_ids)
+        n, k, rows = inputs.num_reqs, inputs.num_speculative_tokens, inputs.num_query_tokens
+        if inputs.rank != self.rank or len(ids) != n or len(set(ids)) != n or k <= 0 or rows != n * k:
+            raise ValueError("Numeric observation has inconsistent candidate row metadata")
+        return {
+            "point": self.point,
+            "rank": self.rank,
+            "execution": self.execution,
+            "proposal_epoch": int(inputs.step_epoch),
+            "epochs": {f: getattr(spec, f, None) for f in EPOCH_FIELDS},
+            "request_ids": ids,
+            "num_speculative_tokens": int(k),
+            "candidate_rows": int(rows),
+            "target_valid_tokens": int(inputs.num_target_tokens),
+            "draft_decode_seq_lens": deepcopy(self.draft_seq_lens),
+        }
+
+    @staticmethod
+    def row_flags(tensor, rows):
+        if not isinstance(tensor, torch.Tensor) or tensor.ndim != 2 or tensor.shape[0] != rows:
+            raise ValueError("Numeric boundary tensor does not match proposal candidate rows")
+        # Same caller stream as eager draft/head. These fresh reductions precede
+        # norm/head buffer reuse; no tensor values or views survive this call.
+        return torch.stack((torch.isnan(tensor).any(dim=1), torch.isinf(tensor).any(dim=1)), dim=1)
+
+    def observe_logits(self, original, args, kwargs):
+        identity = hidden_flags = None
+        try:
+            identity = self.numeric_identity()
+            hidden = args[0] if args else kwargs["hidden_states"]
+            identity["hidden_shape"] = list(hidden.shape)
+            hidden_flags = self.row_flags(hidden, identity["candidate_rows"])
+        except Exception as error:
+            self.recording_error = f"numeric hidden: {type(error).__name__}: {error}"
+        try:
+            result = original(*args, **kwargs)
+        except BaseException:
+            # A head exception has no returned logits. Try to preserve the
+            # already-owned hidden flags, without masking the original error.
+            if hidden_flags is not None:
+                self.save_numeric(identity, hidden_flags, None)
+            raise
+        if hidden_flags is not None:
+            self.save_numeric(identity, hidden_flags, result)
+        return result
+
+    def save_numeric(self, identity, hidden_flags, logits):
+        try:
+            logits_flags = None if logits is None else self.row_flags(logits, identity["candidate_rows"])
+            flags = hidden_flags if logits_flags is None else torch.cat((hidden_flags, logits_flags), dim=1)
+            # ONE blocking compact D2H per completed head, no wait at hidden.
+            # Even if Markov's existing device assertion kills the worker, the
+            # host record and first-nonfinite file exist before control returns.
+            self.numeric_transfers += 1
+            host = flags.to(device="cpu", non_blocking=False).tolist()
+            self.numeric_transfers_completed += 1
+            rows = []
+            for row, values in enumerate(host):
+                request_row, position = divmod(row, identity["num_speculative_tokens"])
+                rows.append(
+                    {
+                        "candidate_row": row,
+                        "request_row": request_row,
+                        "request_id": identity["request_ids"][request_row],
+                        "candidate_position": position,
+                        "hidden_nan": values[0],
+                        "hidden_inf": values[1],
+                        "logits_nan": values[2] if logits_flags is not None else None,
+                        "logits_inf": values[3] if logits_flags is not None else None,
+                    }
+                )
+            hidden_bad = any(r["hidden_nan"] or r["hidden_inf"] for r in rows)
+            logits_bad = any(r["logits_nan"] or r["logits_inf"] for r in rows)
+            classification = (
+                "hidden_nonfinite"
+                if hidden_bad
+                else "logits_unavailable"
+                if logits_flags is None
+                else "hidden_finite_logits_nonfinite"
+                if logits_bad
+                else "both_finite"
+            )
+            self.numeric_records.append(
+                identity
+                | {
+                    "logits_shape": list(logits.shape) if logits is not None else None,
+                    "classification": classification,
+                    "rows": rows,
+                }
+            )
+            self.numeric_counts[classification] += 1
+            has_nan = any(r["hidden_nan"] or r["logits_nan"] for r in rows)
+            self.numeric_nan_rounds += int(has_nan)
+            # Inf (including permitted -Inf logits) may precede the first NaN.
+            # Preserve that later NaN before Markov too, regardless of the Inf latch.
+            if has_nan and not self.first_nan:
+                self.write("first-nan", self.snapshot(), exclusive=True)
+                self.first_nan = True
+            if (hidden_bad or logits_bad) and not self.first_nonfinite:
+                self.write("first-nonfinite", self.snapshot(), exclusive=True)
+                self.first_nonfinite = True
+        except Exception as error:
+            self.recording_error = f"numeric save: {type(error).__name__}: {error}"
+
+    def retain_transition(self, stage, batch, spec):
+        """Keep CPU layout changes outside the ordinary per-stage ring."""
+        if batch is None or stage not in (
+            "target_full.enter",
+            "target_execute.return",
+            "proposal_prepare.return",
+            "proposal_publish.return",
+        ):
+            return
+        selection = getattr(spec.confidence_verification, "last_selection", None) or {}
+        layout = {
+            "point": self.point,
+            "execution": self.execution,
+            "stage": stage,
+            "request_ids": batch["request_ids"],
+            "state_indices": batch.get("idx_mapping_np"),
+            "target_query_start_loc": batch.get("query_start_loc_np"),
+            "target_query_lengths": batch.get("num_scheduled_tokens"),
+            "selection": deepcopy({k: selection.get(k) for k in ("lengths", "producer_epochs", "confidence_epochs")}),
+            "owner_rows": {
+                key: {"producer_epoch": owner.producer_epoch, "publication_row": owner.publication_row}
+                for key, owner in getattr(spec, "_published_proposal_owners", {}).items()
+            },
+            "epochs": {f: getattr(spec, f, None) for f in EPOCH_FIELDS},
+        }
+        if self.last_layout is not None and set(layout["request_ids"]) != set(self.last_layout["request_ids"]):
+            self.transition_count += 1
+            self.transitions.append({"before": self.last_layout, "scheduler": self.last_scheduler, "after": layout})
+        if self.transitions and self.transitions[-1]["after"]["execution"] == self.execution:
+            if stage in ("proposal_prepare.return", "proposal_publish.return"):
+                self.transitions[-1][stage] = layout
+        self.last_layout = layout
 
     def batch(self):
         batch = getattr(self.runner, "input_batch", None)
@@ -230,7 +398,7 @@ class ProfileObservation:
         return result
 
     def record(self, stage, **payload):
-        if self.mode != "metadata-only":
+        if self.mode not in ("metadata-only", "numeric-boundaries"):
             return
         try:
             spec = self.runner.speculator
@@ -255,6 +423,19 @@ class ProfileObservation:
                     "finished": sorted(scheduled.finished_req_ids),
                     "preempted": sorted(getattr(scheduled, "preempted_req_ids", None) or []),
                 }
+                self.last_scheduler = record["scheduler"]
+            self.retain_transition(stage, record.get("batch"), spec)
+            if stage == "draft_metadata.return":
+                # This list already exists on CPU in the metadata builder.
+                # Copy explicitly: generic descriptors stop before these values.
+                self.draft_seq_lens = {
+                    "proposal_epoch": getattr(spec, "_proposal_step_epoch", None),
+                    "layers": {
+                        name: list(metadata.decode.seq_lens_list) if metadata.decode is not None else None
+                        for name, metadata in payload["result"].items()
+                    },
+                }
+                record["draft_decode_seq_lens"] = self.draft_seq_lens
             record["owners"] = describe(getattr(spec, "_published_proposal_owners", {}))
             record["selection"] = describe(getattr(spec.confidence_verification, "last_selection", None))
             if stage in ("target_full.enter", "proposal_prepare.return", "context_kv.return"):
@@ -292,7 +473,7 @@ class ProfileObservation:
 
     def snapshot(self):
         return {
-            "schema_version": 2,
+            "schema_version": 3,
             "pid": os.getpid(),
             "observed_utc": datetime.now(timezone.utc).isoformat(),
             "descriptor_node_limit": MAX_DESCRIPTOR_NODES,
@@ -305,7 +486,28 @@ class ProfileObservation:
             "ring_capacity": RING_RECORDS,
             "stage_counts": dict(self.counts),
             "records": list(self.records),
-            "device_values": "unavailable; no numeric checks or device copies",
+            "transitions": list(self.transitions),
+            "transition_capacity": TRANSITION_RECORDS,
+            "transitions_seen": self.transition_count,
+            "transitions_dropped": max(0, self.transition_count - TRANSITION_RECORDS),
+            "numeric": {
+                "enabled": self.mode == "numeric-boundaries",
+                "history_capacity": NUMERIC_ROUNDS,
+                "rounds": list(self.numeric_records),
+                "compact_host_transfers": self.numeric_transfers,
+                "compact_host_transfers_completed": self.numeric_transfers_completed,
+                "classification_counts": dict(self.numeric_counts),
+                "nan_rounds": self.numeric_nan_rounds,
+                "wait": "one blocking compact D2H after head return; hidden-only on head exception",
+                "columns": ["hidden_nan", "hidden_inf", "logits_nan", "logits_inf"],
+                "candidate_position_base": 0,
+                "inf_policy": "both signs recorded; observation does not reject Inf or change Markov checks",
+            },
+            "device_values": (
+                "only per-candidate NaN/Inf flags at hidden/head boundaries"
+                if self.mode == "numeric-boundaries"
+                else "unavailable; no numeric checks or device copies"
+            ),
             "sync": {
                 "boundary": "precompute_and_store_context_kv return / before draft forward",
                 "object": "torch.npu.current_stream()",
@@ -334,6 +536,8 @@ class ProfileObservation:
         if exclusive:
             with path.open("xb") as stream:
                 stream.write(encoded)
+                stream.flush()
+                os.fsync(stream.fileno())
         else:
             temporary = path.with_suffix(".tmp")
             temporary.write_bytes(encoded)
@@ -347,10 +551,12 @@ class ProfileObservation:
         receipt = self.write("latest", data)
         if self.recording_error is not None:
             raise RuntimeError(f"Profile metadata evidence unavailable: {self.recording_error}")
-        return {key: value for key, value in data.items() if key != "records"} | {
+        return {key: value for key, value in data.items() if key not in ("records", "transitions", "numeric")} | {
             "records_count": len(data["records"]),
             "local_evidence": receipt,
             "records": "worker-local; latest file is replaced at the next point boundary",
+            "transitions": "worker-local; retained independently of the per-stage ring",
+            "numeric": {key: value for key, value in data["numeric"].items() if key != "rounds"},
         }
 
     def begin_point(self, point):
@@ -360,6 +566,15 @@ class ProfileObservation:
         self.counts.clear()
         self.sync_calls = self.sync_completed = 0
         self.sync_stream = None
+        self.numeric_records.clear()
+        self.numeric_context = None
+        self.numeric_transfers = 0
+        self.numeric_transfers_completed = 0
+        self.numeric_counts.clear()
+        self.numeric_nan_rounds = 0
+        self.transitions.clear()
+        self.transition_count = 0
+        self.last_layout = self.last_scheduler = self.draft_seq_lens = None
 
     def close(self):
         for obj, name, original, observed, had_local, local in reversed(self.hooks):
@@ -370,4 +585,8 @@ class ProfileObservation:
                     delattr(obj, name)
         self.hooks.clear()
         self.records.clear()
+        self.numeric_records.clear()
+        self.numeric_context = None
+        self.transitions.clear()
+        self.last_layout = self.last_scheduler = self.draft_seq_lens = None
         self.point = None
