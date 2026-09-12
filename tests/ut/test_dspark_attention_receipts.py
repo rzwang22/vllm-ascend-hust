@@ -15,6 +15,7 @@ from torch._functorch.aot_autograd import make_boxed_func
 from torch._inductor.compile_fx import graph_returns_tuple, make_graph_return_tuple
 
 from tests.ut.test_dspark_profile_target import ROOT, load_target, torch
+from tests.ut.test_dspark_replay_diagnostics import bank as replay_bank
 
 
 def function(path, name, namespace):
@@ -47,7 +48,10 @@ def test_real_dispatch_aot_copyback_and_repeated_replay(tmp_path, monkeypatch, s
         pytest.importorskip("npugraph_ex")
         if not torch.npu.is_available():
             pytest.skip("requires an available Ascend NPU for actual ACLGraph replay")
+    sym_min_binding = torch.sym_min
     module = load_target(monkeypatch)
+    assert module.torch is torch and sys.modules["torch"] is torch
+    assert module.torch.sym_min is sym_min_binding
     attention = sys.modules["vllm_ascend.diagnostics.dspark_profile_attention"]
     bank = module.TargetBoundaryFlags(
         sizes=(6,),
@@ -230,3 +234,70 @@ def test_real_dispatch_aot_copyback_and_repeated_replay(tmp_path, monkeypatch, s
     finally:
         torch._dynamo.reset()
         lib._destroy()
+
+
+@pytest.mark.parametrize("dynamic", [False, True])
+@pytest.mark.parametrize("writer", ["flags", "snapshots"])
+def test_compiled_row_bound_static_and_symbolic(monkeypatch, writer, dynamic):
+    """Compile actual writers through AOT, below/at/above capacity, no shape coercion."""
+    module = load_target(monkeypatch)
+    if writer == "flags":
+        bank = module.TargetBoundaryFlags(
+            sizes=(6, 12, 18, 24),
+            auxiliary_layers=(40, 41, 42),
+            start_layer=0,
+            end_layer=43,
+            hidden_size=8,
+            hc_mult=4,
+            device="cpu",
+            target_layer=1,
+        )
+    else:
+        bank = replay_bank(layers=[])
+    graphs = []
+
+    def model(x):
+        bank.write("embedding", x)
+        return x * 2
+
+    def backend(gm, examples):
+        graphs.append(gm)
+        return aot_autograd(fw_compiler=lambda g, _: make_boxed_func(g.forward))(gm, examples)
+
+    torch._dynamo.reset()
+    compiled = torch.compile(model, backend=backend, fullgraph=True, dynamic=dynamic)
+    try:
+        for execution, size in enumerate((29, 5, 24, 30), 1):
+            n = min(size, bank.max_tokens)
+            x = torch.ones(size, 8)
+            x[0] = torch.nan
+            x[n - 1] = torch.inf
+            bank.epoch_input.fill_(execution)
+            if writer == "flags":
+                bank.flags.fill_(True)
+                bank.receipts.fill_(-1)
+            else:
+                bank.buffers["embedding"].fill_(-123)
+                bank.receipts["embedding"].fill_(-1)
+            output = compiled(x)
+            torch.testing.assert_close(output, x * 2, equal_nan=True)
+            if writer == "flags":
+                expected = torch.stack((torch.isnan(x[:n]).any(1), torch.isinf(x[:n]).any(1)), 1)
+                assert torch.equal(bank.flags[0, :n], expected)
+                assert bank.flags[0, n:].all()
+                assert bank.receipts[0].item() == execution
+            else:
+                bucket = (n - 1) // bank.query_len + 1
+                offset = bucket * (bucket - 1) * bank.query_len // 2
+                expected = torch.full_like(bank.buffers["embedding"], -123)
+                expected[offset : offset + n] = x[:n]
+                torch.testing.assert_close(bank.buffers["embedding"], expected, equal_nan=True)
+                receipts = [-1] * len(bank.sizes)
+                receipts[bucket - 1] = execution
+                assert bank.receipts["embedding"].tolist() == receipts
+        if dynamic:
+            assert any(node.target is torch.sym_min for graph in graphs for node in graph.graph.nodes)
+        else:
+            assert not any(node.target is torch.sym_min for graph in graphs for node in graph.graph.nodes)
+    finally:
+        torch._dynamo.reset()

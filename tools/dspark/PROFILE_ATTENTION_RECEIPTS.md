@@ -1,5 +1,7 @@
 # DSpark attention 回执修复：6DoBME2M
 
+后续 Torch2.10 静态尺寸兼容性修复及两阶段预检见 [YYOqidKO 说明](PROFILE_DYNAMO_COMPATIBILITY.md)。
+
 本轮是**诊断回执修复**。原始 NaN 未进入复现场景，worker 自然退出也未修复。
 CPU 实际 dispatcher/AOT 回归证明共享存储覆盖缺陷；服务器最终编译图未随归档保存，
 对该次运行具体覆盖指令的确认、完整 Ascend 编译、ACLGraph、模型复验为

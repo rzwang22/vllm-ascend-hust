@@ -1,0 +1,396 @@
+{
+  "kind": "CPU/source/mock verification; not installed Ascend execution",
+  "probes": [
+    {
+      "python": "3.12.13",
+      "platform": "macOS-26.4-arm64-arm-64bit",
+      "torch": "2.10.0",
+      "torch_git": "449b1768410104d3ed79d3bcfe4ba1d65c7f22c0",
+      "sym_min_module": "torch",
+      "sym_min_qualname": "sym_min",
+      "sym_min_source_sha256": "b43642e4482c47376c01817bafd219d99fb4bb9bced2a4e045ece6f9dd158c16",
+      "sym_min_source": "def sym_min(a, b):\n    \"\"\"SymInt-aware utility for min().\"\"\"\n    if overrides.has_torch_function((a, b)):\n        return overrides.handle_torch_function(sym_min, (a, b), a, b)\n    if isinstance(a, (SymInt, SymFloat)):\n        return a.__sym_min__(b)\n    elif isinstance(b, (SymInt, SymFloat)):\n        return b.__sym_min__(a)\n\n    all_types, float_types = __all_and_float_types()\n\n    assert isinstance(a, all_types), type(a)\n    assert isinstance(b, all_types), type(b)\n    if isinstance(a, float_types) or isinstance(b, float_types):\n        return builtins.float(builtins.min(a, b))  # type: ignore[call-overload]\n    else:\n        return builtins.min(a, b)  # type: ignore[call-overload]\n",
+      "eager_shape_type": "int",
+      "attempts": [
+        {
+          "expression": "legacy",
+          "dynamic": false,
+          "graphs": [],
+          "shapes": [],
+          "status": "failed",
+          "error_type": "Unsupported",
+          "error": "torch.* op returned non-Tensor\n  Explanation: torch.* ops that return a non-Tensor cannot be traced into the Dynamo FX graph output\n\n\n  Developer debug context: example_value type: int; op: call_function; target: <function sym_min at 0x10aeec900>\n\n For more details about this graph break, please visit: https://meta-pytorch.github.io/compile-graph-break-site/gb/gb0208.html\n\nfrom user code:\n   File \"/Users/wangrunze/dev/vllm-dspark/vllm-ascend-hust/tools/dspark/repro_sym_min_compile.py\", line 18, in legacy\n    return value[: torch.sym_min(value.shape[0], CAPACITY)] + 1\n\nSet TORCHDYNAMO_VERBOSE=1 for the internal stack trace (please do this especially if you're reporting a bug to PyTorch). For even more developer context, set TORCH_LOGS=\"+dynamo\"\n"
+        },
+        {
+          "expression": "legacy",
+          "dynamic": true,
+          "graphs": [
+            {
+              "code": "\n\n\ndef forward(self, s4 : torch.SymInt, s14 : torch.SymInt, L_value_ : torch.Tensor):\n    l_value_ = L_value_\n    sym_min = torch.sym_min(s4, 24);  s4 = None\n    getitem_2 = l_value_[slice(None, sym_min, None)];  l_value_ = sym_min = None\n    add = getitem_2 + 1;  getitem_2 = None\n    return (add,)\n    ",
+              "argument_types": [
+                "SymInt",
+                "SymInt",
+                "Tensor"
+              ]
+            }
+          ],
+          "shapes": [
+            [
+              24,
+              8
+            ],
+            [
+              5,
+              8
+            ],
+            [
+              24,
+              8
+            ],
+            [
+              24,
+              8
+            ]
+          ],
+          "status": "passed"
+        },
+        {
+          "expression": "bounded",
+          "dynamic": false,
+          "graphs": [
+            {
+              "code": "\n\n\ndef forward(self, L_value_ : torch.Tensor):\n    l_value_ = L_value_\n    getitem = l_value_[slice(None, 24, None)];  l_value_ = None\n    add = getitem + 1;  getitem = None\n    return (add,)\n    ",
+              "argument_types": [
+                "Tensor"
+              ]
+            },
+            {
+              "code": "\n\n\ndef forward(self, L_value_ : torch.Tensor):\n    l_value_ = L_value_\n    getitem = l_value_[slice(None, 5, None)];  l_value_ = None\n    add = getitem + 1;  getitem = None\n    return (add,)\n    ",
+              "argument_types": [
+                "Tensor"
+              ]
+            },
+            {
+              "code": "\n\n\ndef forward(self, L_value_ : torch.Tensor):\n    l_value_ = L_value_\n    getitem = l_value_[slice(None, 24, None)];  l_value_ = None\n    add = getitem + 1;  getitem = None\n    return (add,)\n    ",
+              "argument_types": [
+                "Tensor"
+              ]
+            },
+            {
+              "code": "\n\n\ndef forward(self, L_value_ : torch.Tensor):\n    l_value_ = L_value_\n    getitem = l_value_[slice(None, 24, None)];  l_value_ = None\n    add = getitem + 1;  getitem = None\n    return (add,)\n    ",
+              "argument_types": [
+                "Tensor"
+              ]
+            }
+          ],
+          "shapes": [
+            [
+              24,
+              8
+            ],
+            [
+              5,
+              8
+            ],
+            [
+              24,
+              8
+            ],
+            [
+              24,
+              8
+            ]
+          ],
+          "status": "passed"
+        },
+        {
+          "expression": "bounded",
+          "dynamic": true,
+          "graphs": [
+            {
+              "code": "\n\n\ndef forward(self, s4 : torch.SymInt, s14 : torch.SymInt, L_value_ : torch.Tensor):\n    l_value_ = L_value_\n    sym_min = torch.sym_min(s4, 24);  s4 = None\n    getitem_2 = l_value_[slice(None, sym_min, None)];  l_value_ = sym_min = None\n    add = getitem_2 + 1;  getitem_2 = None\n    return (add,)\n    ",
+              "argument_types": [
+                "SymInt",
+                "SymInt",
+                "Tensor"
+              ]
+            }
+          ],
+          "shapes": [
+            [
+              24,
+              8
+            ],
+            [
+              5,
+              8
+            ],
+            [
+              24,
+              8
+            ],
+            [
+              24,
+              8
+            ]
+          ],
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "python": "3.12.13",
+      "platform": "macOS-26.4-arm64-arm-64bit",
+      "torch": "2.14.0",
+      "torch_git": "08187d9e0fba026dc8217405802ab5381dc88d90",
+      "sym_min_module": "torch",
+      "sym_min_qualname": "sym_min",
+      "sym_min_source_sha256": "04d7834c00d92b8c8d1b3830d31ef55c0bf9fe9fcbc5d5176dad0ee75ad1b147",
+      "sym_min_source": "def sym_min(\n    a: \"IntLikeType | FloatLikeType\", b: \"IntLikeType | FloatLikeType\"\n) -> \"IntLikeType | FloatLikeType\":\n    \"\"\"SymInt-aware utility for min().\"\"\"\n    if overrides.has_torch_function((a, b)):\n        # pyrefly: ignore[bad-argument-type]\n        return overrides.handle_torch_function(sym_min, (a, b), a, b)\n    if isinstance(a, (SymInt, SymFloat)):\n        return a.__sym_min__(b)  # type: ignore[return-value]\n    elif isinstance(b, (SymInt, SymFloat)):\n        return b.__sym_min__(a)  # type: ignore[return-value]\n\n    all_types, float_types = __all_and_float_types()\n\n    if not isinstance(a, all_types):\n        raise AssertionError(f\"expected {all_types}, got {type(a)}\")\n    if not isinstance(b, all_types):\n        raise AssertionError(f\"expected {all_types}, got {type(b)}\")\n    if isinstance(a, float_types) or isinstance(b, float_types):\n        return builtins.float(builtins.min(a, b))  # type: ignore[call-overload]\n    else:\n        return builtins.min(a, b)  # type: ignore[call-overload]\n",
+      "eager_shape_type": "int",
+      "attempts": [
+        {
+          "expression": "legacy",
+          "dynamic": false,
+          "graphs": [
+            {
+              "code": "\n\n\ndef forward(self, L_value_ : torch.Tensor):\n    l_value_ = L_value_\n    sym_min = torch.sym_min(29, 24);  sym_min = None\n    getitem = l_value_[slice(None, 24, None)];  l_value_ = None\n    add = getitem + 1;  getitem = None\n    return (add,)\n    ",
+              "argument_types": [
+                "Tensor"
+              ]
+            },
+            {
+              "code": "\n\n\ndef forward(self, L_value_ : torch.Tensor):\n    l_value_ = L_value_\n    sym_min = torch.sym_min(5, 24);  sym_min = None\n    getitem = l_value_[slice(None, 5, None)];  l_value_ = None\n    add = getitem + 1;  getitem = None\n    return (add,)\n    ",
+              "argument_types": [
+                "Tensor"
+              ]
+            },
+            {
+              "code": "\n\n\ndef forward(self, L_value_ : torch.Tensor):\n    l_value_ = L_value_\n    sym_min = torch.sym_min(24, 24);  sym_min = None\n    getitem = l_value_[slice(None, 24, None)];  l_value_ = None\n    add = getitem + 1;  getitem = None\n    return (add,)\n    ",
+              "argument_types": [
+                "Tensor"
+              ]
+            },
+            {
+              "code": "\n\n\ndef forward(self, L_value_ : torch.Tensor):\n    l_value_ = L_value_\n    sym_min = torch.sym_min(30, 24);  sym_min = None\n    getitem = l_value_[slice(None, 24, None)];  l_value_ = None\n    add = getitem + 1;  getitem = None\n    return (add,)\n    ",
+              "argument_types": [
+                "Tensor"
+              ]
+            }
+          ],
+          "shapes": [
+            [
+              24,
+              8
+            ],
+            [
+              5,
+              8
+            ],
+            [
+              24,
+              8
+            ],
+            [
+              24,
+              8
+            ]
+          ],
+          "status": "passed"
+        },
+        {
+          "expression": "legacy",
+          "dynamic": true,
+          "graphs": [
+            {
+              "code": "\n\n\ndef forward(self, s4 : torch.SymInt, s14 : torch.SymInt, L_value_ : torch.Tensor):\n    l_value_ = L_value_\n    sym_min = torch.sym_min(s4, 24);  s4 = None\n    getitem_2 = l_value_[slice(None, sym_min, None)];  l_value_ = sym_min = None\n    add = getitem_2 + 1;  getitem_2 = None\n    return (add,)\n    ",
+              "argument_types": [
+                "SymInt",
+                "SymInt",
+                "Tensor"
+              ]
+            }
+          ],
+          "shapes": [
+            [
+              24,
+              8
+            ],
+            [
+              5,
+              8
+            ],
+            [
+              24,
+              8
+            ],
+            [
+              24,
+              8
+            ]
+          ],
+          "status": "passed"
+        },
+        {
+          "expression": "bounded",
+          "dynamic": false,
+          "graphs": [
+            {
+              "code": "\n\n\ndef forward(self, L_value_ : torch.Tensor):\n    l_value_ = L_value_\n    getitem = l_value_[slice(None, 24, None)];  l_value_ = None\n    add = getitem + 1;  getitem = None\n    return (add,)\n    ",
+              "argument_types": [
+                "Tensor"
+              ]
+            },
+            {
+              "code": "\n\n\ndef forward(self, L_value_ : torch.Tensor):\n    l_value_ = L_value_\n    getitem = l_value_[slice(None, 5, None)];  l_value_ = None\n    add = getitem + 1;  getitem = None\n    return (add,)\n    ",
+              "argument_types": [
+                "Tensor"
+              ]
+            },
+            {
+              "code": "\n\n\ndef forward(self, L_value_ : torch.Tensor):\n    l_value_ = L_value_\n    getitem = l_value_[slice(None, 24, None)];  l_value_ = None\n    add = getitem + 1;  getitem = None\n    return (add,)\n    ",
+              "argument_types": [
+                "Tensor"
+              ]
+            },
+            {
+              "code": "\n\n\ndef forward(self, L_value_ : torch.Tensor):\n    l_value_ = L_value_\n    getitem = l_value_[slice(None, 24, None)];  l_value_ = None\n    add = getitem + 1;  getitem = None\n    return (add,)\n    ",
+              "argument_types": [
+                "Tensor"
+              ]
+            }
+          ],
+          "shapes": [
+            [
+              24,
+              8
+            ],
+            [
+              5,
+              8
+            ],
+            [
+              24,
+              8
+            ],
+            [
+              24,
+              8
+            ]
+          ],
+          "status": "passed"
+        },
+        {
+          "expression": "bounded",
+          "dynamic": true,
+          "graphs": [
+            {
+              "code": "\n\n\ndef forward(self, s4 : torch.SymInt, s14 : torch.SymInt, L_value_ : torch.Tensor):\n    l_value_ = L_value_\n    sym_min = torch.sym_min(s4, 24);  s4 = None\n    getitem_2 = l_value_[slice(None, sym_min, None)];  l_value_ = sym_min = None\n    add = getitem_2 + 1;  getitem_2 = None\n    return (add,)\n    ",
+              "argument_types": [
+                "SymInt",
+                "SymInt",
+                "Tensor"
+              ]
+            }
+          ],
+          "shapes": [
+            [
+              24,
+              8
+            ],
+            [
+              5,
+              8
+            ],
+            [
+              24,
+              8
+            ],
+            [
+              24,
+              8
+            ]
+          ],
+          "status": "passed"
+        }
+      ]
+    }
+  ],
+  "baseline210": {
+    "passed": 0,
+    "failed": 2,
+    "skipped": 2,
+    "first_error": "Unsupported: torch.* op returned non-Tensor; sym_min example_value int"
+  },
+  "related210": {
+    "passed": 108,
+    "skipped": 2,
+    "seconds": 14.41
+  },
+  "focused210": {
+    "passed": 600,
+    "skipped": 5,
+    "seconds": 37.12,
+    "file_count": 24,
+    "conftest": "--noconftest; real installed vllm unavailable"
+  },
+  "related214": {
+    "passed": 108,
+    "skipped": 2,
+    "seconds": 15.67
+  },
+  "skips": [
+    "two real Ascend npugraph_ex/ACLGraph cases: torch_npu unavailable",
+    "three installed vllm/Ascend confidence cases"
+  ],
+  "logs": {
+    "before210": {
+      "sha256": "1005ed0e8ae91f3a1c5d0b12d90e5bac9d5662d289a4f39f1ffb37e186603bc2",
+      "summary": "2 failed, 2 skipped, 14 warnings in 2.03s"
+    },
+    "related210": {
+      "sha256": "188c3b656e0ac39ec1f98dbcf800bc01c7ab8de9e01b98a57cf8d3ffefab65ac",
+      "summary": "108 passed, 2 skipped, 15 warnings in 14.41s"
+    },
+    "focused210": {
+      "sha256": "b3ab8221f89160193f29ad8df58f622be7791166de9cb874bdf9d1943f5537f0",
+      "summary": "600 passed, 5 skipped, 15 warnings in 37.12s"
+    },
+    "related214": {
+      "sha256": "84bac7f1605f9b95149c76849b3dcee33bf5f5bafc1b949673817434f318f04c",
+      "summary": "108 passed, 2 skipped in 15.67s"
+    }
+  },
+  "original_nan": "not reached",
+  "worker_natural_exit": "not exercised",
+  "npu_compilation_and_receipts": "PENDING",
+  "checks": {
+    "changed_file_hooks": "passed",
+    "runbook_bash_syntax": "passed",
+    "full_format": {
+      "returncode": 1,
+      "hooks": [
+        "ruff check..................................................................Failed",
+        "ruff format.................................................................Failed",
+        "codespell...................................................................Failed",
+        "typos.......................................................................Failed",
+        "clang-format................................................................Passed",
+        "markdownlint................................................................Failed",
+        "Lint GitHub Actions workflow files..........................................Failed",
+        "Lint shell scripts..........................................................Failed",
+        "Lint PNG exports from excalidraw............................................Passed",
+        "Check for spaces in all filenames...........................................Passed",
+        "Enforce __init__.py in Python packages......................................Passed",
+        "Forbid init_logger(__name__) in vllm_ascend modules.........................Passed",
+        "Check for forbidden imports.................................................Failed",
+        "Check for boolean ops in with-statements....................................Passed",
+        "Check that new functions over 100 lines have comments.......................Passed",
+        "Check symbolic shapes in meta kernels.......................................Passed",
+        "Suggestion..................................................................Passed"
+      ],
+      "auto_modified_count": 78,
+      "auto_modified_task_files": []
+    },
+    "baseline": "same 8 failed hooks and 78 unrelated formatting paths"
+  }
+}

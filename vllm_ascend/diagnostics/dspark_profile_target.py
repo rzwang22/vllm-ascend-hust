@@ -103,7 +103,9 @@ class TargetBoundaryFlags:
             flags, receipts = self.attention_flags, self.attention_receipts
         # Frozen Core bypasses Dynamo guards. Keep the symbolic minimum even
         # when the first profile/compile uses 8192 rows and capture uses <=384.
-        n = torch.sym_min(value.shape[0], self.max_tokens)
+        # Dynamo 2.10 folds builtin min for static ints and emits sym_min
+        # for SymInt, preserving the runtime bound without an int conversion.
+        n = min(value.shape[0], self.max_tokens)
         flat = value[:n].flatten(1)
         flags[index, :n].copy_(torch.stack((torch.isnan(flat).any(1), torch.isinf(flat).any(1)), dim=1))
         receipts[index].copy_(self.epoch_input)

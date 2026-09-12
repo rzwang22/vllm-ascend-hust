@@ -1,0 +1,112 @@
+{
+  "archive": "dspark-large-batch.YYOqidKO-evidence.tar.gz",
+  "computed_sha256": "86043901898181d7ddff116ce0501ef2d9989de65aa4555daaa7aea051e49a7f",
+  "user_expected_sha256": null,
+  "members": 11,
+  "expanded_bytes": 50071,
+  "files": {
+    "source.log": "60ad8d8fbc9ac6e2168c13c1ecbbd5a75c9ba0d5ee4d3e3b4b69fed2d08b1de1",
+    "source.pipestatus": "0ccdb5a77ba5bf7687f2565a8ed97dfb9c1af45503c496fb646312239fab5101",
+    "checkpoint.log": "e50bfb6dfa5386a93f291ac5b2328d2e470b0f379fb31148efe5e4db78fed8ce",
+    "checkpoint.json": "9a59addac7857dfa87028575d5f25060ae666a626c34ba8f05ed7983556f9f91",
+    "checkpoint.pipestatus": "0ccdb5a77ba5bf7687f2565a8ed97dfb9c1af45503c496fb646312239fab5101",
+    "frozen-inputs.log": "335ae6aab7f71f479df80967a12348e70a3d80d08e2ebebbd49ee8f1e2c67e76",
+    "frozen-inputs.pipestatus": "0ccdb5a77ba5bf7687f2565a8ed97dfb9c1af45503c496fb646312239fab5101",
+    "focused.log": "410365c7e2919522549a9de82bbc3b08197d3a5af350ff39c432e9153c0f204f",
+    "focused.pipestatus": "f4a8ae8e74ddfb896a256de4e3099911dcaa6a9302591713898069b0bcd6e3d7",
+    "status.txt": "c32f0cf63ade0153fbc16eeb47ca8d2362f7846805b5331f1de747760d9943ab"
+  },
+  "focused": {
+    "failed": 4,
+    "passed": 1081,
+    "seconds": 262.36,
+    "pipestatus": [
+      1,
+      0
+    ],
+    "failed_nodes": [
+      "FAILED tests/ut/test_dspark_attention_receipts.py::test_real_dispatch_aot_copyback_and_repeated_replay[cpu-True]",
+      "FAILED tests/ut/test_dspark_attention_receipts.py::test_real_dispatch_aot_copyback_and_repeated_replay[cpu-False]",
+      "FAILED tests/ut/test_dspark_attention_receipts.py::test_real_dispatch_aot_copyback_and_repeated_replay[npu-True]",
+      "FAILED tests/ut/test_dspark_attention_receipts.py::test_real_dispatch_aot_copyback_and_repeated_replay[npu-False]"
+    ]
+  },
+  "server_versions": {
+    "torch": "2.10.0+cpu",
+    "torch_npu": "2.10.0.post2",
+    "python_evidence": "/usr/local/python3.12.13/lib/python3.12; full sys.version absent"
+  },
+  "plugin": "d8dd65848fc46d4e5fc2143f7a1baa8478519274",
+  "core": "897306c43bf800e2480cb5c0f3e2da408d85a2fd",
+  "version_commit_provenance": "requested baseline; archive source check exited 0 but does not print git SHAs",
+  "anchors": [
+    {
+      "line": 163,
+      "text": ">           run(x)"
+    },
+    {
+      "line": 245,
+      "text": "E                 Developer debug context: example_value type: int; op: call_function; target: <function sym_min at 0xffff7f80f740>"
+    },
+    {
+      "line": 253,
+      "text": "E                   n = torch.sym_min(value.shape[0], self.max_tokens)"
+    },
+    {
+      "line": 402,
+      "text": ">           run(x)"
+    },
+    {
+      "line": 484,
+      "text": "E                 Developer debug context: example_value type: int; op: call_function; target: <function sym_min at 0xffff7f80f740>"
+    },
+    {
+      "line": 492,
+      "text": "E                   n = torch.sym_min(value.shape[0], self.max_tokens)"
+    },
+    {
+      "line": 641,
+      "text": ">           run(x)"
+    },
+    {
+      "line": 723,
+      "text": "E                 Developer debug context: example_value type: int; op: call_function; target: <function sym_min at 0xffff7f80f740>"
+    },
+    {
+      "line": 731,
+      "text": "E                   n = torch.sym_min(value.shape[0], self.max_tokens)"
+    },
+    {
+      "line": 880,
+      "text": ">           run(x)"
+    },
+    {
+      "line": 962,
+      "text": "E                 Developer debug context: example_value type: int; op: call_function; target: <function sym_min at 0xffff7f80f740>"
+    },
+    {
+      "line": 970,
+      "text": "E                   n = torch.sym_min(value.shape[0], self.max_tokens)"
+    },
+    {
+      "line": 982,
+      "text": "FAILED tests/ut/test_dspark_attention_receipts.py::test_real_dispatch_aot_copyback_and_repeated_replay[cpu-True]"
+    },
+    {
+      "line": 983,
+      "text": "FAILED tests/ut/test_dspark_attention_receipts.py::test_real_dispatch_aot_copyback_and_repeated_replay[cpu-False]"
+    },
+    {
+      "line": 984,
+      "text": "FAILED tests/ut/test_dspark_attention_receipts.py::test_real_dispatch_aot_copyback_and_repeated_replay[npu-True]"
+    },
+    {
+      "line": 985,
+      "text": "FAILED tests/ut/test_dspark_attention_receipts.py::test_real_dispatch_aot_copyback_and_repeated_replay[npu-False]"
+    }
+  ],
+  "source_log": "vllm_ascend /workspace/vllm-ascend-hust\nvllm /workspace/vllm-hust\nINFO 09-12 18:28:52 [__init__.py:44] Available plugins for group vllm.platform_plugins:\nINFO 09-12 18:28:52 [__init__.py:46] - ascend -> vllm_ascend:register\nINFO 09-12 18:28:52 [__init__.py:49] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.\nWARNING 09-12 18:28:52 [__init__.py:36] The vLLM package was not found, so its version could not be inspected. This may cause platform detection to fail.\nINFO 09-12 18:28:52 [__init__.py:246] Platform plugin ascend is activated\nINFO 09-12 18:28:52 [platform.py:58] Breakable cudagraph is force disabled on Ascend because DeepSeek V4 PIECEWISE cudagraph is not supported yet.\ntorch 2.10.0+cpu torch_npu 2.10.0.post2\nASCEND_CUSTOM_OPP_PATH /workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer:\n",
+  "model_profile": "not started",
+  "original_nan": "not reached",
+  "worker_exit": "not exercised by model run"
+}

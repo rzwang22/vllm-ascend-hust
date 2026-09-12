@@ -63,7 +63,9 @@ class TargetLayerSnapshots:
         # Keep the symbolic minimum explicitly. Reading value[:max].shape[0]
         # during a large profile specializes it to max and relies on a Dynamo
         # guard; the frozen vLLM wrapper intentionally bypasses those guards.
-        n = torch.sym_min(value.shape[0], self.max_tokens)
+        # Dynamo 2.10 folds builtin min for static ints and emits sym_min
+        # for SymInt, preserving the runtime bound without an int conversion.
+        n = min(value.shape[0], self.max_tokens)
         bucket = (n - 1) // self.query_len + 1
         offset = bucket * (bucket - 1) * self.query_len // 2
         self.buffers[name][offset : offset + n].copy_(value[:n])
