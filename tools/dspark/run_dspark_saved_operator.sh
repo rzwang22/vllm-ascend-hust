@@ -2,8 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Bounded, weight-free ZvqiDthD controls. Invoke from a parent if/then/else.
 set -euo pipefail
-test "$#" -eq 1
+test "$#" -ge 1 && test "$#" -le 2
 plugin_sha=$1
+slot_controls=${2:-}
+test -z "$slot_controls" || test "$slot_controls" = --slot-controls
 cd /workspace/vllm-ascend-hust
 test -z "$(git status --porcelain)"
 test "$(git branch --show-current)" = feat/dspark
@@ -17,7 +19,9 @@ export PYTHONPATH="/workspace/vllm-ascend-hust:/workspace/vllm-hust:${PYTHONPATH
 export ASCEND_RT_VISIBLE_DEVICES=0 ASCEND_LAUNCH_BLOCKING=0
 export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
 unset RANK LOCAL_RANK WORLD_SIZE GROUP_RANK ROLE_RANK LOCAL_WORLD_SIZE MASTER_ADDR MASTER_PORT
-out=$(mktemp -d /workspace/dspark-results/dspark-saved-operator.XXXXXXXX)
+prefix=dspark-saved-operator
+if test -n "$slot_controls"; then prefix=dspark-slot-controls; fi
+out=$(mktemp -d "/workspace/dspark-results/$prefix.XXXXXXXX")
 printf 'REPLAY_DIR=%s\n' "$out"
 finish() {
   local rc=$?
@@ -67,6 +71,30 @@ required = [p for p in expected if "vllm_ascend_C." in p or p.endswith("/libcust
 assert len(required) == 2 and all(actual.get(p) == expected[p] for p in required), "Loaded extension/opapi differs from capture"
 assert all(actual[p] == expected[p] for p in actual.keys() & expected.keys()), "OPP artifact differs from capture"
 PY
+if test -n "$slot_controls"; then
+  logged watch-preflight timeout --signal=TERM --kill-after=15s 180s python -m pytest -q -ra \
+    tests/ut/test_dspark_operator_slot_controls.py::test_npu_watch_observes_each_graph_replay \
+    --basetemp "$out/watch-test" --junitxml "$out/watch.xml"
+  logged watch-acceptance python - "$out/watch.xml" <<'CHECK'
+import sys
+import xml.etree.ElementTree as ET
+cases = ET.parse(sys.argv[1]).getroot().findall('.//testcase')
+assert len(cases) == 1 and not any(c.find(k) is not None for c in cases for k in ('failure', 'error', 'skipped'))
+CHECK
+  for control in original-1802 original-1803 1803-from-1802 1802-from-1803; do
+    extra=(--mode aclgraph --metadata saved)
+    case "$control" in
+      original-*) execution=${control#original-} ;;
+      *-from-*) execution=${control%%-from-*}; donor=${control##*-from-}
+        extra+=(--slot-source "$out/inputs/rank-0-operator-$donor.pt") ;;
+    esac
+    logged "$control" timeout --signal=TERM --kill-after=15s 180s \
+      python tools/dspark/operator_replay.py "$out/inputs/rank-0-operator-$execution.pt" \
+      --output "$out/$control" \
+      --watch-slot --slot-block 123 --slot-offset 31 "${extra[@]}"
+    logged "$control-input-integrity" sha256sum -c "$out/inputs.sha256"
+  done
+else
 for control in aclgraph-saved eager-saved aclgraph-regenerated; do
   mode=${control%-*}
   metadata=${control#*-}
@@ -78,3 +106,5 @@ for control in aclgraph-saved eager-saved aclgraph-regenerated; do
   done
 done
 # A zero driver exit means the experiment completed, never numerical correctness.
+
+fi

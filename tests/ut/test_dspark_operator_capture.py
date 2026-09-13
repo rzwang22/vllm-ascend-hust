@@ -304,7 +304,8 @@ def test_compare_output_keeps_partial_head_errors_and_excludes_padding():
 
 
 @pytest.mark.parametrize("fail", [False, True])
-def test_saved_operator_driver_order_and_failure_archive(tmp_path, monkeypatch, fail):
+@pytest.mark.parametrize("slot", [False, True])
+def test_saved_operator_driver_order_and_failure_archive(tmp_path, monkeypatch, fail, slot):
     """Execute the shell driver with fake operator processes, not fake NPU results."""
     workspace = tmp_path / "workspace"
     repo = workspace / "vllm-ascend-hust"
@@ -342,7 +343,9 @@ def test_saved_operator_driver_order_and_failure_archive(tmp_path, monkeypatch, 
         "elif name=='python':\n"
         f" with open({str(calls)!r},'a') as f: f.write(json.dumps(a)+'\\n')\n"
         " if a[0]=='-': sys.stdin.read()\n"
-        f" elif {fail!r} and a[a.index('--output')+1].endswith('aclgraph-saved-1802'): sys.exit(7)\n"
+        " elif a[0]=='-m': pass\n"
+        f" elif {fail!r} and a[a.index('--output')+1].endswith("
+        f"{('original-1803' if slot else 'aclgraph-saved-1802')!r}): sys.exit(7)\n"
         " else: Path(a[a.index('--output')+1]).mkdir()\n"
     )
     shim.chmod(0o755)
@@ -350,7 +353,12 @@ def test_saved_operator_driver_order_and_failure_archive(tmp_path, monkeypatch, 
         (binaries / name).symlink_to(shim)
     monkeypatch.setenv("PATH", str(binaries) + os.pathsep + os.environ["PATH"])
     monkeypatch.setenv("ASCEND_CUSTOM_OPP_PATH", str(tmp_path))
-    process = subprocess.run(["bash", str(driver), "test-plugin"], text=True, capture_output=True, timeout=30)
+    process = subprocess.run(
+        ["bash", str(driver), "test-plugin"] + (["--slot-controls"] if slot else []),
+        text=True,
+        capture_output=True,
+        timeout=30,
+    )
     assert process.returncode == (7 if fail else 0), process.stdout + process.stderr
     commands = [json.loads(line) for line in calls.read_text().splitlines()]
     cases = [Path(a[a.index("--output") + 1]).name for a in commands if "--output" in a]
@@ -359,9 +367,17 @@ def test_saved_operator_driver_order_and_failure_archive(tmp_path, monkeypatch, 
         for mode in ("aclgraph-saved", "eager-saved", "aclgraph-regenerated")
         for epoch in (1803, 1802)
     ]
+    if slot:
+        expected = ["original-1802", "original-1803", "1803-from-1802", "1802-from-1803"]
     assert cases == (expected[:2] if fail else expected)
-    output = next(p for p in (workspace / "dspark-results").glob("dspark-saved-operator.*") if p.is_dir())
+    output = next(
+        p
+        for p in (workspace / "dspark-results").glob("dspark-slot-controls.*" if slot else "dspark-saved-operator.*")
+        if p.is_dir()
+    )
     assert f"MAIN_RC={7 if fail else 0}" in (output / "status.txt").read_text()
-    assert (output / "aclgraph-saved-1802.pipestatus").read_text().strip() == ("7 0" if fail else "0 0")
+    assert (
+        output / ("original-1803.pipestatus" if slot else "aclgraph-saved-1802.pipestatus")
+    ).read_text().strip() == ("7 0" if fail else "0 0")
     with tarfile.open(str(output) + "-evidence.tar.gz") as archive:
         assert any(name.endswith("/status.txt") for name in archive.getnames())

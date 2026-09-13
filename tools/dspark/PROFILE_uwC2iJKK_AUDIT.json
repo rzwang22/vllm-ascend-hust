@@ -1,0 +1,2626 @@
+{
+  "archive_sha256": "48bd6fb4e1048c9cf3f637eaae6090668698d7a6c9fdd5147493b2b1dc78f580",
+  "members": 59,
+  "expanded_bytes": 22214066,
+  "links": [],
+  "input_hashes": {
+    "1802": "ba628505667035fd9c146d43a12f0709a50863ee24af59bffa634b48716673fd",
+    "1803": "f065f77610d99505069c2077125a9bb8db1a2211af1200c05f8a16cd1d6001d8"
+  },
+  "pipestatus": {
+    "inputs.pipestatus": "0 0",
+    "runtime.pipestatus": "0 0",
+    "aclgraph-saved-1803.pipestatus": "0 0",
+    "aclgraph-saved-1803-input-integrity.pipestatus": "0 0",
+    "aclgraph-saved-1802.pipestatus": "0 0",
+    "aclgraph-saved-1802-input-integrity.pipestatus": "0 0",
+    "eager-saved-1803.pipestatus": "0 0",
+    "eager-saved-1803-input-integrity.pipestatus": "0 0",
+    "eager-saved-1802.pipestatus": "0 0",
+    "eager-saved-1802-input-integrity.pipestatus": "0 0",
+    "aclgraph-regenerated-1803.pipestatus": "0 0",
+    "aclgraph-regenerated-1803-input-integrity.pipestatus": "0 0",
+    "aclgraph-regenerated-1802.pipestatus": "0 0",
+    "aclgraph-regenerated-1802-input-integrity.pipestatus": "0 0"
+  },
+  "cases": [
+    {
+      "case": "aclgraph-saved-1802",
+      "pipestatus": "0 0",
+      "replay_sha256": "52eae288146bf5bed6dd2f8f97966ac3702bd432c9a1111817a2d2b0963e9b61",
+      "result_sha256": "3a5b48d19c667bd1c481c042bf6bbf17483c633d461e03fd1fdf33b88808071d",
+      "metadata_equal_to_saved": true,
+      "metadata_different_elements": 0,
+      "outputs_bitwise_equal_to_capture_valid_rows": [
+        true,
+        true,
+        true
+      ],
+      "nan_row_heads": [],
+      "comparison": {
+        "nan_row_heads": [],
+        "inf_row_heads": [],
+        "nan_components_per_row_head": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "inf_components_per_row_head": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "output_finite_abs_max": 12.4375,
+        "reference_finite_abs_max": 12.41291014420257,
+        "finite_comparison_elements": 45056,
+        "excluded_elements": 0,
+        "finite_max_abs_error": 0.03859647908165087,
+        "finite_mean_abs_error": 0.0005529471004170367,
+        "finite_rmse": 0.0011793801033379893
+      },
+      "matching_artifacts": 27,
+      "capture_artifacts_not_loaded": [
+        "/usr/local/Ascend/cann-9.0.1/aarch64-linux/lib64/plugin/opskernel/libaicpu_ascend_engine.so",
+        "/usr/local/Ascend/cann-9.0.1/aarch64-linux/lib64/plugin/opskernel/libaicpu_tf_engine.so"
+      ]
+    },
+    {
+      "case": "aclgraph-saved-1803",
+      "pipestatus": "0 0",
+      "replay_sha256": "d613d3ed60d1491b2d1f84c55d2801e1594ca27c0b7c92a2d1541d1559028e18",
+      "result_sha256": "4a26f26cb8cd7d27aaeeabac53acbc7bda875bfb3977f44e35336d4a44dea872",
+      "metadata_equal_to_saved": true,
+      "metadata_different_elements": 0,
+      "outputs_bitwise_equal_to_capture_valid_rows": [
+        true,
+        true,
+        true
+      ],
+      "nan_row_heads": [
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          3
+        ],
+        [
+          0,
+          7
+        ]
+      ],
+      "comparison": {
+        "nan_row_heads": [
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            3
+          ],
+          [
+            0,
+            7
+          ]
+        ],
+        "inf_row_heads": [],
+        "nan_components_per_row_head": [
+          [
+            0,
+            512,
+            0,
+            512,
+            0,
+            0,
+            0,
+            512
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "inf_components_per_row_head": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "output_finite_abs_max": 3.1502703500102506e+38,
+        "reference_finite_abs_max": 3.1502703500102506e+38,
+        "finite_comparison_elements": 43520,
+        "excluded_elements": 1536,
+        "finite_max_abs_error": 0.03469900577501939,
+        "finite_mean_abs_error": 0.0005169546474903885,
+        "finite_rmse": 0.0010933384252526106
+      },
+      "matching_artifacts": 27,
+      "capture_artifacts_not_loaded": [
+        "/usr/local/Ascend/cann-9.0.1/aarch64-linux/lib64/plugin/opskernel/libaicpu_ascend_engine.so",
+        "/usr/local/Ascend/cann-9.0.1/aarch64-linux/lib64/plugin/opskernel/libaicpu_tf_engine.so"
+      ]
+    },
+    {
+      "case": "eager-saved-1802",
+      "pipestatus": "0 0",
+      "replay_sha256": "52eae288146bf5bed6dd2f8f97966ac3702bd432c9a1111817a2d2b0963e9b61",
+      "result_sha256": "5899ed81eaac14d50eae9676049a03bb133026f04ecf684530c2b73b6108ba48",
+      "metadata_equal_to_saved": true,
+      "metadata_different_elements": 0,
+      "outputs_bitwise_equal_to_capture_valid_rows": [
+        true,
+        true,
+        true
+      ],
+      "nan_row_heads": [],
+      "comparison": {
+        "nan_row_heads": [],
+        "inf_row_heads": [],
+        "nan_components_per_row_head": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "inf_components_per_row_head": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "output_finite_abs_max": 12.4375,
+        "reference_finite_abs_max": 12.41291014420257,
+        "finite_comparison_elements": 45056,
+        "excluded_elements": 0,
+        "finite_max_abs_error": 0.03859647908165087,
+        "finite_mean_abs_error": 0.0005529471004170367,
+        "finite_rmse": 0.0011793801033379893
+      },
+      "matching_artifacts": 27,
+      "capture_artifacts_not_loaded": [
+        "/usr/local/Ascend/cann-9.0.1/aarch64-linux/lib64/plugin/opskernel/libaicpu_ascend_engine.so",
+        "/usr/local/Ascend/cann-9.0.1/aarch64-linux/lib64/plugin/opskernel/libaicpu_tf_engine.so"
+      ]
+    },
+    {
+      "case": "eager-saved-1803",
+      "pipestatus": "0 0",
+      "replay_sha256": "d613d3ed60d1491b2d1f84c55d2801e1594ca27c0b7c92a2d1541d1559028e18",
+      "result_sha256": "d9b4e1144a13a20074ee47cc8fc35e6003157b6b0472c15300f43f2e53ef8a4e",
+      "metadata_equal_to_saved": true,
+      "metadata_different_elements": 0,
+      "outputs_bitwise_equal_to_capture_valid_rows": [
+        true,
+        true,
+        true
+      ],
+      "nan_row_heads": [
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          3
+        ],
+        [
+          0,
+          7
+        ]
+      ],
+      "comparison": {
+        "nan_row_heads": [
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            3
+          ],
+          [
+            0,
+            7
+          ]
+        ],
+        "inf_row_heads": [],
+        "nan_components_per_row_head": [
+          [
+            0,
+            512,
+            0,
+            512,
+            0,
+            0,
+            0,
+            512
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "inf_components_per_row_head": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "output_finite_abs_max": 3.1502703500102506e+38,
+        "reference_finite_abs_max": 3.1502703500102506e+38,
+        "finite_comparison_elements": 43520,
+        "excluded_elements": 1536,
+        "finite_max_abs_error": 0.03469900577501939,
+        "finite_mean_abs_error": 0.0005169546474903885,
+        "finite_rmse": 0.0010933384252526106
+      },
+      "matching_artifacts": 27,
+      "capture_artifacts_not_loaded": [
+        "/usr/local/Ascend/cann-9.0.1/aarch64-linux/lib64/plugin/opskernel/libaicpu_ascend_engine.so",
+        "/usr/local/Ascend/cann-9.0.1/aarch64-linux/lib64/plugin/opskernel/libaicpu_tf_engine.so"
+      ]
+    },
+    {
+      "case": "aclgraph-regenerated-1802",
+      "pipestatus": "0 0",
+      "replay_sha256": "91f6b0d6f2efd794f74933bf86c9ac30efcbe34d3ff8acec6854add15c2b2867",
+      "result_sha256": "6d26158576bd63a0395c7edf2b6cfa123ba4daab405cc86ca63682ad90317b4e",
+      "metadata_equal_to_saved": false,
+      "metadata_different_elements": 875,
+      "outputs_bitwise_equal_to_capture_valid_rows": [
+        true,
+        true,
+        true
+      ],
+      "nan_row_heads": [],
+      "comparison": {
+        "nan_row_heads": [],
+        "inf_row_heads": [],
+        "nan_components_per_row_head": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "inf_components_per_row_head": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "output_finite_abs_max": 12.4375,
+        "reference_finite_abs_max": 12.41291014420257,
+        "finite_comparison_elements": 45056,
+        "excluded_elements": 0,
+        "finite_max_abs_error": 0.03859647908165087,
+        "finite_mean_abs_error": 0.0005529471004170367,
+        "finite_rmse": 0.0011793801033379893
+      },
+      "matching_artifacts": 27,
+      "capture_artifacts_not_loaded": [
+        "/usr/local/Ascend/cann-9.0.1/aarch64-linux/lib64/plugin/opskernel/libaicpu_ascend_engine.so",
+        "/usr/local/Ascend/cann-9.0.1/aarch64-linux/lib64/plugin/opskernel/libaicpu_tf_engine.so"
+      ]
+    },
+    {
+      "case": "aclgraph-regenerated-1803",
+      "pipestatus": "0 0",
+      "replay_sha256": "de83e4af28f23bc34dfcf881ae2029f3116d6465dd23d799a649128c2006cbb1",
+      "result_sha256": "2b4e0b4c2cf912d9ddf7790bce615e71d14d4caec9c5a7feb1ff4408c81a1b54",
+      "metadata_equal_to_saved": false,
+      "metadata_different_elements": 875,
+      "outputs_bitwise_equal_to_capture_valid_rows": [
+        true,
+        true,
+        true
+      ],
+      "nan_row_heads": [
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          3
+        ],
+        [
+          0,
+          7
+        ]
+      ],
+      "comparison": {
+        "nan_row_heads": [
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            3
+          ],
+          [
+            0,
+            7
+          ]
+        ],
+        "inf_row_heads": [],
+        "nan_components_per_row_head": [
+          [
+            0,
+            512,
+            0,
+            512,
+            0,
+            0,
+            0,
+            512
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "inf_components_per_row_head": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "output_finite_abs_max": 3.1502703500102506e+38,
+        "reference_finite_abs_max": 3.1502703500102506e+38,
+        "finite_comparison_elements": 43520,
+        "excluded_elements": 1536,
+        "finite_max_abs_error": 0.03469900577501939,
+        "finite_mean_abs_error": 0.0005169546474903885,
+        "finite_rmse": 0.0010933384252526106
+      },
+      "matching_artifacts": 27,
+      "capture_artifacts_not_loaded": [
+        "/usr/local/Ascend/cann-9.0.1/aarch64-linux/lib64/plugin/opskernel/libaicpu_ascend_engine.so",
+        "/usr/local/Ascend/cann-9.0.1/aarch64-linux/lib64/plugin/opskernel/libaicpu_tf_engine.so"
+      ]
+    }
+  ],
+  "CPU_single_slot_controls": [
+    {
+      "base": 1802,
+      "donor": null,
+      "intervention": null,
+      "CPU_float32_nan_heads": [],
+      "NPU_counterfactual": "PENDING"
+    },
+    {
+      "base": 1803,
+      "donor": null,
+      "intervention": null,
+      "CPU_float32_nan_heads": [
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          3
+        ],
+        [
+          0,
+          7
+        ]
+      ],
+      "NPU_counterfactual": "PENDING"
+    },
+    {
+      "base": 1803,
+      "donor": 1802,
+      "intervention": {
+        "kind": "single-physical-slot counterfactual; not observed model input or production fix",
+        "performance_eligible": false,
+        "base_identity": {
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 0,
+          "execution": 1803,
+          "proposal_epoch": 1790,
+          "request_ids": [
+            "batch10-3-92dac912",
+            "batch10-2-92657419",
+            "batch10-1-90aab81e"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            1,
+            5,
+            11
+          ],
+          "graph_capacity": 12,
+          "graph_object_id": 281464812378096
+        },
+        "donor_identity": {
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 0,
+          "execution": 1802,
+          "proposal_epoch": 1789,
+          "request_ids": [
+            "batch10-3-92dac912",
+            "batch10-2-92657419",
+            "batch10-1-90aab81e"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            1,
+            5,
+            11
+          ],
+          "graph_capacity": 12,
+          "graph_object_id": 281464812378096
+        },
+        "block": 123,
+        "offset": 31,
+        "dtype": "torch.bfloat16",
+        "shape": [
+          1,
+          512
+        ],
+        "slot_bytes": 1024,
+        "before_sha256": "ba0c0858b77bce653920c041c2706e8639514457189405f372321492d42c949b",
+        "after_sha256": "f45ea3b1d6209d0a2286c302702a536b5a2794e5803c8be78ff6fc1e3457080a",
+        "cache_storage_byte_range": [
+          4062208,
+          4063232
+        ],
+        "captured_page_indices_updated": [
+          2
+        ],
+        "pages_payload_byte_ranges": [
+          [
+            97280,
+            98304
+          ]
+        ],
+        "changed_byte_ranges_within_slot": [
+          [
+            0,
+            39
+          ],
+          [
+            40,
+            43
+          ],
+          [
+            44,
+            64
+          ],
+          [
+            65,
+            115
+          ],
+          [
+            116,
+            131
+          ],
+          [
+            132,
+            183
+          ],
+          [
+            184,
+            191
+          ],
+          [
+            192,
+            223
+          ],
+          [
+            224,
+            242
+          ],
+          [
+            243,
+            279
+          ],
+          [
+            280,
+            291
+          ],
+          [
+            292,
+            299
+          ],
+          [
+            300,
+            342
+          ],
+          [
+            343,
+            431
+          ],
+          [
+            432,
+            447
+          ],
+          [
+            448,
+            451
+          ],
+          [
+            452,
+            467
+          ],
+          [
+            468,
+            487
+          ],
+          [
+            488,
+            491
+          ],
+          [
+            492,
+            495
+          ],
+          [
+            496,
+            511
+          ],
+          [
+            512,
+            519
+          ],
+          [
+            520,
+            523
+          ],
+          [
+            524,
+            539
+          ],
+          [
+            540,
+            551
+          ],
+          [
+            552,
+            567
+          ],
+          [
+            568,
+            579
+          ],
+          [
+            580,
+            592
+          ],
+          [
+            593,
+            615
+          ],
+          [
+            616,
+            639
+          ],
+          [
+            640,
+            646
+          ],
+          [
+            647,
+            667
+          ],
+          [
+            668,
+            679
+          ],
+          [
+            680,
+            709
+          ],
+          [
+            710,
+            715
+          ],
+          [
+            716,
+            739
+          ],
+          [
+            740,
+            831
+          ],
+          [
+            832,
+            843
+          ],
+          [
+            844,
+            855
+          ],
+          [
+            856,
+            883
+          ],
+          [
+            884,
+            895
+          ],
+          [
+            896,
+            935
+          ],
+          [
+            936,
+            939
+          ],
+          [
+            940,
+            959
+          ],
+          [
+            960,
+            979
+          ],
+          [
+            980,
+            1011
+          ],
+          [
+            1012,
+            1019
+          ],
+          [
+            1020,
+            1024
+          ]
+        ],
+        "changed_bytes_per_copy": 977,
+        "preserved": "all other tensors/scalars/layouts/formats/metadata/receipts; original output remains the original capture"
+      },
+      "CPU_float32_nan_heads": [],
+      "NPU_counterfactual": "PENDING"
+    },
+    {
+      "base": 1802,
+      "donor": 1803,
+      "intervention": {
+        "kind": "single-physical-slot counterfactual; not observed model input or production fix",
+        "performance_eligible": false,
+        "base_identity": {
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 0,
+          "execution": 1802,
+          "proposal_epoch": 1789,
+          "request_ids": [
+            "batch10-3-92dac912",
+            "batch10-2-92657419",
+            "batch10-1-90aab81e"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            1,
+            5,
+            11
+          ],
+          "graph_capacity": 12,
+          "graph_object_id": 281464812378096
+        },
+        "donor_identity": {
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 0,
+          "execution": 1803,
+          "proposal_epoch": 1790,
+          "request_ids": [
+            "batch10-3-92dac912",
+            "batch10-2-92657419",
+            "batch10-1-90aab81e"
+          ],
+          "query_start_loc_cpu": [
+            0,
+            1,
+            5,
+            11
+          ],
+          "graph_capacity": 12,
+          "graph_object_id": 281464812378096
+        },
+        "block": 123,
+        "offset": 31,
+        "dtype": "torch.bfloat16",
+        "shape": [
+          1,
+          512
+        ],
+        "slot_bytes": 1024,
+        "before_sha256": "f45ea3b1d6209d0a2286c302702a536b5a2794e5803c8be78ff6fc1e3457080a",
+        "after_sha256": "ba0c0858b77bce653920c041c2706e8639514457189405f372321492d42c949b",
+        "cache_storage_byte_range": [
+          4062208,
+          4063232
+        ],
+        "captured_page_indices_updated": [
+          2
+        ],
+        "pages_payload_byte_ranges": [
+          [
+            97280,
+            98304
+          ]
+        ],
+        "changed_byte_ranges_within_slot": [
+          [
+            0,
+            39
+          ],
+          [
+            40,
+            43
+          ],
+          [
+            44,
+            64
+          ],
+          [
+            65,
+            115
+          ],
+          [
+            116,
+            131
+          ],
+          [
+            132,
+            183
+          ],
+          [
+            184,
+            191
+          ],
+          [
+            192,
+            223
+          ],
+          [
+            224,
+            242
+          ],
+          [
+            243,
+            279
+          ],
+          [
+            280,
+            291
+          ],
+          [
+            292,
+            299
+          ],
+          [
+            300,
+            342
+          ],
+          [
+            343,
+            431
+          ],
+          [
+            432,
+            447
+          ],
+          [
+            448,
+            451
+          ],
+          [
+            452,
+            467
+          ],
+          [
+            468,
+            487
+          ],
+          [
+            488,
+            491
+          ],
+          [
+            492,
+            495
+          ],
+          [
+            496,
+            511
+          ],
+          [
+            512,
+            519
+          ],
+          [
+            520,
+            523
+          ],
+          [
+            524,
+            539
+          ],
+          [
+            540,
+            551
+          ],
+          [
+            552,
+            567
+          ],
+          [
+            568,
+            579
+          ],
+          [
+            580,
+            592
+          ],
+          [
+            593,
+            615
+          ],
+          [
+            616,
+            639
+          ],
+          [
+            640,
+            646
+          ],
+          [
+            647,
+            667
+          ],
+          [
+            668,
+            679
+          ],
+          [
+            680,
+            709
+          ],
+          [
+            710,
+            715
+          ],
+          [
+            716,
+            739
+          ],
+          [
+            740,
+            831
+          ],
+          [
+            832,
+            843
+          ],
+          [
+            844,
+            855
+          ],
+          [
+            856,
+            883
+          ],
+          [
+            884,
+            895
+          ],
+          [
+            896,
+            935
+          ],
+          [
+            936,
+            939
+          ],
+          [
+            940,
+            959
+          ],
+          [
+            960,
+            979
+          ],
+          [
+            980,
+            1011
+          ],
+          [
+            1012,
+            1019
+          ],
+          [
+            1020,
+            1024
+          ]
+        ],
+        "changed_bytes_per_copy": 977,
+        "preserved": "all other tensors/scalars/layouts/formats/metadata/receipts; original output remains the original capture"
+      },
+      "CPU_float32_nan_heads": [
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          3
+        ],
+        [
+          0,
+          4
+        ],
+        [
+          0,
+          6
+        ]
+      ],
+      "NPU_counterfactual": "PENDING"
+    }
+  ],
+  "all_24_capsule_exact_1024_byte_matches": [
+    {
+      "file": "runs/b64/worker-first-failure/rank-0-operator-1803.pt",
+      "tensor": "pages",
+      "contiguous_payload_byte_offsets": [
+        97280
+      ]
+    },
+    {
+      "file": "runs/b64/worker-first-failure/rank-0-operator-1803.pt",
+      "tensor": "output",
+      "contiguous_payload_byte_offsets": [
+        0,
+        2048,
+        4096,
+        6144
+      ]
+    },
+    {
+      "file": "runs/b64/worker-first-failure/rank-1-operator-1803.pt",
+      "tensor": "pages",
+      "contiguous_payload_byte_offsets": [
+        97280
+      ]
+    },
+    {
+      "file": "runs/b64/worker-first-failure/rank-1-operator-1803.pt",
+      "tensor": "output",
+      "contiguous_payload_byte_offsets": [
+        0,
+        5120,
+        6144
+      ]
+    },
+    {
+      "file": "runs/b64/worker-first-failure/rank-2-operator-1803.pt",
+      "tensor": "pages",
+      "contiguous_payload_byte_offsets": [
+        97280
+      ]
+    },
+    {
+      "file": "runs/b64/worker-first-failure/rank-2-operator-1803.pt",
+      "tensor": "output",
+      "contiguous_payload_byte_offsets": [
+        0,
+        3072,
+        6144
+      ]
+    },
+    {
+      "file": "runs/b64/worker-first-failure/rank-3-operator-1803.pt",
+      "tensor": "pages",
+      "contiguous_payload_byte_offsets": [
+        97280
+      ]
+    },
+    {
+      "file": "runs/b64/worker-first-failure/rank-3-operator-1803.pt",
+      "tensor": "output",
+      "contiguous_payload_byte_offsets": [
+        2048,
+        5120,
+        6144
+      ]
+    },
+    {
+      "file": "runs/b64/worker-first-failure/rank-4-operator-1803.pt",
+      "tensor": "pages",
+      "contiguous_payload_byte_offsets": [
+        97280
+      ]
+    },
+    {
+      "file": "runs/b64/worker-first-failure/rank-4-operator-1803.pt",
+      "tensor": "output",
+      "contiguous_payload_byte_offsets": [
+        1024,
+        3072,
+        5120,
+        7168
+      ]
+    },
+    {
+      "file": "runs/b64/worker-first-failure/rank-5-operator-1803.pt",
+      "tensor": "pages",
+      "contiguous_payload_byte_offsets": [
+        97280
+      ]
+    },
+    {
+      "file": "runs/b64/worker-first-failure/rank-5-operator-1803.pt",
+      "tensor": "output",
+      "contiguous_payload_byte_offsets": [
+        4096,
+        5120
+      ]
+    },
+    {
+      "file": "runs/b64/worker-first-failure/rank-6-operator-1803.pt",
+      "tensor": "pages",
+      "contiguous_payload_byte_offsets": [
+        97280
+      ]
+    },
+    {
+      "file": "runs/b64/worker-first-failure/rank-6-operator-1803.pt",
+      "tensor": "output",
+      "contiguous_payload_byte_offsets": [
+        6144,
+        7168
+      ]
+    },
+    {
+      "file": "runs/b64/worker-first-failure/rank-7-operator-1803.pt",
+      "tensor": "pages",
+      "contiguous_payload_byte_offsets": [
+        97280
+      ]
+    },
+    {
+      "file": "runs/b64/worker-first-failure/rank-7-operator-1803.pt",
+      "tensor": "output",
+      "contiguous_payload_byte_offsets": [
+        1024
+      ]
+    }
+  ],
+  "capture_runtime": {
+    "python": "3.12.13 (main, Jul  7 2026, 18:34:05) [GCC 12.3.1 (openEuler 12.3.1-105.oe2403sp3)]",
+    "platform": "Linux-5.15.0-25-generic-aarch64-with-glibc2.38",
+    "torch": "2.10.0+cpu",
+    "torch_npu": "2.10.0.post2",
+    "loaded_paths": [
+      "/usr/local/Ascend/cann-9.0.1/aarch64-linux/lib64/libaicpu_const_folding.so",
+      "/usr/local/Ascend/cann-9.0.1/aarch64-linux/lib64/libaicpu_engine_common.so",
+      "/usr/local/Ascend/cann-9.0.1/aarch64-linux/lib64/plugin/opskernel/libaicpu_ascend_engine.so",
+      "/usr/local/Ascend/cann-9.0.1/aarch64-linux/lib64/plugin/opskernel/libaicpu_tf_engine.so",
+      "/usr/local/Ascend/cann-9.0.1/opp/built-in/op_impl/ai_core/tbe/op_tiling/lib/linux/aarch64/liboptiling.so",
+      "/workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_api/lib/libcust_opapi.so",
+      "/workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_impl/ai_core/tbe/op_tiling/lib/linux/aarch64/libcust_opmaster_rt2.0.so",
+      "/workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_proto/lib/linux/aarch64/libcust_opsproto_rt2.0.so",
+      "/workspace/vllm-ascend-hust/vllm_ascend/vllm_ascend_C.cpython-312-aarch64-linux-gnu.so"
+    ],
+    "artifacts": [
+      {
+        "path": "/usr/local/Ascend/cann-9.0.1/aarch64-linux/lib64/libaicpu_const_folding.so",
+        "bytes": 67464,
+        "sha256": "0644eb189dce50efcfb6514a4cdce44720f5df345eb67a4f0d26934916245931"
+      },
+      {
+        "path": "/usr/local/Ascend/cann-9.0.1/aarch64-linux/lib64/libaicpu_engine_common.so",
+        "bytes": 1181616,
+        "sha256": "84328d9224f5c047c461c2871610581ff00960e0ce1f255ec47033420deb1847"
+      },
+      {
+        "path": "/usr/local/Ascend/cann-9.0.1/aarch64-linux/lib64/plugin/opskernel/libaicpu_ascend_engine.so",
+        "bytes": 460696,
+        "sha256": "fa8971269f4eb5ce23ef7bb5b77e7e319061e5124ce436dbf2e1d9b04ede8ff4"
+      },
+      {
+        "path": "/usr/local/Ascend/cann-9.0.1/aarch64-linux/lib64/plugin/opskernel/libaicpu_tf_engine.so",
+        "bytes": 1116056,
+        "sha256": "d9edd2daaedfd1b068ad0e9abb276f362f6f9f5aa99c43805d8c1873551a499d"
+      },
+      {
+        "path": "/usr/local/Ascend/cann-9.0.1/opp/built-in/op_impl/ai_core/tbe/op_tiling/lib/linux/aarch64/liboptiling.so",
+        "bytes": 32967456,
+        "sha256": "bfbb794c36259d7df0bc6879a3e93d0585af8741290aa3250707bc979235974c"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_api/include/aclnnop/aclnn_sparse_attn_sharedkv.h",
+        "bytes": 2668,
+        "sha256": "a0f63b72bc472b2999855cd2214b34cba5c181c051c77f94bc297cbf6486b39e"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_api/include/aclnnop/aclnn_sparse_attn_sharedkv_metadata.h",
+        "bytes": 2069,
+        "sha256": "f6eb98a9a5a023e0f3a6d3d79e7b66f5ad797624617698f2f220460ddac772e4"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_api/lib/libcust_opapi.so",
+        "bytes": 938472,
+        "sha256": "2ca5a8b841d3c5665dfcdd0d73a71266eac0e034ceb33d6bdc073483a1e08795"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/sparse_attn_sharedkv/arch32/sparse_attn_sharedkv_scfa_block_cube.h",
+        "bytes": 43571,
+        "sha256": "fde8bf4376cda8d56a0dffd36af0ee92b02bb5fb37b1d8850d69a7c60c5ef8c3"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/sparse_attn_sharedkv/arch32/sparse_attn_sharedkv_scfa_block_vector.h",
+        "bytes": 55398,
+        "sha256": "e0580ca8c6f84ac25875532c25412120b06001d692d002af2522f2852f65bcd9"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/sparse_attn_sharedkv/arch32/sparse_attn_sharedkv_scfa_kernel.h",
+        "bytes": 37450,
+        "sha256": "c50fd563b104c24dadf19664f39ebeadb1b6249d9ce741b96933551499a3c1ba"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/sparse_attn_sharedkv/arch32/sparse_attn_sharedkv_swa_block_cube.h",
+        "bytes": 53637,
+        "sha256": "0ed7926966acf4d25de5320d5e47676a27fbcfbf7fce333ca99db0a1befb56d9"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/sparse_attn_sharedkv/arch32/sparse_attn_sharedkv_swa_block_vector.h",
+        "bytes": 42782,
+        "sha256": "50d9292af44269875221b530f689a39ebc5d3b863cfc76afc8ed2e5719b93a01"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/sparse_attn_sharedkv/arch32/sparse_attn_sharedkv_swa_kernel.h",
+        "bytes": 37176,
+        "sha256": "1448984b527066ceda5e852f22499e7c06d3b106046c89e13c6f30ac18fc5821"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/sparse_attn_sharedkv/sparse_attn_sharedkv.cpp",
+        "bytes": 4426,
+        "sha256": "846a1b620d3ea49990624556cc0259f85970fd37eafb7dcc0812be8f1c90e48b"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/sparse_attn_sharedkv/sparse_attn_sharedkv_common.h",
+        "bytes": 13350,
+        "sha256": "044b59865853d8c5a69083e81a39939be527486d016fa57dcf4b3e47c828c8b4"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/sparse_attn_sharedkv/sparse_attn_sharedkv_metadata.h",
+        "bytes": 2610,
+        "sha256": "c134bc897936c0f57f0221b927cecde4f3b15e379f5c1d4c0760f11de85f0da7"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/ascendc/sparse_attn_sharedkv/sparse_attn_sharedkv_template_tiling_key.h",
+        "bytes": 3090,
+        "sha256": "c23764162a3bfb1cbd9ce9ccd6c3dd52719c514e2728f33aec2f39e5ed47a5a8"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_impl/ai_core/tbe/custom_transformer_impl/dynamic/sparse_attn_sharedkv.py",
+        "bytes": 18133,
+        "sha256": "d477ae269b126c66906b26714af8cd3947a6ba74c4735a329d39167b87509abc"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_impl/ai_core/tbe/kernel/ascend910b/sparse_attn_sharedkv/SparseAttnSharedkv_7d53da980fa2b93856b96304fde51fcc.json",
+        "bytes": 8792,
+        "sha256": "99363348146f4f09eee5a61384c89b55e5ce119155f81b26846e7c3a766974cc"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_impl/ai_core/tbe/kernel/ascend910b/sparse_attn_sharedkv/SparseAttnSharedkv_7d53da980fa2b93856b96304fde51fcc.o",
+        "bytes": 493632,
+        "sha256": "3bba7967b39fc53a67c38252d2799c07ed64cf146341c0baf798bd19e6337b89"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_impl/ai_core/tbe/kernel/ascend910b/sparse_attn_sharedkv/SparseAttnSharedkv_b4f65ead04fb4fc6e9a77e022317d6e5.json",
+        "bytes": 8780,
+        "sha256": "aca4a30991f3611c5e3557659ee6528207c63362c4ca6a0c677ce874547082b4"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_impl/ai_core/tbe/kernel/ascend910b/sparse_attn_sharedkv/SparseAttnSharedkv_b4f65ead04fb4fc6e9a77e022317d6e5.o",
+        "bytes": 492984,
+        "sha256": "c635600517fe92be90f41763a39c8401c0c37d6b4ebf12da3171d66a60268e6d"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_impl/ai_core/tbe/kernel/config/ascend910b/sparse_attn_sharedkv.json",
+        "bytes": 12449,
+        "sha256": "c92f7f3f888dbb1f3e12e08379f9c327162245dc66a1b3f2bd8d769e7ef5030a"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_impl/ai_core/tbe/op_tiling/lib/linux/aarch64/libcust_opmaster_rt2.0.so",
+        "bytes": 3869336,
+        "sha256": "cf0df6952eee286aed62e48f13f47456be2481f89557f0b0a0a2d68f173b17ae"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_proto/inc/sparse_attn_sharedkv_proto.h",
+        "bytes": 1535,
+        "sha256": "b8af4ddfff78c16c7fcbd635c0b5481330d3a876ef97e3db0621cef18eacc518"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_proto/lib/linux/aarch64/libcust_opsproto_rt2.0.so",
+        "bytes": 1378568,
+        "sha256": "ea0ee1ff0b83d99016338ed86e64eb1f52fb37908b0a46c88861fed906ae2202"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/version.info",
+        "bytes": 34,
+        "sha256": "ba8638e632339cfb7147d54f80bb59f1e0432ac55df7b00005e1597f20342e9e"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/vllm_ascend/vllm_ascend_C.cpython-312-aarch64-linux-gnu.so",
+        "bytes": 866272,
+        "sha256": "fd79338c90432728476d37ffc5d3cc45e286e1e1147e812cc1e415a477d8456f"
+      }
+    ],
+    "artifact_truncated": false,
+    "sources": [
+      {
+        "path": "/workspace/vllm-ascend-hust/csrc/torch_binding.cpp",
+        "bytes": 135964,
+        "sha256": "a00c321cac6edf4261d862d6de1f173066e9031eb3894b4c4f8bdc810be5483f"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/csrc/attention/sparse_attn_sharedkv/op_host/sparse_attn_sharedkv_tiling.h",
+        "bytes": 21135,
+        "sha256": "0a89fb2ab87434a914f1e0286f455ae0f18555f2848101a253f487fae0c774c1"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/csrc/attention/sparse_attn_sharedkv/op_kernel/arch32/sparse_attn_sharedkv_scfa_block_cube.h",
+        "bytes": 43571,
+        "sha256": "fde8bf4376cda8d56a0dffd36af0ee92b02bb5fb37b1d8850d69a7c60c5ef8c3"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/csrc/attention/sparse_attn_sharedkv/op_kernel/arch32/sparse_attn_sharedkv_scfa_block_vector.h",
+        "bytes": 55398,
+        "sha256": "e0580ca8c6f84ac25875532c25412120b06001d692d002af2522f2852f65bcd9"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/csrc/attention/sparse_attn_sharedkv/op_kernel/arch32/sparse_attn_sharedkv_scfa_kernel.h",
+        "bytes": 37450,
+        "sha256": "c50fd563b104c24dadf19664f39ebeadb1b6249d9ce741b96933551499a3c1ba"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/csrc/attention/sparse_attn_sharedkv/op_kernel/arch32/sparse_attn_sharedkv_swa_block_cube.h",
+        "bytes": 53637,
+        "sha256": "0ed7926966acf4d25de5320d5e47676a27fbcfbf7fce333ca99db0a1befb56d9"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/csrc/attention/sparse_attn_sharedkv/op_kernel/arch32/sparse_attn_sharedkv_swa_block_vector.h",
+        "bytes": 42782,
+        "sha256": "50d9292af44269875221b530f689a39ebc5d3b863cfc76afc8ed2e5719b93a01"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/csrc/attention/sparse_attn_sharedkv/op_kernel/arch32/sparse_attn_sharedkv_swa_kernel.h",
+        "bytes": 37176,
+        "sha256": "1448984b527066ceda5e852f22499e7c06d3b106046c89e13c6f30ac18fc5821"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/csrc/attention/sparse_attn_sharedkv/op_kernel/sparse_attn_sharedkv_common.h",
+        "bytes": 13350,
+        "sha256": "044b59865853d8c5a69083e81a39939be527486d016fa57dcf4b3e47c828c8b4"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/csrc/attention/sparse_attn_sharedkv/op_kernel/sparse_attn_sharedkv_metadata.h",
+        "bytes": 2610,
+        "sha256": "c134bc897936c0f57f0221b927cecde4f3b15e379f5c1d4c0760f11de85f0da7"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/csrc/attention/sparse_attn_sharedkv/op_kernel/sparse_attn_sharedkv_template_tiling_key.h",
+        "bytes": 3090,
+        "sha256": "c23764162a3bfb1cbd9ce9ccd6c3dd52719c514e2728f33aec2f39e5ed47a5a8"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/csrc/attention/sparse_attn_sharedkv/op_host/sparse_attn_sharedkv_def.cpp",
+        "bytes": 5542,
+        "sha256": "e204f63265b1557eef2029da18be3f565e8639fdf096021fb353735f34d730e2"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/csrc/attention/sparse_attn_sharedkv/op_host/sparse_attn_sharedkv_proto.cpp",
+        "bytes": 2678,
+        "sha256": "fa672db235c332173959579c3115ebfb4793c6e905b9ecb9909b4800c0caf1d3"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/csrc/attention/sparse_attn_sharedkv/op_host/sparse_attn_sharedkv_tiling.cpp",
+        "bytes": 76333,
+        "sha256": "6865ef70af4ac86447495e099d0bc1db8a363eff78ca5b74eb5b73e87ef9eca5"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/csrc/attention/sparse_attn_sharedkv/op_kernel/sparse_attn_sharedkv.cpp",
+        "bytes": 4426,
+        "sha256": "846a1b620d3ea49990624556cc0259f85970fd37eafb7dcc0812be8f1c90e48b"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/csrc/attention/sparse_attn_sharedkv_metadata/op_api/aclnn_sparse_attn_sharedkv_metadata.cpp",
+        "bytes": 6960,
+        "sha256": "08f7e0ed0657f9bc39f07dcdf1a4be281621dda215b7e6e48dff2d3676656b13"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/csrc/attention/sparse_attn_sharedkv_metadata/op_api/l0_sparse_attn_sharedkv_metadata.cpp",
+        "bytes": 3828,
+        "sha256": "bcf97fb11100dc28b8b4a86280ca9ec6b6bd1b779633ba122593a72ff3c388bc"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/csrc/attention/sparse_attn_sharedkv_metadata/op_host/sparse_attn_sharedkv_metadata_infershape.cpp",
+        "bytes": 1521,
+        "sha256": "dbcdbcbd77098b7c61286a6e0bdf95a40289e9130abaf8638754c1e26ef4ed21"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/csrc/attention/sparse_attn_sharedkv_metadata/op_kernel_aicpu/sparse_attn_sharedkv_metadata_aicpu.cpp",
+        "bytes": 44896,
+        "sha256": "ba801a3c9904993e01efda8fc48117bfca6c1906b571ff0811238e4f88687b4f"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/csrc/attention/sparse_attn_sharedkv_metadata/op_api/aclnn_sparse_attn_sharedkv_metadata.h",
+        "bytes": 2069,
+        "sha256": "f6eb98a9a5a023e0f3a6d3d79e7b66f5ad797624617698f2f220460ddac772e4"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/csrc/attention/sparse_attn_sharedkv_metadata/op_api/l0_sparse_attn_sharedkv_metadata.h",
+        "bytes": 1709,
+        "sha256": "8e6ff7bef9b5112df0b68c71f32bba117ac6e5badaa6105159aa241fa224db40"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/csrc/attention/sparse_attn_sharedkv_metadata/op_graph/sparse_attn_sharedkv_metadata_proto.h",
+        "bytes": 2058,
+        "sha256": "c7f35bc33913ed041fb55641ca4d211ad4a7fb122a4c98322f5a95d86dec96c3"
+      },
+      {
+        "path": "/workspace/vllm-ascend-hust/csrc/attention/sparse_attn_sharedkv_metadata/op_kernel_aicpu/sparse_attn_sharedkv_metadata_aicpu.h",
+        "bytes": 12498,
+        "sha256": "f574419d3bc44d5612e8f13f828ebfc726c2148daa448a502676e2bb83ace189"
+      }
+    ],
+    "source_binary_correspondence": "UNKNOWN without reproducible build manifest; hashes identify files, not build provenance"
+  },
+  "native_replay": "completed and reproduced",
+  "writer": "UNKNOWN",
+  "slot_counterfactual_NPU": "PENDING",
+  "model_worker_natural_exit": "NOT_TESTED",
+  "performance_eligible": false
+}

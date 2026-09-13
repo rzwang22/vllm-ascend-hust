@@ -1,5 +1,8 @@
 # ZvqiDthD：真实 capsule CPU 审计与单卡重放
 
+后续原生重放已取得结果，参见 [uwC2iJKK审计与单槽位对照](PROFILE_SLOT_CONTROLS_uwC2iJKK.md)。
+下文保留本归档审计时的证据状态。
+
 本轮是离线审计和重放报告补充，没有生产修复。原数值问题已在归档复现；CPU 算术对照取得了
 新的因果证据，但 Ascend 原生算子重放 PENDING，历史 KV 的实际写入者 UNKNOWN。
 Core/custom op、模型、confidence、模型内观测、stream 等待和退出预算没有修改。

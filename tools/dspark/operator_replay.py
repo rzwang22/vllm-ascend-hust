@@ -229,7 +229,7 @@ def regenerate(inputs, params):
     )
 
 
-def run(capsule, mode, metadata):
+def run(capsule, mode, metadata, watch=None):
     import torch_npu  # noqa: F401
 
     from vllm_ascend.utils import bootstrap_custom_op_env
@@ -244,8 +244,22 @@ def run(capsule, mode, metadata):
         inputs["metadata"] = regenerate({"q": q, **inputs}, params)
     op = torch.ops._C_ascend.npu_sparse_attn_sharedkv
 
+    before = after = None
+
     def invoke():
-        return op(q, **inputs, **params)[0]
+        nonlocal before, after
+        if watch is not None:
+            before = inputs["ori_kv"][watch["block"], watch["offset"]].clone()
+        output = op(q, **inputs, **params)[0]
+        if watch is not None:
+            after = inputs["ori_kv"][watch["block"], watch["offset"]].clone()
+        return output
+
+    def observe(phase):
+        if watch is not None:
+            from tools.dspark.operator_slot_controls import save_watch
+
+            save_watch(watch, phase, before, after)
 
     if mode == "aclgraph":
         warm_stream = torch.npu.Stream()
@@ -253,15 +267,21 @@ def run(capsule, mode, metadata):
         with torch.npu.stream(warm_stream):
             invoke()
         torch.npu.current_stream().wait_stream(warm_stream)
+        observe("warmup")
         graph = torch.npu.NPUGraph()
         with torch.npu.graph(graph):
             output = invoke()
+        observe("capture")
         snapshots = []
-        for _ in range(3):
+        for iteration in range(3):
             graph.replay()
             snapshots.append(output.cpu().clone())
+            observe(f"replay-{iteration}")
     else:
-        snapshots = [invoke().cpu() for _ in range(3)]
+        snapshots = []
+        for iteration in range(3):
+            snapshots.append(invoke().cpu())
+            observe(f"eager-{iteration}")
     return snapshots, inputs["metadata"].cpu(), runtime_identity()
 
 
@@ -293,20 +313,65 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--mode", choices=("aclgraph", "eager", "reference"), default="aclgraph")
     parser.add_argument("--metadata", choices=("saved", "regenerated"), default="saved")
+    parser.add_argument("--slot-source", type=Path)
+    parser.add_argument("--slot-block", type=int)
+    parser.add_argument("--slot-offset", type=int)
+    parser.add_argument("--watch-slot", action="store_true")
     args = parser.parse_args()
+    has_slot = args.slot_block is not None and args.slot_offset is not None
+    if bool(args.slot_source or args.watch_slot) != has_slot:
+        parser.error("slot controls require both --slot-block and --slot-offset")
+    if (args.slot_block is None) != (args.slot_offset is None):
+        parser.error("incomplete physical slot")
     args.output.mkdir(parents=True, exist_ok=False)
     capsule = validate(torch.load(args.capsule, map_location="cpu", weights_only=True))
+    intervention = None
+    if args.slot_source is not None:
+        from tools.dspark.operator_slot_controls import replace_slot
+
+        donor = torch.load(args.slot_source, map_location="cpu", weights_only=True)
+        capsule, intervention = replace_slot(capsule, donor, args.slot_block, args.slot_offset)
+        intervention = {
+            **intervention,
+            "base_file": file_identity(args.capsule),
+            "donor_file": file_identity(args.slot_source),
+        }
+        torch.save(capsule, args.output / "counterfactual.pt")
+        intervention["derived_file"] = file_identity(args.output / "counterfactual.pt")
+        (args.output / "intervention.json").write_text(json.dumps(intervention, indent=2) + "\n")
+    watch = None
+    if args.watch_slot and args.mode == "reference":
+        parser.error("slot watch requires native NPU execution")
+    if args.watch_slot:
+        shape = capsule["layouts"]["ori_kv"]["shape"]
+        if not 0 <= args.slot_block < shape[0] or not 0 <= args.slot_offset < shape[1]:
+            parser.error("watch slot outside cache")
+        if args.slot_block not in capsule["values"]["page_ids"].flatten().tolist():
+            parser.error("watch slot was not captured")
+        watch = {"block": args.slot_block, "offset": args.slot_offset, "snapshots": [], "records": []}
     ref = reference(capsule)
     torch.save(ref, args.output / "reference.pt")
     outputs, metadata, runtime = (
-        ([], None, runtime_identity()) if args.mode == "reference" else run(capsule, args.mode, args.metadata)
+        ([], None, runtime_identity())
+        if args.mode == "reference"
+        else run(capsule, args.mode, args.metadata, watch=watch)
     )
+    if watch is not None:
+        torch.save(watch["snapshots"], args.output / "slot-watch.pt")
+        (args.output / "slot-watch.json").write_text(
+            json.dumps({k: v for k, v in watch.items() if k != "snapshots"}, indent=2) + "\n"
+        )
     if outputs:
         torch.save({"outputs": outputs, "metadata": metadata}, args.output / "replay.pt")
     valid = int(capsule["values"]["cu_seqlens_q"][-1])
     result = {
         "capsule": file_identity(args.capsule),
         "identity": capsule["identity"],
+        "intervention": intervention,
+        "slot_watch": None if watch is None else watch["records"],
+        "captured_output_scope": "original capture; not an observation of counterfactual input"
+        if intervention
+        else "original capture",
         "mode": args.mode,
         "metadata": args.metadata,
         "performance_eligible": False,
@@ -326,6 +391,7 @@ def main():
         ],
         "captured_comparison": compare_output(capsule["values"]["output"], ref, valid),
         "replay_comparisons": [compare_output(x, ref, valid) for x in outputs],
+        "replay_vs_original_capture": [compare_output(x, capsule["values"]["output"], valid) for x in outputs],
         "runtime": runtime,
     }
     (args.output / "result.json").write_text(json.dumps(result, indent=2) + "\n")
