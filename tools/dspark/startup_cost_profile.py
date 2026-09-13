@@ -448,6 +448,9 @@ def profile_engine_kwargs(
 ):
     if operator_capture is not None and not attention:
         raise ValueError("Operator capture requires attention detail")
+    if operator_capture is not None and operator_capture.get("write_timeline"):
+        if target_layer is None:
+            raise ValueError("Write timeline requires an explicit target layer")
     if attention and (experiment != "target-boundaries" or target_layer is None):
         raise ValueError("Attention detail requires target-boundaries and target_layer")
     if worker_exit and experiment != "target-boundaries":
@@ -499,6 +502,8 @@ def profile_engine_kwargs(
             "vllm_ascend.diagnostics.dspark_profile_executor.ProfileMultiprocExecutor"
         )
         kwargs["additional_config"]["dspark_profile_failure_dir"] = str(directory.parent.resolve())
+    if operator_capture is not None and operator_capture.get("write_timeline"):
+        kwargs["scheduler_cls"] = "vllm_ascend.diagnostics.dspark_write_scheduler.WriteTimelineScheduler"
     if worker_exit:
         kwargs["worker_cls"] = "vllm_ascend.diagnostics.dspark_profile_worker.ProfileNPUWorker"
         kwargs["additional_config"]["dspark_profile_worker_exit"] = True
@@ -528,6 +533,7 @@ def run(args):
                 "target_layer": target_layer,
                 "target_attention": getattr(args, "profile_target_attention", False),
                 "operator_capture": getattr(args, "profile_operator_capture", False),
+                "write_timeline": getattr(args, "profile_write_timeline", False),
                 "worker_exit_trace": getattr(args, "profile_worker_exit", False),
                 "status": "running",
                 "root_cause": "ROOT_CAUSE_NOT_YET_PROVEN",
@@ -584,6 +590,7 @@ def run(args):
                         "point": points[-1]["id"],
                         "max_tokens": points[-1]["capacity"],
                         "max_seq_len": points[-1]["context_ceiling"],
+                        "write_timeline": getattr(args, "profile_write_timeline", False),
                     }
                     if getattr(args, "profile_operator_capture", False)
                     else None

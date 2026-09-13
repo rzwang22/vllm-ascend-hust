@@ -183,11 +183,16 @@ def main(argv=None):
     parser.add_argument("--profile-target-attention", action="store_true", help="Opt-in selected SWA attention detail")
     parser.add_argument("--profile-operator-capture", action="store_true", help="Opt-in bounded real SWA call capsules")
     parser.add_argument(
+        "--profile-write-timeline", action="store_true", help="Opt-in bounded historical slot writer timeline"
+    )
+    parser.add_argument(
         "--profile-worker-exit", action="store_true", help="Opt-in exit-only steps and pre-escalation stacks"
     )
     args = parser.parse_args(argv)
     if args.profile_worker_exit and args.profile_experiment != "target-boundaries":
         parser.error("--profile-worker-exit requires target-boundaries")
+    if args.profile_write_timeline and not args.profile_operator_capture:
+        parser.error("--profile-write-timeline requires --profile-operator-capture")
     if args.profile_operator_capture and not args.profile_target_attention:
         parser.error("--profile-operator-capture requires --profile-target-attention")
     if args.profile_target_attention and (

@@ -197,9 +197,17 @@ def dsa_forward(
 
     kv_cache = _build_kv_cache(self, forward_context)
 
-    self.dsa_attn.impl.forward(
-        self.dsa_attn.layer_name, hidden_states, kv_cache, attn_metadata, need_gather_q_kv, output
-    )
+    watch = getattr(self, "_dspark_write_timeline", None)
+    if watch is None:
+        self.dsa_attn.impl.forward(
+            self.dsa_attn.layer_name, hidden_states, kv_cache, attn_metadata, need_gather_q_kv, output
+        )
+    else:
+        # Inside the opaque dispatcher boundary: diagnostics become real captured ops.
+        with watch.observe(layer_name, forward_context, hidden_states.shape[0]):
+            self.dsa_attn.impl.forward(
+                self.dsa_attn.layer_name, hidden_states, kv_cache, attn_metadata, need_gather_q_kv, output
+            )
     return
 
 

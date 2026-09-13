@@ -18,12 +18,13 @@ main() {
     local sha=$1 manifest=$2
     shift 2
     local plugin=/workspace/vllm-ascend-hust core=/workspace/vllm-hust
-    local model=/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8 previous='' argument experiment=''
+    local model=/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8 previous='' argument experiment='' writer=false
     for argument in "$@"; do
         if test "$previous" = --model; then model=$argument; fi
         if test "$previous" = --profile-experiment; then experiment=$argument; fi
         case "$argument" in --model=*) model=${argument#--model=} ;; esac
         case "$argument" in --profile-experiment=*) experiment=${argument#--profile-experiment=} ;; esac
+        if test "$argument" = --profile-write-timeline; then writer=true; fi
         previous=$argument
     done
     mkdir -p /workspace/dspark-results || return 1
@@ -52,6 +53,20 @@ main() {
         logged frozen-inputs python tools/dspark/check_target_profile_inputs.py \
             "$CONF_OUT/checkpoint.json" "$manifest" || return "$?"
     fi
+    if test "$writer" = true; then
+        logged writer-preflight timeout --signal=TERM --kill-after=15s 300s python -m pytest -q -ra \
+            tests/ut/test_dspark_write_timeline.py::test_npu_writer_probe_inside_opaque_dispatch_replays \
+            tests/ut/test_dspark_write_timeline.py::test_installed_core_page_removal_uses_actual_computed \
+            --basetemp "$CONF_OUT/writer-preflight" --junitxml "$CONF_OUT/writer-preflight.xml" || return "$?"
+        logged writer-acceptance python - "$CONF_OUT/writer-preflight.xml" <<'PYTEST'
+import sys
+import xml.etree.ElementTree as ET
+cases = ET.parse(sys.argv[1]).getroot().findall('.//testcase')
+assert len(cases) == 2 and not any(c.find(k) is not None for c in cases for k in ('failure', 'error', 'skipped'))
+print('Writer probe: real opaque NPU replay and installed Core forwarding passed')
+PYTEST
+        test "$?" -eq 0 || return 1
+    fi
     logged focused python -m pytest -q -ra \
         tests/ut/test_dspark_repeated_inputs.py tests/ut/test_dspark_startup_cost_profile.py \
         tests/ut/test_dspark_profile_request_ids.py tests/ut/test_dspark_profile_context.py \
@@ -62,7 +77,7 @@ main() {
         tests/ut/test_dspark_attention_validity.py \
         tests/ut/test_dspark_profile_attention.py \
         tests/ut/test_dspark_profile_kv.py tests/ut/test_dspark_operator_capture.py tests/ut/test_dspark_operator_npu.py \
-        tests/ut/test_dspark_operator_serialization.py \
+        tests/ut/test_dspark_operator_serialization.py tests/ut/test_dspark_write_timeline.py \
         tests/ut/test_dspark_replay_diagnostics.py \
         tests/ut/test_dspark_nan_diagnostics.py tests/ut/test_dspark_profile_failure.py tests/ut/test_dspark_worker_exit.py \
         tests/ut/test_dspark_post_shutdown.py \

@@ -207,6 +207,12 @@ class StreamingEngine:
         self.loop = asyncio.new_event_loop()
         self.collector = SchedulerCollector(args.num_spec_tokens)
         self.args = args
+        observation = kwargs.get("additional_config", {}).get("dspark_profile_observation", {})
+        self.write_timeline_point = (
+            (observation.get("operator_capture") or {}).get("point")
+            if (observation.get("operator_capture") or {}).get("write_timeline")
+            else None
+        )
         self.batch_number = 0
         self.last_batch = None
         self.delta_kind = RequestOutputKind.DELTA
@@ -276,6 +282,8 @@ class StreamingEngine:
     def generate(self, prompts, sampling_params, use_tqdm=False, *, profile_point=None):
         sampling = copy.copy(sampling_params)
         sampling.output_kind = self.delta_kind
+        if profile_point is not None and profile_point == getattr(self, "write_timeline_point", None):
+            sampling.extra_args = {**(sampling.extra_args or {}), "dspark_write_point": profile_point}
         self.batch_number += 1
         before = (
             len(self.collector.rows),

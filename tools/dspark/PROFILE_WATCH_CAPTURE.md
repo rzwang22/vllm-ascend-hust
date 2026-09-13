@@ -5,6 +5,9 @@
 `897306c43bf800e2480cb5c0f3e2da408d85a2fd`。没有模型、Core、custom op、
 原始capsule、stream等待策略或退出预算修改。
 
+后续 [6D9EWxZk 实际归档审计](PROFILE_WRITE_TIMELINE.md) 已验证原生capture/watch及四组
+单槽位因果对照；该后续结果不改变本文件对当时未取得证据的说明。
+
 ## 证据等级与源码依据
 
 本地未找到 `dspark-slot-controls.qe7Lb9dE-evidence.tar.gz` 或对应日志文件，

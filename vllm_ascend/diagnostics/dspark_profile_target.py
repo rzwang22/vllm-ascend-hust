@@ -56,6 +56,7 @@ class TargetBoundaryFlags:
         if attention and target_layer is None:
             raise ValueError("Attention detail requires an explicit target layer")
         self.attention_probe = None
+        self.write_timeline = None
         # Keep the original broad plan when no detail layer is requested.
         # A local plan replaces its distant cuts, while AuxiliaryCapture still
         # observes all configured raw/persistent/consumed auxiliary outputs.
@@ -119,6 +120,8 @@ class TargetBoundaryFlags:
             values += (self.attention_probe.state, *self.attention_probe.kv.tensors)
             if self.attention_probe.operator is not None:
                 values += self.attention_probe.operator.tensors
+        if self.write_timeline is not None:
+            values += self.write_timeline.tensors
         return sum(x.numel() * x.element_size() for x in values)
 
 
@@ -159,6 +162,13 @@ def install_target_boundaries(model, config):
         if bank.attention_probe is None:
             raise ValueError("Operator capture requires attention detail")
         bank.attention_probe.operator = OperatorCapture(bank, capture_options)
+        if capture_options.get("write_timeline", False):
+            from vllm_ascend.diagnostics.dspark_write_timeline import SlotWriteTimeline
+
+            target = model.layers[bank.target_layer].self_attn.dsa_attn
+            bank.write_timeline = SlotWriteTimeline(bank, target, capture_options)
+            for layer in model.layers:
+                layer.self_attn.dsa_attn._dspark_write_timeline = bank.write_timeline
 
 
 class TargetCapture(AuxiliaryCapture):
@@ -178,6 +188,22 @@ class TargetProfileObservation(AuxiliaryProfileObservation):
         self.attention_validity_done = False
         super().__init__(runner, options)
         self.bank = self.capture.bank
+        self.write_schedule_id = None
+
+    def record(self, stage, **payload):
+        writer = getattr(getattr(self, "bank", None), "write_timeline", None)
+        if writer is not None and stage == "target_execute.enter":
+            args = payload.get("args", ())
+            output = args[0] if args else payload.get("kwargs", {}).get("scheduler_output")
+            self.write_schedule_id = getattr(output, "_dspark_write_schedule_id", None)
+        if writer is not None and stage in (
+            "draft_forward.enter",
+            "draft_forward.return",
+            "context_kv.enter",
+            "context_kv.return",
+        ):
+            self.guard(writer.host, stage)
+        super().record(stage, **payload)
 
     def before_replay(self, desc, graph):
         pending = super().before_replay(desc, graph)
@@ -189,6 +215,10 @@ class TargetProfileObservation(AuxiliaryProfileObservation):
             if self.bank.attention_probe.operator is not None:
                 self.bank.attention_probe.operator.reset()
         self.bank.epoch_input.fill_(self.execution)
+        if self.bank.write_timeline is not None:
+            self.bank.write_timeline.begin(
+                pending, self.runner, self.write_schedule_id, self.capture.captured[desc].attn_metadata
+            )
         # These are the actual captured DSA fields; the previous experiment
         # observed `positions`, while DSA decode names it `input_positions`.
         seen = {}
@@ -230,8 +260,12 @@ class TargetProfileObservation(AuxiliaryProfileObservation):
                         raise ValueError("Operator capture missed bounded FULL shape")
                     self.integer("operator.receipts", torch.stack([p["buffers"]["receipts"] for p in plans]))
                 operator.own(self.pending)
+        if self.bank.write_timeline is not None:
+            self.bank.write_timeline.own(self.pending)
 
     def complete_record(self, record, pending):
+        if self.bank.write_timeline is not None:
+            self.bank.write_timeline.save(record, pending, self.directory)
         device = record["device_integers"]
         capacity = record["graph_capacity"]
         flags = device.get("target_internal.flags", [])
