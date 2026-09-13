@@ -1,0 +1,2316 @@
+{
+  "archive_sha256": "535d1555ee61da4ad0a82859daf2db67a5a760959c044a319cfe2795e7f5054f",
+  "plugin_sha": "890fc350627eba18e8ca1296ad1b4b310283c2ff",
+  "core_sha": "897306c43bf800e2480cb5c0f3e2da408d85a2fd",
+  "links_not_followed": [
+    {
+      "path": "writer-preflight/test_npu_writer_probe_inside_ocurrent",
+      "target": "/workspace/dspark-results/dspark-large-batch.09bpL1Zp/writer-preflight/test_npu_writer_probe_inside_o0",
+      "followed": false
+    },
+    {
+      "path": "writer-preflight/test_installed_core_page_removcurrent",
+      "target": "/workspace/dspark-results/dspark-large-batch.09bpL1Zp/writer-preflight/test_installed_core_page_remov0",
+      "followed": false
+    }
+  ],
+  "page_events": [
+    {
+      "sequence": 11788,
+      "point": "ctx128-n4-t12-skewed",
+      "schedule_id": 1801,
+      "event": "call.begin",
+      "monotonic_ns": 4507832342201056,
+      "context": [
+        {
+          "call": "allocate_slots",
+          "group": null,
+          "request_id": "batch10-3-8dd4972f"
+        },
+        {
+          "call": "remove_skipped_blocks",
+          "group": 3,
+          "request_id": "batch10-3-8dd4972f"
+        }
+      ],
+      "call": "remove_skipped_blocks",
+      "group": 3,
+      "arguments": {
+        "request_id": "batch10-3-8dd4972f",
+        "total_computed_tokens": 223,
+        "num_prompt_tokens": 128
+      },
+      "request_blocks": [
+        {
+          "block_id": 0,
+          "ref_cnt": -9477,
+          "is_null": true,
+          "hash": "None"
+        },
+        {
+          "block_id": 0,
+          "ref_cnt": -9477,
+          "is_null": true,
+          "hash": "None"
+        },
+        {
+          "block_id": 35,
+          "ref_cnt": 1,
+          "is_null": false,
+          "hash": "None"
+        },
+        {
+          "block_id": 181,
+          "ref_cnt": 1,
+          "is_null": false,
+          "hash": "None"
+        },
+        {
+          "block_id": 182,
+          "ref_cnt": 1,
+          "is_null": false,
+          "hash": "None"
+        },
+        {
+          "block_id": 45,
+          "ref_cnt": 1,
+          "is_null": false,
+          "hash": "None"
+        },
+        {
+          "block_id": 93,
+          "ref_cnt": 1,
+          "is_null": false,
+          "hash": "None"
+        },
+        {
+          "block_id": 149,
+          "ref_cnt": 1,
+          "is_null": false,
+          "hash": "None"
+        }
+      ]
+    },
+    {
+      "sequence": 11790,
+      "point": "ctx128-n4-t12-skewed",
+      "schedule_id": 1801,
+      "event": "call.return",
+      "monotonic_ns": 4507832342454303,
+      "context": [
+        {
+          "call": "allocate_slots",
+          "group": null,
+          "request_id": "batch10-3-8dd4972f"
+        },
+        {
+          "call": "remove_skipped_blocks",
+          "group": 3,
+          "request_id": "batch10-3-8dd4972f"
+        },
+        {
+          "call": "pool.free",
+          "group": null,
+          "request_id": null
+        }
+      ],
+      "call": "pool.free",
+      "group": null,
+      "request_blocks": null,
+      "result_blocks": null,
+      "freed_before": [
+        {
+          "block_id": 35,
+          "ref_cnt": 1,
+          "is_null": false,
+          "hash": "None"
+        }
+      ],
+      "freed_blocks": [
+        {
+          "block_id": 35,
+          "ref_cnt": 0,
+          "is_null": false,
+          "hash": "None"
+        }
+      ],
+      "allocated_groups": null
+    },
+    {
+      "sequence": 11948,
+      "point": "ctx128-n4-t12-skewed",
+      "schedule_id": 1803,
+      "event": "call.return",
+      "monotonic_ns": 4507832737092218,
+      "context": [
+        {
+          "call": "allocate_slots",
+          "group": null,
+          "request_id": "batch10-1-b8283095"
+        },
+        {
+          "call": "allocate_new_blocks",
+          "group": 5,
+          "request_id": "batch10-1-b8283095"
+        },
+        {
+          "call": "pool.allocate",
+          "group": null,
+          "request_id": null
+        }
+      ],
+      "call": "pool.allocate",
+      "group": null,
+      "request_blocks": null,
+      "result_blocks": [
+        {
+          "block_id": 35,
+          "ref_cnt": 1,
+          "is_null": false,
+          "hash": "None"
+        }
+      ],
+      "freed_before": null,
+      "freed_blocks": null,
+      "allocated_groups": null
+    }
+  ],
+  "accounting": [
+    {
+      "sequence": 11506,
+      "schedule_id": 1799,
+      "event": "schedule.before",
+      "output_schedule_id": null,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 221,
+        "num_output_placeholders": 6,
+        "num_tokens": 216,
+        "num_tokens_with_spec": 221,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": null
+    },
+    {
+      "sequence": 11611,
+      "schedule_id": 1799,
+      "event": "schedule.after",
+      "output_schedule_id": null,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 227,
+        "num_output_placeholders": 12,
+        "num_tokens": 216,
+        "num_tokens_with_spec": 221,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": null
+    },
+    {
+      "sequence": 11612,
+      "schedule_id": 1799,
+      "event": "output.before",
+      "output_schedule_id": 1798,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 227,
+        "num_output_placeholders": 12,
+        "num_tokens": 216,
+        "num_tokens_with_spec": 221,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": [
+        1,
+        4,
+        6
+      ]
+    },
+    {
+      "sequence": 11613,
+      "schedule_id": 1799,
+      "event": "output.after",
+      "output_schedule_id": 1798,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 222,
+        "num_output_placeholders": 6,
+        "num_tokens": 217,
+        "num_tokens_with_spec": 222,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": null
+    },
+    {
+      "sequence": 11614,
+      "schedule_id": 1800,
+      "event": "schedule.before",
+      "output_schedule_id": null,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 222,
+        "num_output_placeholders": 6,
+        "num_tokens": 217,
+        "num_tokens_with_spec": 222,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": null
+    },
+    {
+      "sequence": 11709,
+      "schedule_id": 1800,
+      "event": "schedule.after",
+      "output_schedule_id": null,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 228,
+        "num_output_placeholders": 12,
+        "num_tokens": 217,
+        "num_tokens_with_spec": 222,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": null
+    },
+    {
+      "sequence": 11710,
+      "schedule_id": 1800,
+      "event": "output.before",
+      "output_schedule_id": 1799,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 228,
+        "num_output_placeholders": 12,
+        "num_tokens": 217,
+        "num_tokens_with_spec": 222,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": [
+        1,
+        4,
+        6
+      ]
+    },
+    {
+      "sequence": 11711,
+      "schedule_id": 1800,
+      "event": "output.after",
+      "output_schedule_id": 1799,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 223,
+        "num_output_placeholders": 6,
+        "num_tokens": 218,
+        "num_tokens_with_spec": 223,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": null
+    },
+    {
+      "sequence": 11712,
+      "schedule_id": 1801,
+      "event": "schedule.before",
+      "output_schedule_id": null,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 223,
+        "num_output_placeholders": 6,
+        "num_tokens": 218,
+        "num_tokens_with_spec": 223,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": null
+    },
+    {
+      "sequence": 11813,
+      "schedule_id": 1801,
+      "event": "schedule.after",
+      "output_schedule_id": null,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 229,
+        "num_output_placeholders": 12,
+        "num_tokens": 218,
+        "num_tokens_with_spec": 223,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": null
+    },
+    {
+      "sequence": 11814,
+      "schedule_id": 1801,
+      "event": "output.before",
+      "output_schedule_id": 1800,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 229,
+        "num_output_placeholders": 12,
+        "num_tokens": 218,
+        "num_tokens_with_spec": 223,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": [
+        1,
+        4,
+        6
+      ]
+    },
+    {
+      "sequence": 11815,
+      "schedule_id": 1801,
+      "event": "output.after",
+      "output_schedule_id": 1800,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 224,
+        "num_output_placeholders": 6,
+        "num_tokens": 219,
+        "num_tokens_with_spec": 224,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": null
+    },
+    {
+      "sequence": 11816,
+      "schedule_id": 1802,
+      "event": "schedule.before",
+      "output_schedule_id": null,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 224,
+        "num_output_placeholders": 6,
+        "num_tokens": 219,
+        "num_tokens_with_spec": 224,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": null
+    },
+    {
+      "sequence": 11907,
+      "schedule_id": 1802,
+      "event": "schedule.after",
+      "output_schedule_id": null,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 230,
+        "num_output_placeholders": 12,
+        "num_tokens": 219,
+        "num_tokens_with_spec": 224,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": null
+    },
+    {
+      "sequence": 11908,
+      "schedule_id": 1802,
+      "event": "output.before",
+      "output_schedule_id": 1801,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 230,
+        "num_output_placeholders": 12,
+        "num_tokens": 219,
+        "num_tokens_with_spec": 224,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": [
+        1,
+        4,
+        6
+      ]
+    },
+    {
+      "sequence": 11909,
+      "schedule_id": 1802,
+      "event": "output.after",
+      "output_schedule_id": 1801,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 225,
+        "num_output_placeholders": 6,
+        "num_tokens": 220,
+        "num_tokens_with_spec": 225,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": null
+    },
+    {
+      "sequence": 11910,
+      "schedule_id": 1803,
+      "event": "schedule.before",
+      "output_schedule_id": null,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 225,
+        "num_output_placeholders": 6,
+        "num_tokens": 220,
+        "num_tokens_with_spec": 225,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": null
+    },
+    {
+      "sequence": 12013,
+      "schedule_id": 1803,
+      "event": "schedule.after",
+      "output_schedule_id": null,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 231,
+        "num_output_placeholders": 12,
+        "num_tokens": 220,
+        "num_tokens_with_spec": 225,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": null
+    },
+    {
+      "sequence": 12014,
+      "schedule_id": 1803,
+      "event": "output.before",
+      "output_schedule_id": 1802,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 231,
+        "num_output_placeholders": 12,
+        "num_tokens": 220,
+        "num_tokens_with_spec": 225,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": [
+        1,
+        4,
+        6
+      ]
+    },
+    {
+      "sequence": 12015,
+      "schedule_id": 1803,
+      "event": "output.after",
+      "output_schedule_id": 1802,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 226,
+        "num_output_placeholders": 6,
+        "num_tokens": 221,
+        "num_tokens_with_spec": 226,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": null
+    },
+    {
+      "sequence": 12016,
+      "schedule_id": 1804,
+      "event": "schedule.before",
+      "output_schedule_id": null,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 226,
+        "num_output_placeholders": 6,
+        "num_tokens": 221,
+        "num_tokens_with_spec": 226,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": null
+    },
+    {
+      "sequence": 12113,
+      "schedule_id": 1804,
+      "event": "schedule.after",
+      "output_schedule_id": null,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 232,
+        "num_output_placeholders": 12,
+        "num_tokens": 221,
+        "num_tokens_with_spec": 226,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": null
+    },
+    {
+      "sequence": 12114,
+      "schedule_id": 1804,
+      "event": "output.before",
+      "output_schedule_id": 1803,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 232,
+        "num_output_placeholders": 12,
+        "num_tokens": 221,
+        "num_tokens_with_spec": 226,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": [
+        1,
+        4,
+        6
+      ]
+    },
+    {
+      "sequence": 12115,
+      "schedule_id": 1804,
+      "event": "output.after",
+      "output_schedule_id": 1803,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 227,
+        "num_output_placeholders": 6,
+        "num_tokens": 222,
+        "num_tokens_with_spec": 227,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": null
+    },
+    {
+      "sequence": 12116,
+      "schedule_id": 1805,
+      "event": "schedule.before",
+      "output_schedule_id": null,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 227,
+        "num_output_placeholders": 6,
+        "num_tokens": 222,
+        "num_tokens_with_spec": 227,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": null
+    },
+    {
+      "sequence": 12215,
+      "schedule_id": 1805,
+      "event": "schedule.after",
+      "output_schedule_id": null,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 233,
+        "num_output_placeholders": 12,
+        "num_tokens": 222,
+        "num_tokens_with_spec": 227,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": null
+    },
+    {
+      "sequence": 12216,
+      "schedule_id": 1805,
+      "event": "output.before",
+      "output_schedule_id": 1804,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 233,
+        "num_output_placeholders": 12,
+        "num_tokens": 222,
+        "num_tokens_with_spec": 227,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": [
+        1,
+        4,
+        6
+      ]
+    },
+    {
+      "sequence": 12217,
+      "schedule_id": 1805,
+      "event": "output.after",
+      "output_schedule_id": 1804,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 228,
+        "num_output_placeholders": 6,
+        "num_tokens": 223,
+        "num_tokens_with_spec": 228,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": null
+    },
+    {
+      "sequence": 12218,
+      "schedule_id": 1806,
+      "event": "schedule.before",
+      "output_schedule_id": null,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 228,
+        "num_output_placeholders": 6,
+        "num_tokens": 223,
+        "num_tokens_with_spec": 228,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": null
+    },
+    {
+      "sequence": 12311,
+      "schedule_id": 1806,
+      "event": "schedule.after",
+      "output_schedule_id": null,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 234,
+        "num_output_placeholders": 12,
+        "num_tokens": 223,
+        "num_tokens_with_spec": 228,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": null
+    },
+    {
+      "sequence": 12312,
+      "schedule_id": 1806,
+      "event": "output.before",
+      "output_schedule_id": 1805,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 234,
+        "num_output_placeholders": 12,
+        "num_tokens": 223,
+        "num_tokens_with_spec": 228,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": [
+        1,
+        4,
+        6
+      ]
+    },
+    {
+      "sequence": 12313,
+      "schedule_id": 1806,
+      "event": "output.after",
+      "output_schedule_id": 1805,
+      "request": {
+        "request_id": "batch10-3-8dd4972f",
+        "num_computed_tokens": 229,
+        "num_output_placeholders": 6,
+        "num_tokens": 224,
+        "num_tokens_with_spec": 229,
+        "num_prompt_tokens": 128,
+        "async_tokens_to_discard": 0
+      },
+      "sampled_lengths": null
+    }
+  ],
+  "ranks": [
+    {
+      "rank": 0,
+      "shared_storage_ptr": 20739782279168,
+      "rounds": [
+        {
+          "execution": 1803,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 0,
+            "execution": 1803,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              61,
+              62
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1790
+          },
+          "binding": [
+            0,
+            220,
+            95,
+            35,
+            31,
+            1,
+            1803
+          ],
+          "changes": [],
+          "sha256": "11f7c2442596fa380f3489fcd7ecb59fc7d1d4f0693c587241a186b40cdcf206"
+        },
+        {
+          "execution": 1804,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 0,
+            "execution": 1804,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              61,
+              62
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1791
+          },
+          "binding": [
+            0,
+            221,
+            95,
+            35,
+            31,
+            1,
+            1804
+          ],
+          "changes": [],
+          "sha256": "9842dc06ec24158d2a879ac34a95cb481b3debaa497431ae03f13b808c473e17"
+        },
+        {
+          "execution": 1805,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 0,
+            "execution": 1805,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              61,
+              62
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1792
+          },
+          "binding": [
+            0,
+            222,
+            95,
+            35,
+            31,
+            1,
+            1805
+          ],
+          "changes": [
+            {
+              "site": [
+                "model.layers.3.self_attn",
+                0,
+                "_C_ascend.compressor.default",
+                12
+              ],
+              "changed_bytes": 981,
+              "slot_byte_range": [
+                20739783457792,
+                20739783458816
+              ],
+              "before_sha256": "db0ae961635e6d709009e20d4bfd8b56f6447cc74d98213a122c3a85855b7501",
+              "after_sha256": "6d29764dc14dc8314132a467d1348975ab3568b22c167404b0b4b7899697cc04",
+              "before_bf16_abs_max": 14.125,
+              "after_bf16_abs_max": 1.502027635236955e+38,
+              "capture_stream": "1383922608"
+            }
+          ],
+          "sha256": "28dd22a9e63c8c486b6faef9aa36470d59b2beaab2f6b535483b63ec8d709ff8"
+        },
+        {
+          "execution": 1806,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 0,
+            "execution": 1806,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              61,
+              62
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1793
+          },
+          "binding": [
+            0,
+            223,
+            127,
+            181,
+            31,
+            1,
+            1806
+          ],
+          "changes": [],
+          "sha256": "660745c75709b96407870df312b5367be0955da1b0e2e8ccb980d3319586d213"
+        }
+      ],
+      "capsule_tail": [
+        {
+          "execution": 1908,
+          "max_seq": 635,
+          "coverage": "PREFIX_AND_FULL_GUARD_PAGES",
+          "mapping": true
+        },
+        {
+          "execution": 1909,
+          "max_seq": 641,
+          "coverage": "UNAVAILABLE",
+          "mapping": true
+        },
+        {
+          "execution": 1910,
+          "max_seq": 647,
+          "coverage": "UNAVAILABLE",
+          "mapping": true
+        }
+      ]
+    },
+    {
+      "rank": 1,
+      "shared_storage_ptr": 20739782279168,
+      "rounds": [
+        {
+          "execution": 1803,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 1,
+            "execution": 1803,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              61,
+              62
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1790
+          },
+          "binding": [
+            0,
+            220,
+            95,
+            35,
+            31,
+            1,
+            1803
+          ],
+          "changes": [],
+          "sha256": "d7a9c07340de7ed6dac8f405e29545209c1df643815c86705374b0966b3492fa"
+        },
+        {
+          "execution": 1804,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 1,
+            "execution": 1804,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              61,
+              62
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1791
+          },
+          "binding": [
+            0,
+            221,
+            95,
+            35,
+            31,
+            1,
+            1804
+          ],
+          "changes": [],
+          "sha256": "d2fd50f0e4d6cc1f2eb9b69bdf267347bb5abccd7ce917a4ad4a19a68dc487f8"
+        },
+        {
+          "execution": 1805,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 1,
+            "execution": 1805,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              61,
+              62
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1792
+          },
+          "binding": [
+            0,
+            222,
+            95,
+            35,
+            31,
+            1,
+            1805
+          ],
+          "changes": [
+            {
+              "site": [
+                "model.layers.3.self_attn",
+                0,
+                "_C_ascend.compressor.default",
+                12
+              ],
+              "changed_bytes": 981,
+              "slot_byte_range": [
+                20739783457792,
+                20739783458816
+              ],
+              "before_sha256": "db0ae961635e6d709009e20d4bfd8b56f6447cc74d98213a122c3a85855b7501",
+              "after_sha256": "6d29764dc14dc8314132a467d1348975ab3568b22c167404b0b4b7899697cc04",
+              "before_bf16_abs_max": 14.125,
+              "after_bf16_abs_max": 1.502027635236955e+38,
+              "capture_stream": "1628346400"
+            }
+          ],
+          "sha256": "996188151329da9863a5ddc2618b91f4a339a4bea7aa6132c1089cd768d9e81a"
+        },
+        {
+          "execution": 1806,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 1,
+            "execution": 1806,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              61,
+              62
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1793
+          },
+          "binding": [
+            0,
+            223,
+            127,
+            181,
+            31,
+            1,
+            1806
+          ],
+          "changes": [],
+          "sha256": "abaab02d83ec58b7c47ea9192ec4df4800525672be9e5f652ba212cb08a5fcd2"
+        }
+      ],
+      "capsule_tail": [
+        {
+          "execution": 1908,
+          "max_seq": 635,
+          "coverage": "PREFIX_AND_FULL_GUARD_PAGES",
+          "mapping": true
+        },
+        {
+          "execution": 1909,
+          "max_seq": 641,
+          "coverage": "UNAVAILABLE",
+          "mapping": true
+        },
+        {
+          "execution": 1910,
+          "max_seq": 647,
+          "coverage": "UNAVAILABLE",
+          "mapping": true
+        }
+      ]
+    },
+    {
+      "rank": 2,
+      "shared_storage_ptr": 20739782279168,
+      "rounds": [
+        {
+          "execution": 1803,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 2,
+            "execution": 1803,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              62,
+              61
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1790
+          },
+          "binding": [
+            0,
+            220,
+            95,
+            35,
+            31,
+            1,
+            1803
+          ],
+          "changes": [],
+          "sha256": "84702a39affe4635a3a68d44c20b1b2b773fc1e90e76290ad7ad7f1dbec19403"
+        },
+        {
+          "execution": 1804,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 2,
+            "execution": 1804,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              62,
+              61
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1791
+          },
+          "binding": [
+            0,
+            221,
+            95,
+            35,
+            31,
+            1,
+            1804
+          ],
+          "changes": [],
+          "sha256": "974cc842fbd6b5a763d0c5f76a81f5cd8869da9d3f65bfdf8e89470160ae42f4"
+        },
+        {
+          "execution": 1805,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 2,
+            "execution": 1805,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              62,
+              61
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1792
+          },
+          "binding": [
+            0,
+            222,
+            95,
+            35,
+            31,
+            1,
+            1805
+          ],
+          "changes": [
+            {
+              "site": [
+                "model.layers.3.self_attn",
+                0,
+                "_C_ascend.compressor.default",
+                12
+              ],
+              "changed_bytes": 981,
+              "slot_byte_range": [
+                20739783457792,
+                20739783458816
+              ],
+              "before_sha256": "db0ae961635e6d709009e20d4bfd8b56f6447cc74d98213a122c3a85855b7501",
+              "after_sha256": "6d29764dc14dc8314132a467d1348975ab3568b22c167404b0b4b7899697cc04",
+              "before_bf16_abs_max": 14.125,
+              "after_bf16_abs_max": 1.502027635236955e+38,
+              "capture_stream": "780517808"
+            }
+          ],
+          "sha256": "227b669f562efda0fbbe2118803d67cbd7a60e1bcb2ecaaf6e48df0199053a26"
+        },
+        {
+          "execution": 1806,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 2,
+            "execution": 1806,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              62,
+              61
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1793
+          },
+          "binding": [
+            0,
+            223,
+            127,
+            181,
+            31,
+            1,
+            1806
+          ],
+          "changes": [],
+          "sha256": "2c2a9618e54df10a8ed6d8734473a9c7c8ba1803bf691172804db7345b9b8d8c"
+        }
+      ],
+      "capsule_tail": [
+        {
+          "execution": 1908,
+          "max_seq": 635,
+          "coverage": "PREFIX_AND_FULL_GUARD_PAGES",
+          "mapping": true
+        },
+        {
+          "execution": 1909,
+          "max_seq": 641,
+          "coverage": "UNAVAILABLE",
+          "mapping": true
+        },
+        {
+          "execution": 1910,
+          "max_seq": 647,
+          "coverage": "UNAVAILABLE",
+          "mapping": true
+        }
+      ]
+    },
+    {
+      "rank": 3,
+      "shared_storage_ptr": 20739782279168,
+      "rounds": [
+        {
+          "execution": 1803,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 3,
+            "execution": 1803,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              61,
+              62
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1790
+          },
+          "binding": [
+            0,
+            220,
+            95,
+            35,
+            31,
+            1,
+            1803
+          ],
+          "changes": [],
+          "sha256": "3330ee2004148da293578d80cc533e0571344d685e3878e66b7b1817aaee2be0"
+        },
+        {
+          "execution": 1804,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 3,
+            "execution": 1804,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              61,
+              62
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1791
+          },
+          "binding": [
+            0,
+            221,
+            95,
+            35,
+            31,
+            1,
+            1804
+          ],
+          "changes": [],
+          "sha256": "b2f4ef7a18ed49e9b38d4e5969f0b83dab4c2bdf66fd437514cbcf9a57420b20"
+        },
+        {
+          "execution": 1805,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 3,
+            "execution": 1805,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              61,
+              62
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1792
+          },
+          "binding": [
+            0,
+            222,
+            95,
+            35,
+            31,
+            1,
+            1805
+          ],
+          "changes": [
+            {
+              "site": [
+                "model.layers.3.self_attn",
+                0,
+                "_C_ascend.compressor.default",
+                12
+              ],
+              "changed_bytes": 981,
+              "slot_byte_range": [
+                20739783457792,
+                20739783458816
+              ],
+              "before_sha256": "db0ae961635e6d709009e20d4bfd8b56f6447cc74d98213a122c3a85855b7501",
+              "after_sha256": "6d29764dc14dc8314132a467d1348975ab3568b22c167404b0b4b7899697cc04",
+              "before_bf16_abs_max": 14.125,
+              "after_bf16_abs_max": 1.502027635236955e+38,
+              "capture_stream": "1458255472"
+            }
+          ],
+          "sha256": "2ff167c9cd8fe75ebe6ee6ed92410c264e2cf2ef6de8ae4f18fbd6c0edf2e8d2"
+        },
+        {
+          "execution": 1806,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 3,
+            "execution": 1806,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              61,
+              62
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1793
+          },
+          "binding": [
+            0,
+            223,
+            127,
+            181,
+            31,
+            1,
+            1806
+          ],
+          "changes": [],
+          "sha256": "93052f833a30ea9e70ae1801e5a4d51205932614482a60c25e136c6534f26172"
+        }
+      ],
+      "capsule_tail": [
+        {
+          "execution": 1908,
+          "max_seq": 635,
+          "coverage": "PREFIX_AND_FULL_GUARD_PAGES",
+          "mapping": true
+        },
+        {
+          "execution": 1909,
+          "max_seq": 641,
+          "coverage": "UNAVAILABLE",
+          "mapping": true
+        },
+        {
+          "execution": 1910,
+          "max_seq": 647,
+          "coverage": "UNAVAILABLE",
+          "mapping": true
+        }
+      ]
+    },
+    {
+      "rank": 4,
+      "shared_storage_ptr": 20739782279168,
+      "rounds": [
+        {
+          "execution": 1803,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 4,
+            "execution": 1803,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              61,
+              62
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1790
+          },
+          "binding": [
+            0,
+            220,
+            95,
+            35,
+            31,
+            1,
+            1803
+          ],
+          "changes": [],
+          "sha256": "a5de1131fa39eca55819290187eca8113190b33266d62ec6e543eb51da16346b"
+        },
+        {
+          "execution": 1804,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 4,
+            "execution": 1804,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              61,
+              62
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1791
+          },
+          "binding": [
+            0,
+            221,
+            95,
+            35,
+            31,
+            1,
+            1804
+          ],
+          "changes": [],
+          "sha256": "fb7803f1c603f97a8730acca8b2d1661a5513750e34fdd9f9fb365a0fef38411"
+        },
+        {
+          "execution": 1805,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 4,
+            "execution": 1805,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              61,
+              62
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1792
+          },
+          "binding": [
+            0,
+            222,
+            95,
+            35,
+            31,
+            1,
+            1805
+          ],
+          "changes": [
+            {
+              "site": [
+                "model.layers.3.self_attn",
+                0,
+                "_C_ascend.compressor.default",
+                12
+              ],
+              "changed_bytes": 981,
+              "slot_byte_range": [
+                20739783457792,
+                20739783458816
+              ],
+              "before_sha256": "db0ae961635e6d709009e20d4bfd8b56f6447cc74d98213a122c3a85855b7501",
+              "after_sha256": "6d29764dc14dc8314132a467d1348975ab3568b22c167404b0b4b7899697cc04",
+              "before_bf16_abs_max": 14.125,
+              "after_bf16_abs_max": 1.502027635236955e+38,
+              "capture_stream": "973312608"
+            }
+          ],
+          "sha256": "30e0596b3f55a9b26a44cc46ef2fe4300dca8ab6f3eef66311dda4c491d22585"
+        },
+        {
+          "execution": 1806,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 4,
+            "execution": 1806,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              61,
+              62
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1793
+          },
+          "binding": [
+            0,
+            223,
+            127,
+            181,
+            31,
+            1,
+            1806
+          ],
+          "changes": [],
+          "sha256": "b3a29b18ad6447e035d7d45f042934fc6096b151773eab6b8c54a3153f2465ea"
+        }
+      ],
+      "capsule_tail": [
+        {
+          "execution": 1908,
+          "max_seq": 635,
+          "coverage": "PREFIX_AND_FULL_GUARD_PAGES",
+          "mapping": true
+        },
+        {
+          "execution": 1909,
+          "max_seq": 641,
+          "coverage": "UNAVAILABLE",
+          "mapping": true
+        },
+        {
+          "execution": 1910,
+          "max_seq": 647,
+          "coverage": "UNAVAILABLE",
+          "mapping": true
+        }
+      ]
+    },
+    {
+      "rank": 5,
+      "shared_storage_ptr": 20739782279168,
+      "rounds": [
+        {
+          "execution": 1803,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 5,
+            "execution": 1803,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              62,
+              61
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1790
+          },
+          "binding": [
+            0,
+            220,
+            95,
+            35,
+            31,
+            1,
+            1803
+          ],
+          "changes": [],
+          "sha256": "1ce7d0e6aa16eb3c431c04a43db86637133384724a1622fd7c8c634abbc008a5"
+        },
+        {
+          "execution": 1804,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 5,
+            "execution": 1804,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              62,
+              61
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1791
+          },
+          "binding": [
+            0,
+            221,
+            95,
+            35,
+            31,
+            1,
+            1804
+          ],
+          "changes": [],
+          "sha256": "c9fdfd37a509aa9a3390a7aa0ed7a10746718e97f7373516e238c36a2e9ec695"
+        },
+        {
+          "execution": 1805,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 5,
+            "execution": 1805,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              62,
+              61
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1792
+          },
+          "binding": [
+            0,
+            222,
+            95,
+            35,
+            31,
+            1,
+            1805
+          ],
+          "changes": [
+            {
+              "site": [
+                "model.layers.3.self_attn",
+                0,
+                "_C_ascend.compressor.default",
+                12
+              ],
+              "changed_bytes": 981,
+              "slot_byte_range": [
+                20739783457792,
+                20739783458816
+              ],
+              "before_sha256": "db0ae961635e6d709009e20d4bfd8b56f6447cc74d98213a122c3a85855b7501",
+              "after_sha256": "6d29764dc14dc8314132a467d1348975ab3568b22c167404b0b4b7899697cc04",
+              "before_bf16_abs_max": 14.125,
+              "after_bf16_abs_max": 1.502027635236955e+38,
+              "capture_stream": "1150179008"
+            }
+          ],
+          "sha256": "4ac5a42e8f613f020cc90db76ee7ade9a80664f22c7c0695840d9f1e0d9137ae"
+        },
+        {
+          "execution": 1806,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 5,
+            "execution": 1806,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              62,
+              61
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1793
+          },
+          "binding": [
+            0,
+            223,
+            127,
+            181,
+            31,
+            1,
+            1806
+          ],
+          "changes": [],
+          "sha256": "e8d9fff08be25b2ad2897552a1286fe6b161d0b740fc847f693f04aab9da6578"
+        }
+      ],
+      "capsule_tail": [
+        {
+          "execution": 1908,
+          "max_seq": 635,
+          "coverage": "PREFIX_AND_FULL_GUARD_PAGES",
+          "mapping": true
+        },
+        {
+          "execution": 1909,
+          "max_seq": 641,
+          "coverage": "UNAVAILABLE",
+          "mapping": true
+        },
+        {
+          "execution": 1910,
+          "max_seq": 647,
+          "coverage": "UNAVAILABLE",
+          "mapping": true
+        }
+      ]
+    },
+    {
+      "rank": 6,
+      "shared_storage_ptr": 20739782279168,
+      "rounds": [
+        {
+          "execution": 1803,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 6,
+            "execution": 1803,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              61,
+              62
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1790
+          },
+          "binding": [
+            0,
+            220,
+            95,
+            35,
+            31,
+            1,
+            1803
+          ],
+          "changes": [],
+          "sha256": "94a97891c28e6b6281ed5acebd2b184a1b8387d28e2cb7ce4972db6cf4662bbf"
+        },
+        {
+          "execution": 1804,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 6,
+            "execution": 1804,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              61,
+              62
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1791
+          },
+          "binding": [
+            0,
+            221,
+            95,
+            35,
+            31,
+            1,
+            1804
+          ],
+          "changes": [],
+          "sha256": "95fba88f918e4e61e4a03820f3fa6d7458293f3c15c7939642959bf0eb2772a5"
+        },
+        {
+          "execution": 1805,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 6,
+            "execution": 1805,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              61,
+              62
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1792
+          },
+          "binding": [
+            0,
+            222,
+            95,
+            35,
+            31,
+            1,
+            1805
+          ],
+          "changes": [
+            {
+              "site": [
+                "model.layers.3.self_attn",
+                0,
+                "_C_ascend.compressor.default",
+                12
+              ],
+              "changed_bytes": 981,
+              "slot_byte_range": [
+                20739783457792,
+                20739783458816
+              ],
+              "before_sha256": "db0ae961635e6d709009e20d4bfd8b56f6447cc74d98213a122c3a85855b7501",
+              "after_sha256": "6d29764dc14dc8314132a467d1348975ab3568b22c167404b0b4b7899697cc04",
+              "before_bf16_abs_max": 14.125,
+              "after_bf16_abs_max": 1.502027635236955e+38,
+              "capture_stream": "901593760"
+            }
+          ],
+          "sha256": "ef0de3f944644ddbaa5436b2022c8f2b80c43b65bca56c3205e3487d55558cc8"
+        },
+        {
+          "execution": 1806,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 6,
+            "execution": 1806,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              61,
+              62
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1793
+          },
+          "binding": [
+            0,
+            223,
+            127,
+            181,
+            31,
+            1,
+            1806
+          ],
+          "changes": [],
+          "sha256": "d06132db083fd6d88a2c04fda13b16caf7ce3326c3cb6de52bbf696436d0bb88"
+        }
+      ],
+      "capsule_tail": [
+        {
+          "execution": 1908,
+          "max_seq": 635,
+          "coverage": "PREFIX_AND_FULL_GUARD_PAGES",
+          "mapping": true
+        },
+        {
+          "execution": 1909,
+          "max_seq": 641,
+          "coverage": "UNAVAILABLE",
+          "mapping": true
+        },
+        {
+          "execution": 1910,
+          "max_seq": 647,
+          "coverage": "UNAVAILABLE",
+          "mapping": true
+        }
+      ]
+    },
+    {
+      "rank": 7,
+      "shared_storage_ptr": 20739782279168,
+      "rounds": [
+        {
+          "execution": 1803,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 7,
+            "execution": 1803,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              61,
+              62
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1790
+          },
+          "binding": [
+            0,
+            220,
+            95,
+            35,
+            31,
+            1,
+            1803
+          ],
+          "changes": [],
+          "sha256": "27fe32d927193def268a9637820d828c33f6ce70d57fa6b52a2bd4ff39ed396c"
+        },
+        {
+          "execution": 1804,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 7,
+            "execution": 1804,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              61,
+              62
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1791
+          },
+          "binding": [
+            0,
+            221,
+            95,
+            35,
+            31,
+            1,
+            1804
+          ],
+          "changes": [],
+          "sha256": "c6d8097294ebcbc6c0619218414a6f2ace9c5bfe3ae4776f42841b12cf831f8f"
+        },
+        {
+          "execution": 1805,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 7,
+            "execution": 1805,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              61,
+              62
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1792
+          },
+          "binding": [
+            0,
+            222,
+            95,
+            35,
+            31,
+            1,
+            1805
+          ],
+          "changes": [
+            {
+              "site": [
+                "model.layers.3.self_attn",
+                0,
+                "_C_ascend.compressor.default",
+                12
+              ],
+              "changed_bytes": 981,
+              "slot_byte_range": [
+                20739783457792,
+                20739783458816
+              ],
+              "before_sha256": "db0ae961635e6d709009e20d4bfd8b56f6447cc74d98213a122c3a85855b7501",
+              "after_sha256": "6d29764dc14dc8314132a467d1348975ab3568b22c167404b0b4b7899697cc04",
+              "before_bf16_abs_max": 14.125,
+              "after_bf16_abs_max": 1.502027635236955e+38,
+              "capture_stream": "849707152"
+            }
+          ],
+          "sha256": "0ecd97b19918a997bc2b1dc8eddad018354b6cc89c0241b032c27e411f89ebb2"
+        },
+        {
+          "execution": 1806,
+          "identity": {
+            "point": "ctx128-n4-t12-skewed",
+            "rank": 7,
+            "execution": 1806,
+            "request_ids": [
+              "batch10-3-8dd4972f",
+              "batch10-2-9af2b0ef",
+              "batch10-1-b8283095"
+            ],
+            "query_start_loc_cpu": [
+              0,
+              1,
+              5,
+              11
+            ],
+            "pool_rows_cpu": [
+              63,
+              61,
+              62
+            ],
+            "target_rows": 11,
+            "graph_capacity": 12,
+            "proposal_epoch": 1793
+          },
+          "binding": [
+            0,
+            223,
+            127,
+            181,
+            31,
+            1,
+            1806
+          ],
+          "changes": [],
+          "sha256": "3fed50e28a3a657bb93fa3cb8784e600983efe22698cb7dd56fea86ba5f2a77d"
+        }
+      ],
+      "capsule_tail": [
+        {
+          "execution": 1908,
+          "max_seq": 635,
+          "coverage": "PREFIX_AND_FULL_GUARD_PAGES",
+          "mapping": true
+        },
+        {
+          "execution": 1909,
+          "max_seq": 641,
+          "coverage": "UNAVAILABLE",
+          "mapping": true
+        },
+        {
+          "execution": 1910,
+          "max_seq": 647,
+          "coverage": "UNAVAILABLE",
+          "mapping": true
+        }
+      ]
+    }
+  ],
+  "retained_hashes_verified": 9,
+  "tenth_generated_tokens": [
+    512,
+    512,
+    512,
+    512
+  ],
+  "focused_passed": 1161,
+  "numerical_nan": "NOT_REPRODUCED",
+  "lifecycle": "page freed at speculative upper bound, reused across groups while worker historical mapping still live",
+  "diagnostic_error": "Exception: Call to collective_rpc method failed: Worker failed with error 'Profile metadata evidence unavailable: auxiliary: ValueError: Operator capsule coverage/mapping unavailable; preserve original failure', please check the stack trace above for the root cause",
+  "cleanup_status": "forced_cleanup",
+  "worker_natural_exit": false,
+  "performance_eligible": false
+}

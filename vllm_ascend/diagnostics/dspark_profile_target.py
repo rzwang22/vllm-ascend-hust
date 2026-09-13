@@ -157,10 +157,11 @@ def install_target_boundaries(model, config):
         install_attention_probe(bank, model, bank.target_layer)
     capture_options = additional["dspark_profile_observation"].get("operator_capture")
     if capture_options is not None:
-        from vllm_ascend.diagnostics.dspark_profile_operator import OperatorCapture
+        from vllm_ascend.diagnostics.dspark_profile_operator import OperatorCapture, capture_runtime_options
 
         if bank.attention_probe is None:
             raise ValueError("Operator capture requires attention detail")
+        capture_options = capture_runtime_options(capture_options, config)
         bank.attention_probe.operator = OperatorCapture(bank, capture_options)
         if capture_options.get("write_timeline", False):
             from vllm_ascend.diagnostics.dspark_write_timeline import SlotWriteTimeline

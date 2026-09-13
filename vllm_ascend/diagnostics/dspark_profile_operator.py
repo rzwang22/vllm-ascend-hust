@@ -63,6 +63,23 @@ def unpack(packet, specs):
     return result
 
 
+def capture_runtime_options(options, config):
+    """Separate the cost domain from the bounded in-flight target query domain."""
+    ceiling = options["max_seq_len"]
+    batches = config.max_concurrent_batches
+    query = config.num_speculative_tokens + 1
+    if not all(type(x) is int and x > 0 for x in (ceiling, batches, query)):
+        raise ValueError("Operator capture requires explicit bounded execution limits")
+    return {
+        **options,
+        "profile_context_ceiling": ceiling,
+        "max_concurrent_batches": batches,
+        "max_query_length": query,
+        "max_seq_len": min(config.model_config.max_model_len, ceiling + batches * query),
+        "sequence_bound_scope": "profile ceiling plus at most one full query per in-flight batch",
+    }
+
+
 class OperatorCapture:
     def __init__(self, bank, options):
         self.epoch_input, self.options = bank.epoch_input, options
@@ -245,10 +262,12 @@ class OperatorCapture:
         self.history.append(path)
         while len(self.history) > 3:
             self.history.pop(0).unlink()
-        self.frozen = bool(record["head_flags"] and any(any(row) for row in record["head_flags"]))
+        invalid = not covered or not capsule["query_mapping_matches"]
+        self.frozen = invalid or bool(record["head_flags"] and any(any(row) for row in record["head_flags"]))
         summary = {
             "paths": [p.name for p in self.history],
             "first_error_frozen": self.frozen,
+            "coverage_error_frozen": invalid,
             "execution": record["execution"],
             "coverage": capsule["coverage"],
             "d2h_bytes": cpu.numel(),

@@ -1,0 +1,90 @@
+{
+  "scope": "Core production lifetime fix plus independent diagnostic coverage fix; no NPU acceptance claim",
+  "baseline_plugin": "890fc350627eba18e8ca1296ad1b4b310283c2ff",
+  "baseline_core": "897306c43bf800e2480cb5c0f3e2da408d85a2fd",
+  "fixed_core": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+  "local_environment": {
+    "python": "3.12.13",
+    "torch": "2.10.0",
+    "platform": "macOS arm64",
+    "torch_npu": "unavailable"
+  },
+  "server_archive_environment": {
+    "torch": "2.10.0+cpu",
+    "torch_npu": "2.10.0.post2"
+  },
+  "regression_before": {
+    "passed": 6,
+    "failed": 7,
+    "command": "Core .venv/bin/python -m pytest --confcutdir=tests/v1/core -q tests/v1/core/test_async_swa_reclamation.py",
+    "source": "isolated worktree at frozen Core; same final tests; generated package version/egg-info copied for macOS CPU platform detection, no algorithm stubs"
+  },
+  "core_after": {
+    "passed": 22,
+    "failed": 0,
+    "skipped": 0,
+    "new_tests": 13,
+    "existing_tests": 9,
+    "command": "Core .venv/bin/python -m pytest --confcutdir=tests/v1/core -q tests/v1/core/test_async_swa_reclamation.py tests/v1/core/test_single_type_kv_cache_manager.py",
+    "scope": "real AsyncScheduler/KVCacheManager/BlockPool; config-only OPT, no weights. K5 scheduler fields explicit; no proposer/worker kernel executed"
+  },
+  "plugin_related": {
+    "passed": 163,
+    "skipped": 4,
+    "failed": 0,
+    "conftest": "--noconftest",
+    "files": [
+      "test_dspark_operator_capture.py",
+      "test_dspark_operator_serialization.py",
+      "test_dspark_profile_target.py",
+      "test_dspark_profile_attention.py",
+      "test_dspark_attention_receipts.py",
+      "test_dspark_write_timeline.py"
+    ],
+    "skips": [
+      "two dispatcher NPU cases: torch_npu absent",
+      "NPU writer case: torch_npu absent",
+      "installed Core legacy writer test: vllm absent in separate plugin-only environment"
+    ]
+  },
+  "lifetime": {
+    "passed": 1,
+    "skipped": 2,
+    "failed": 0,
+    "scope": "real Core plus CPU tensor shared-storage integration passed using Core .venv and explicit source path; NPU eager and ACLGraph unavailable"
+  },
+  "core_precommit": "all applicable staged-file hooks passed, including ruff, typos, mypy, SPDX, configuration/import checks",
+  "NPU_new_lifecycle": "PENDING",
+  "full_model_NaN_fix_acceptance": "PENDING",
+  "worker_natural_exit": "UNRESOLVED",
+  "performance_eligible": false,
+  "plugin_quality": {
+    "changed_files_manual_hooks": "all applicable checks passed",
+    "full_format_ci": {
+      "returncode": 1,
+      "output_bytes": 1458405674,
+      "hooks": [
+        "ruff check..................................................................Failed",
+        "ruff format.................................................................Failed",
+        "codespell...................................................................Failed",
+        "typos.......................................................................Failed",
+        "clang-format................................................................Passed",
+        "markdownlint................................................................Failed",
+        "Lint GitHub Actions workflow files..........................................Failed",
+        "Lint shell scripts..........................................................Failed",
+        "Lint PNG exports from excalidraw............................................Passed",
+        "Check for spaces in all filenames...........................................Passed",
+        "Enforce __init__.py in Python packages......................................Passed",
+        "Forbid init_logger(__name__) in vllm_ascend modules.........................Passed",
+        "Check for forbidden imports.................................................Failed",
+        "Check for boolean ops in with-statements....................................Passed",
+        "Check that new functions over 100 lines have comments.......................Passed",
+        "Check symbolic shapes in meta kernels.......................................Passed",
+        "Suggestion..................................................................Passed"
+      ],
+      "auto_modified_count": 78,
+      "auto_modified_task_files": []
+    },
+    "scope": "Required bash format.sh ci executed in isolated worktree; repository-wide failures remain outside the task files; 78 unrelated auto-edits discarded with that disposable worktree"
+  }
+}

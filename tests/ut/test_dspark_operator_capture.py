@@ -381,3 +381,91 @@ def test_saved_operator_driver_order_and_failure_archive(tmp_path, monkeypatch, 
     ).read_text().strip() == ("7 0" if fail else "0 0")
     with tarfile.open(str(output) + "-evidence.tar.gz") as archive:
         assert any(name.endswith("/status.txt") for name in archive.getnames())
+
+
+@pytest.mark.parametrize("model_limit,expected", [(8192, 652), (645, 645)])
+def test_capture_bound_includes_inflight_queries_without_changing_cost_domain(model_limit, expected):
+    options = {"max_seq_len": 640, "max_tokens": 12}
+    config = NS(max_concurrent_batches=2, num_speculative_tokens=5, model_config=NS(max_model_len=model_limit))
+    result = MODULE.capture_runtime_options(options, config)
+    assert result["max_seq_len"] == expected
+    assert result["profile_context_ceiling"] == options["max_seq_len"] == 640
+    assert result["max_query_length"] == 6 and result["max_concurrent_batches"] == 2
+    assert options == {"max_seq_len": 640, "max_tokens": 12}
+
+
+@pytest.mark.parametrize("failure", ["coverage", "mapping"])
+def test_first_invalid_capsule_and_preceding_rounds_survive_later_calls(tmp_path, monkeypatch, failure):
+    f = fixture(tmp_path, monkeypatch)
+    f.run(1)
+    f.run(2)
+    if failure == "coverage":
+        f.kwargs["seqused_kv"][0] = 13
+    else:
+        f.kwargs["cu_seqlens_q"][1] = 2
+    with pytest.raises(ValueError, match="coverage/mapping unavailable"):
+        f.run(3)
+    paths = sorted(tmp_path.glob("*.pt"))
+    assert [p.name for p in paths] == [f"rank-0-operator-{e}.pt" for e in (1, 2, 3)]
+    hashes = [hashlib.sha256(p.read_bytes()).hexdigest() for p in paths]
+    index = json.loads((tmp_path / "rank-0-operator-index.json").read_text())
+    assert index["coverage_error_frozen"] and index["first_error_frozen"]
+    with pytest.raises(ValueError, match="coverage|mapping|Unavailable"):
+        replay.validate(torch.load(paths[-1], map_location="cpu", weights_only=True))
+    f.bank.epoch_input.fill_(4)
+    f.capture.reset()
+    f.graph.replay()
+    later = {"identity": {"point": "selected", "graph_capacity": 4}}
+    f.capture.own(later)
+    assert "operator_packets" not in later
+    assert hashes == [hashlib.sha256(p.read_bytes()).hexdigest() for p in paths]
+
+
+def test_runtime_bound_applies_to_actual_capture_and_restricted_validation(tmp_path, monkeypatch):
+    # Small head dimensions, real failing sequence range and full physical pages.
+    monkeypatch.setattr(replay, "runtime_identity", lambda: {"test": "CPU"})
+    bank = NS(epoch_input=torch.tensor([1], dtype=torch.int64))
+    options = MODULE.capture_runtime_options(
+        {"point": "selected", "max_tokens": 4, "max_seq_len": 640},
+        NS(max_concurrent_batches=2, num_speculative_tokens=5, model_config=NS(max_model_len=8192)),
+    )
+    capture = MODULE.OperatorCapture(bank, options)
+    f = fixture(tmp_path, monkeypatch)
+    kwargs = {
+        **f.kwargs,
+        "ori_kv": torch.ones(30, 32, 1, 4),
+        "ori_block_table": torch.arange(24).repeat(4, 1),
+        "seqused_kv": torch.tensor([647, 6, 0, 0]),
+    }
+    plan = capture.before(f.q, kwargs)
+    capture.after(plan, torch.ones_like(f.q))
+    record = dict(
+        point="selected",
+        rank=0,
+        execution=1,
+        proposal_epoch=1,
+        request_ids=["short", "long"],
+        query_start_loc_cpu=[0, 1, 3],
+        graph_capacity=4,
+        graph_object_id=None,
+        head_flags=[],
+        target_internal={"attention": {"kv": {"binding": {}}}},
+    )
+    pending = {"identity": record}
+    capture.own(pending)
+    capture.save(record, pending, tmp_path)
+    capsule = torch.load(tmp_path / "rank-0-operator-1.pt", map_location="cpu", weights_only=True)
+    replay.validate(capsule)
+    assert capsule["options"]["max_seq_len"] == 652
+    assert capsule["values"]["seqused_kv"][0] == 647
+    # The bound remains enforced even when extra guard pages happen to cover it.
+    kwargs["seqused_kv"][0] = 653
+    bank.epoch_input.fill_(2)
+    capture.reset()
+    plan = capture.before(f.q, kwargs)
+    capture.after(plan, torch.ones_like(f.q))
+    record["execution"] = 2
+    pending = {"identity": record}
+    capture.own(pending)
+    with pytest.raises(ValueError, match="coverage/mapping unavailable"):
+        capture.save(record, pending, tmp_path)
