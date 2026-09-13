@@ -2860,6 +2860,8 @@ class AscendDSAImpl(DSAAttentionImpl):
                 num_query_tokens=hidden_states.shape[0],
             )
 
+        if probe is not None and probe.operator is not None:
+            attn_op = probe.operator.wrap(attn_op)
         if self.compress_ratio <= 1:
             attn_output = attn_op(
                 q,

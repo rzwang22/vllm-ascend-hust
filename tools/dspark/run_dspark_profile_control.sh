@@ -3,7 +3,7 @@
 # One experiment per invocation. No automatic control sweep or later batches.
 set -o pipefail
 main() {
-    test "$#" -ge 3 && test "$#" -le 6 || return 1
+    test "$#" -ge 3 && test "$#" -le 7 || return 1
     local sha=$1 manifest=$2 mode=$3
     local detail_args=()
     if test "$#" -ge 4; then
@@ -17,6 +17,7 @@ main() {
             case "$option" in
                 --worker-exit) detail_args+=(--profile-worker-exit) ;;
                 --attention) detail_args+=(--profile-target-attention) ;;
+                --operator-capture) detail_args+=(--profile-operator-capture) ;;
                 *) return 1 ;;
             esac
         done

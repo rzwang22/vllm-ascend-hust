@@ -158,3 +158,22 @@ def test_required_kv_receipts_cannot_be_omitted_or_forged_finite(tmp_path):
     gate = AttentionValidity(tmp_path, 1)
     gate.check("first")
     assert gate.passed
+
+
+@pytest.mark.parametrize("kind", ["missing", "stale", "duplicate", "current"])
+def test_operator_receipt_gate_requires_one_current_call(tmp_path, kind):
+    data = publish(tmp_path, 0, operator_required=True)
+    for row in data["rounds"]:
+        e = row["execution"]
+        row["operator_receipts"] = {
+            "missing": None,
+            "stale": [-1, -1],
+            "duplicate": [e] * 4,
+            "current": [e, e, -1, -1],
+        }[kind]
+    publish(tmp_path, **data)
+    if kind == "current":
+        assert AttentionValidity(tmp_path, 1).check("first") is None
+    else:
+        with pytest.raises(RuntimeError):
+            AttentionValidity(tmp_path, 1).check("first")

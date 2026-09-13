@@ -1,0 +1,3542 @@
+{
+  "kind": "independent offline archive verification, not a new NPU run",
+  "focused_passed": 1098,
+  "ignored_links": [],
+  "points": [
+    {
+      "point": "ctx128-n1-t6-balanced",
+      "raw_sha256": "66d7889c6016cd9bfdbf0385aa13f3d0d4a3f60e3405ccdf7ff49d61cdc09ca5"
+    },
+    {
+      "point": "ctx128-n1-t6-skewed",
+      "raw_sha256": "0b41b59f1027ce457a3ec8e75fdfa7c3a905a6e4fc81f711ac0b24ae642740e0"
+    },
+    {
+      "point": "ctx128-n2-t6-balanced",
+      "raw_sha256": "0fa3c9870664c3b7e251ce709f11929e6d5017b3a98293e22b158d6a967f63c7"
+    },
+    {
+      "point": "ctx128-n2-t6-skewed",
+      "raw_sha256": "c2d8274f93b8b75638d6a707d3e40f50541d3205320ee8d2ea8d9c68e47731f8"
+    },
+    {
+      "point": "ctx128-n2-t12-balanced",
+      "raw_sha256": "1470dbc9fa647c45f6b18e5a230c61417f60a898fd7fa86042cfbf8eabd70b94"
+    },
+    {
+      "point": "ctx128-n2-t12-skewed",
+      "raw_sha256": "27e592ac4db545c178a7d2177da98bc3acddb74dc6d0ea660c5ea11ac3e83df2"
+    },
+    {
+      "point": "ctx128-n4-t6-balanced",
+      "raw_sha256": "3345d7890d316c4f3f50bb8218b2d729dabbf60e72f28c6ccf4b82dc7d7b4710"
+    },
+    {
+      "point": "ctx128-n4-t6-skewed",
+      "raw_sha256": "92d9b8d31bf7c38a871d56d97a24ed8142276a3996a44e428d8166368c6517af"
+    },
+    {
+      "point": "ctx128-n4-t12-balanced",
+      "raw_sha256": "2fe0092db86441d4eda0913bd2206ad7f26bc60665c2679c34502ae3624fed5e"
+    }
+  ],
+  "failed_point_outputs": [
+    512,
+    397,
+    122,
+    95
+  ],
+  "source_log": "vllm_ascend /workspace/vllm-ascend-hust\nvllm /workspace/vllm-hust\nINFO 09-13 06:35:36 [__init__.py:44] Available plugins for group vllm.platform_plugins:\nINFO 09-13 06:35:36 [__init__.py:46] - ascend -> vllm_ascend:register\nINFO 09-13 06:35:36 [__init__.py:49] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.\nWARNING 09-13 06:35:36 [__init__.py:36] The vLLM package was not found, so its version could not be inspected. This may cause platform detection to fail.\nINFO 09-13 06:35:36 [__init__.py:246] Platform plugin ascend is activated\nINFO 09-13 06:35:36 [platform.py:58] Breakable cudagraph is force disabled on Ascend because DeepSeek V4 PIECEWISE cudagraph is not supported yet.\ntorch 2.10.0+cpu torch_npu 2.10.0.post2\nASCEND_CUSTOM_OPP_PATH /workspace/vllm-ascend-hust/vllm_ascend/_cann_ops_custom/vendors/custom_transformer:\n",
+  "binary_to_source": "UNKNOWN: OPP path only, no loaded binary hashes/build manifest",
+  "ranks": [
+    {
+      "rank": 0,
+      "first_nan_sha256": "772c18ea68e5c86ef29c789a8a188ed21e16824496850805bf41b15731710f25",
+      "rounds": [
+        {
+          "execution": 1802,
+          "proposal_epoch": 1788,
+          "state_row0": {
+            "request_row": 0,
+            "position": 220,
+            "window_start": 93,
+            "window_end": 221,
+            "slot_block": 119,
+            "slot_offset": 28,
+            "expected_block": 119,
+            "expected_offset": 28,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "kv_row0": {
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "request_row": 0,
+            "position": 220,
+            "invalid_window_indices": 0,
+            "before_scatter": {
+              "slot_block": 119,
+              "slot_offset": 28,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 1,
+              "target_inf": 0,
+              "differs_source": 1
+            },
+            "after_scatter": {
+              "slot_block": 119,
+              "slot_offset": 28,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 0,
+              "target_inf": 0,
+              "differs_source": 0
+            },
+            "page_runs": [
+              {
+                "logical_start": 93,
+                "logical_end": 96,
+                "physical_block": 207
+              },
+              {
+                "logical_start": 96,
+                "logical_end": 128,
+                "physical_block": 206
+              },
+              {
+                "logical_start": 128,
+                "logical_end": 160,
+                "physical_block": 166
+              },
+              {
+                "logical_start": 160,
+                "logical_end": 192,
+                "physical_block": 46
+              },
+              {
+                "logical_start": 192,
+                "logical_end": 221,
+                "physical_block": 119
+              }
+            ],
+            "nonfinite_slots": [],
+            "first_nonfinite": null
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1803,
+          "proposal_epoch": 1789,
+          "state_row0": {
+            "request_row": 0,
+            "position": 221,
+            "window_start": 94,
+            "window_end": 222,
+            "slot_block": 119,
+            "slot_offset": 29,
+            "expected_block": 119,
+            "expected_offset": 29,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "kv_row0": {
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "request_row": 0,
+            "position": 221,
+            "invalid_window_indices": 0,
+            "before_scatter": {
+              "slot_block": 119,
+              "slot_offset": 29,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 1,
+              "target_inf": 0,
+              "differs_source": 1
+            },
+            "after_scatter": {
+              "slot_block": 119,
+              "slot_offset": 29,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 0,
+              "target_inf": 0,
+              "differs_source": 0
+            },
+            "page_runs": [
+              {
+                "logical_start": 94,
+                "logical_end": 96,
+                "physical_block": 207
+              },
+              {
+                "logical_start": 96,
+                "logical_end": 128,
+                "physical_block": 206
+              },
+              {
+                "logical_start": 128,
+                "logical_end": 160,
+                "physical_block": 166
+              },
+              {
+                "logical_start": 160,
+                "logical_end": 192,
+                "physical_block": 46
+              },
+              {
+                "logical_start": 192,
+                "logical_end": 222,
+                "physical_block": 119
+              }
+            ],
+            "nonfinite_slots": [],
+            "first_nonfinite": null
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1804,
+          "proposal_epoch": 1790,
+          "state_row0": {
+            "request_row": 0,
+            "position": 222,
+            "window_start": 95,
+            "window_end": 223,
+            "slot_block": 119,
+            "slot_offset": 30,
+            "expected_block": 119,
+            "expected_offset": 30,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "kv_row0": {
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "request_row": 0,
+            "position": 222,
+            "invalid_window_indices": 0,
+            "before_scatter": {
+              "slot_block": 119,
+              "slot_offset": 30,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 1,
+              "target_inf": 0,
+              "differs_source": 1
+            },
+            "after_scatter": {
+              "slot_block": 119,
+              "slot_offset": 30,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 0,
+              "target_inf": 0,
+              "differs_source": 0
+            },
+            "page_runs": [
+              {
+                "logical_start": 95,
+                "logical_end": 96,
+                "physical_block": 207
+              },
+              {
+                "logical_start": 96,
+                "logical_end": 128,
+                "physical_block": 206
+              },
+              {
+                "logical_start": 128,
+                "logical_end": 160,
+                "physical_block": 166
+              },
+              {
+                "logical_start": 160,
+                "logical_end": 192,
+                "physical_block": 46
+              },
+              {
+                "logical_start": 192,
+                "logical_end": 223,
+                "physical_block": 119
+              }
+            ],
+            "nonfinite_slots": [],
+            "first_nonfinite": null
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [
+              0
+            ],
+            "layer.1.residual": [
+              0
+            ],
+            "layer.1.ffn_input": [
+              0
+            ],
+            "layer.1.ffn_output": [
+              0
+            ],
+            "layer.1.output": [
+              0
+            ],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [
+              0
+            ],
+            "layer.1.attention.inverse_rope": [
+              0
+            ],
+            "layer.1.attention.wo_a": [
+              0
+            ],
+            "layer.1.attention.wo_b_local": [
+              0
+            ]
+          }
+        }
+      ],
+      "events": [
+        {
+          "key": [
+            1804,
+            "RuntimeError",
+            "Ascend DSpark Markov base logits contain NaN."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 0,
+          "stage": "markov",
+          "execution": 1804,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-aa302cee": 6,
+              "batch10-2-99d18a68": 6,
+              "batch10-3-90e8cc44": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        },
+        {
+          "key": [
+            1805,
+            "ValueError",
+            "Scheduled candidates lack current proposal owners."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 0,
+          "stage": "target_execute",
+          "execution": 1805,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-aa302cee": 6,
+              "batch10-2-99d18a68": 6,
+              "batch10-3-90e8cc44": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        }
+      ],
+      "route_scope": "capacity catalog, not failure layout",
+      "route": {
+        "layer_name": "model.layers.1.self_attn.attn",
+        "implementation": "AscendDSAImpl",
+        "branch": "decode_swa",
+        "multistream": true,
+        "compress_ratio": 0,
+        "window": 128,
+        "block_size": 32,
+        "kv_shape": [
+          16231,
+          32,
+          1,
+          512
+        ],
+        "slot_shape": [
+          12,
+          2
+        ],
+        "block_table_shape": [
+          2,
+          256
+        ],
+        "mask": {
+          "ori_mask_mode": 4,
+          "left": 127,
+          "right": 0
+        },
+        "operator": "_C_ascend.npu_sparse_attn_sharedkv",
+        "quant_methods": {
+          "wq_a": "AscendW8A8DynamicLinearMethod",
+          "wq_b": "AscendW8A8DynamicLinearMethod",
+          "wkv": "AscendW8A8DynamicLinearMethod",
+          "wo_b": "NoneType"
+        },
+        "wo_b_custom_op": "NoneType",
+        "wo_b_tp_size": 8
+      }
+    },
+    {
+      "rank": 1,
+      "first_nan_sha256": "c20343e052a11e8716a6e53f8cc3aa9240a1d0cb2bab97af7f584ff80555feb1",
+      "rounds": [
+        {
+          "execution": 1802,
+          "proposal_epoch": 1788,
+          "state_row0": {
+            "request_row": 0,
+            "position": 220,
+            "window_start": 93,
+            "window_end": 221,
+            "slot_block": 119,
+            "slot_offset": 28,
+            "expected_block": 119,
+            "expected_offset": 28,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "kv_row0": {
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "request_row": 0,
+            "position": 220,
+            "invalid_window_indices": 0,
+            "before_scatter": {
+              "slot_block": 119,
+              "slot_offset": 28,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 1,
+              "target_inf": 0,
+              "differs_source": 1
+            },
+            "after_scatter": {
+              "slot_block": 119,
+              "slot_offset": 28,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 0,
+              "target_inf": 0,
+              "differs_source": 0
+            },
+            "page_runs": [
+              {
+                "logical_start": 93,
+                "logical_end": 96,
+                "physical_block": 207
+              },
+              {
+                "logical_start": 96,
+                "logical_end": 128,
+                "physical_block": 206
+              },
+              {
+                "logical_start": 128,
+                "logical_end": 160,
+                "physical_block": 166
+              },
+              {
+                "logical_start": 160,
+                "logical_end": 192,
+                "physical_block": 46
+              },
+              {
+                "logical_start": 192,
+                "logical_end": 221,
+                "physical_block": 119
+              }
+            ],
+            "nonfinite_slots": [],
+            "first_nonfinite": null
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1803,
+          "proposal_epoch": 1789,
+          "state_row0": {
+            "request_row": 0,
+            "position": 221,
+            "window_start": 94,
+            "window_end": 222,
+            "slot_block": 119,
+            "slot_offset": 29,
+            "expected_block": 119,
+            "expected_offset": 29,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "kv_row0": {
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "request_row": 0,
+            "position": 221,
+            "invalid_window_indices": 0,
+            "before_scatter": {
+              "slot_block": 119,
+              "slot_offset": 29,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 1,
+              "target_inf": 0,
+              "differs_source": 1
+            },
+            "after_scatter": {
+              "slot_block": 119,
+              "slot_offset": 29,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 0,
+              "target_inf": 0,
+              "differs_source": 0
+            },
+            "page_runs": [
+              {
+                "logical_start": 94,
+                "logical_end": 96,
+                "physical_block": 207
+              },
+              {
+                "logical_start": 96,
+                "logical_end": 128,
+                "physical_block": 206
+              },
+              {
+                "logical_start": 128,
+                "logical_end": 160,
+                "physical_block": 166
+              },
+              {
+                "logical_start": 160,
+                "logical_end": 192,
+                "physical_block": 46
+              },
+              {
+                "logical_start": 192,
+                "logical_end": 222,
+                "physical_block": 119
+              }
+            ],
+            "nonfinite_slots": [],
+            "first_nonfinite": null
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1804,
+          "proposal_epoch": 1790,
+          "state_row0": {
+            "request_row": 0,
+            "position": 222,
+            "window_start": 95,
+            "window_end": 223,
+            "slot_block": 119,
+            "slot_offset": 30,
+            "expected_block": 119,
+            "expected_offset": 30,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "kv_row0": {
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "request_row": 0,
+            "position": 222,
+            "invalid_window_indices": 0,
+            "before_scatter": {
+              "slot_block": 119,
+              "slot_offset": 30,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 1,
+              "target_inf": 0,
+              "differs_source": 1
+            },
+            "after_scatter": {
+              "slot_block": 119,
+              "slot_offset": 30,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 0,
+              "target_inf": 0,
+              "differs_source": 0
+            },
+            "page_runs": [
+              {
+                "logical_start": 95,
+                "logical_end": 96,
+                "physical_block": 207
+              },
+              {
+                "logical_start": 96,
+                "logical_end": 128,
+                "physical_block": 206
+              },
+              {
+                "logical_start": 128,
+                "logical_end": 160,
+                "physical_block": 166
+              },
+              {
+                "logical_start": 160,
+                "logical_end": 192,
+                "physical_block": 46
+              },
+              {
+                "logical_start": 192,
+                "logical_end": 223,
+                "physical_block": 119
+              }
+            ],
+            "nonfinite_slots": [],
+            "first_nonfinite": null
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [
+              0
+            ],
+            "layer.1.residual": [
+              0
+            ],
+            "layer.1.ffn_input": [
+              0
+            ],
+            "layer.1.ffn_output": [
+              0
+            ],
+            "layer.1.output": [
+              0
+            ],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [
+              0
+            ],
+            "layer.1.attention.inverse_rope": [
+              0
+            ],
+            "layer.1.attention.wo_a": [
+              0
+            ],
+            "layer.1.attention.wo_b_local": [
+              0
+            ]
+          }
+        }
+      ],
+      "events": [
+        {
+          "key": [
+            1804,
+            "RuntimeError",
+            "Ascend DSpark Markov base logits contain NaN."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 1,
+          "stage": "markov",
+          "execution": 1804,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-aa302cee": 6,
+              "batch10-2-99d18a68": 6,
+              "batch10-3-90e8cc44": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        },
+        {
+          "key": [
+            1805,
+            "ValueError",
+            "Scheduled candidates lack current proposal owners."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 1,
+          "stage": "target_execute",
+          "execution": 1805,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-aa302cee": 6,
+              "batch10-2-99d18a68": 6,
+              "batch10-3-90e8cc44": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        }
+      ],
+      "route_scope": "capacity catalog, not failure layout",
+      "route": {
+        "layer_name": "model.layers.1.self_attn.attn",
+        "implementation": "AscendDSAImpl",
+        "branch": "decode_swa",
+        "multistream": true,
+        "compress_ratio": 0,
+        "window": 128,
+        "block_size": 32,
+        "kv_shape": [
+          16231,
+          32,
+          1,
+          512
+        ],
+        "slot_shape": [
+          12,
+          2
+        ],
+        "block_table_shape": [
+          2,
+          256
+        ],
+        "mask": {
+          "ori_mask_mode": 4,
+          "left": 127,
+          "right": 0
+        },
+        "operator": "_C_ascend.npu_sparse_attn_sharedkv",
+        "quant_methods": {
+          "wq_a": "AscendW8A8DynamicLinearMethod",
+          "wq_b": "AscendW8A8DynamicLinearMethod",
+          "wkv": "AscendW8A8DynamicLinearMethod",
+          "wo_b": "NoneType"
+        },
+        "wo_b_custom_op": "NoneType",
+        "wo_b_tp_size": 8
+      }
+    },
+    {
+      "rank": 2,
+      "first_nan_sha256": "8d89528f382d09083b8c35c5aa957dc6467f8e133ebd473712f1e8fc9f50d5a4",
+      "rounds": [
+        {
+          "execution": 1802,
+          "proposal_epoch": 1788,
+          "state_row0": {
+            "request_row": 0,
+            "position": 220,
+            "window_start": 93,
+            "window_end": 221,
+            "slot_block": 119,
+            "slot_offset": 28,
+            "expected_block": 119,
+            "expected_offset": 28,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "kv_row0": {
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "request_row": 0,
+            "position": 220,
+            "invalid_window_indices": 0,
+            "before_scatter": {
+              "slot_block": 119,
+              "slot_offset": 28,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 1,
+              "target_inf": 0,
+              "differs_source": 1
+            },
+            "after_scatter": {
+              "slot_block": 119,
+              "slot_offset": 28,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 0,
+              "target_inf": 0,
+              "differs_source": 0
+            },
+            "page_runs": [
+              {
+                "logical_start": 93,
+                "logical_end": 96,
+                "physical_block": 207
+              },
+              {
+                "logical_start": 96,
+                "logical_end": 128,
+                "physical_block": 206
+              },
+              {
+                "logical_start": 128,
+                "logical_end": 160,
+                "physical_block": 166
+              },
+              {
+                "logical_start": 160,
+                "logical_end": 192,
+                "physical_block": 46
+              },
+              {
+                "logical_start": 192,
+                "logical_end": 221,
+                "physical_block": 119
+              }
+            ],
+            "nonfinite_slots": [],
+            "first_nonfinite": null
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1803,
+          "proposal_epoch": 1789,
+          "state_row0": {
+            "request_row": 0,
+            "position": 221,
+            "window_start": 94,
+            "window_end": 222,
+            "slot_block": 119,
+            "slot_offset": 29,
+            "expected_block": 119,
+            "expected_offset": 29,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "kv_row0": {
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "request_row": 0,
+            "position": 221,
+            "invalid_window_indices": 0,
+            "before_scatter": {
+              "slot_block": 119,
+              "slot_offset": 29,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 1,
+              "target_inf": 0,
+              "differs_source": 1
+            },
+            "after_scatter": {
+              "slot_block": 119,
+              "slot_offset": 29,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 0,
+              "target_inf": 0,
+              "differs_source": 0
+            },
+            "page_runs": [
+              {
+                "logical_start": 94,
+                "logical_end": 96,
+                "physical_block": 207
+              },
+              {
+                "logical_start": 96,
+                "logical_end": 128,
+                "physical_block": 206
+              },
+              {
+                "logical_start": 128,
+                "logical_end": 160,
+                "physical_block": 166
+              },
+              {
+                "logical_start": 160,
+                "logical_end": 192,
+                "physical_block": 46
+              },
+              {
+                "logical_start": 192,
+                "logical_end": 222,
+                "physical_block": 119
+              }
+            ],
+            "nonfinite_slots": [],
+            "first_nonfinite": null
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1804,
+          "proposal_epoch": 1790,
+          "state_row0": {
+            "request_row": 0,
+            "position": 222,
+            "window_start": 95,
+            "window_end": 223,
+            "slot_block": 119,
+            "slot_offset": 30,
+            "expected_block": 119,
+            "expected_offset": 30,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "kv_row0": {
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "request_row": 0,
+            "position": 222,
+            "invalid_window_indices": 0,
+            "before_scatter": {
+              "slot_block": 119,
+              "slot_offset": 30,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 1,
+              "target_inf": 0,
+              "differs_source": 1
+            },
+            "after_scatter": {
+              "slot_block": 119,
+              "slot_offset": 30,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 0,
+              "target_inf": 0,
+              "differs_source": 0
+            },
+            "page_runs": [
+              {
+                "logical_start": 95,
+                "logical_end": 96,
+                "physical_block": 207
+              },
+              {
+                "logical_start": 96,
+                "logical_end": 128,
+                "physical_block": 206
+              },
+              {
+                "logical_start": 128,
+                "logical_end": 160,
+                "physical_block": 166
+              },
+              {
+                "logical_start": 160,
+                "logical_end": 192,
+                "physical_block": 46
+              },
+              {
+                "logical_start": 192,
+                "logical_end": 223,
+                "physical_block": 119
+              }
+            ],
+            "nonfinite_slots": [],
+            "first_nonfinite": null
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [
+              0
+            ],
+            "layer.1.residual": [
+              0
+            ],
+            "layer.1.ffn_input": [
+              0
+            ],
+            "layer.1.ffn_output": [
+              0
+            ],
+            "layer.1.output": [
+              0
+            ],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [
+              0
+            ],
+            "layer.1.attention.inverse_rope": [
+              0
+            ],
+            "layer.1.attention.wo_a": [
+              0
+            ],
+            "layer.1.attention.wo_b_local": [
+              0
+            ]
+          }
+        }
+      ],
+      "events": [
+        {
+          "key": [
+            1804,
+            "RuntimeError",
+            "Ascend DSpark Markov base logits contain NaN."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 2,
+          "stage": "markov",
+          "execution": 1804,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-aa302cee": 6,
+              "batch10-2-99d18a68": 6,
+              "batch10-3-90e8cc44": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        },
+        {
+          "key": [
+            1805,
+            "ValueError",
+            "Scheduled candidates lack current proposal owners."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 2,
+          "stage": "target_execute",
+          "execution": 1805,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-aa302cee": 6,
+              "batch10-2-99d18a68": 6,
+              "batch10-3-90e8cc44": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        }
+      ],
+      "route_scope": "capacity catalog, not failure layout",
+      "route": {
+        "layer_name": "model.layers.1.self_attn.attn",
+        "implementation": "AscendDSAImpl",
+        "branch": "decode_swa",
+        "multistream": true,
+        "compress_ratio": 0,
+        "window": 128,
+        "block_size": 32,
+        "kv_shape": [
+          16231,
+          32,
+          1,
+          512
+        ],
+        "slot_shape": [
+          12,
+          2
+        ],
+        "block_table_shape": [
+          2,
+          256
+        ],
+        "mask": {
+          "ori_mask_mode": 4,
+          "left": 127,
+          "right": 0
+        },
+        "operator": "_C_ascend.npu_sparse_attn_sharedkv",
+        "quant_methods": {
+          "wq_a": "AscendW8A8DynamicLinearMethod",
+          "wq_b": "AscendW8A8DynamicLinearMethod",
+          "wkv": "AscendW8A8DynamicLinearMethod",
+          "wo_b": "NoneType"
+        },
+        "wo_b_custom_op": "NoneType",
+        "wo_b_tp_size": 8
+      }
+    },
+    {
+      "rank": 3,
+      "first_nan_sha256": "365e35609fe7bfbb190721b69e0eb16b62683e8cabf1c77149f6c513b5f22564",
+      "rounds": [
+        {
+          "execution": 1802,
+          "proposal_epoch": 1788,
+          "state_row0": {
+            "request_row": 0,
+            "position": 220,
+            "window_start": 93,
+            "window_end": 221,
+            "slot_block": 119,
+            "slot_offset": 28,
+            "expected_block": 119,
+            "expected_offset": 28,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "kv_row0": {
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "request_row": 0,
+            "position": 220,
+            "invalid_window_indices": 0,
+            "before_scatter": {
+              "slot_block": 119,
+              "slot_offset": 28,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 1,
+              "target_inf": 0,
+              "differs_source": 1
+            },
+            "after_scatter": {
+              "slot_block": 119,
+              "slot_offset": 28,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 0,
+              "target_inf": 0,
+              "differs_source": 0
+            },
+            "page_runs": [
+              {
+                "logical_start": 93,
+                "logical_end": 96,
+                "physical_block": 207
+              },
+              {
+                "logical_start": 96,
+                "logical_end": 128,
+                "physical_block": 206
+              },
+              {
+                "logical_start": 128,
+                "logical_end": 160,
+                "physical_block": 166
+              },
+              {
+                "logical_start": 160,
+                "logical_end": 192,
+                "physical_block": 46
+              },
+              {
+                "logical_start": 192,
+                "logical_end": 221,
+                "physical_block": 119
+              }
+            ],
+            "nonfinite_slots": [],
+            "first_nonfinite": null
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1803,
+          "proposal_epoch": 1789,
+          "state_row0": {
+            "request_row": 0,
+            "position": 221,
+            "window_start": 94,
+            "window_end": 222,
+            "slot_block": 119,
+            "slot_offset": 29,
+            "expected_block": 119,
+            "expected_offset": 29,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "kv_row0": {
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "request_row": 0,
+            "position": 221,
+            "invalid_window_indices": 0,
+            "before_scatter": {
+              "slot_block": 119,
+              "slot_offset": 29,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 1,
+              "target_inf": 0,
+              "differs_source": 1
+            },
+            "after_scatter": {
+              "slot_block": 119,
+              "slot_offset": 29,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 0,
+              "target_inf": 0,
+              "differs_source": 0
+            },
+            "page_runs": [
+              {
+                "logical_start": 94,
+                "logical_end": 96,
+                "physical_block": 207
+              },
+              {
+                "logical_start": 96,
+                "logical_end": 128,
+                "physical_block": 206
+              },
+              {
+                "logical_start": 128,
+                "logical_end": 160,
+                "physical_block": 166
+              },
+              {
+                "logical_start": 160,
+                "logical_end": 192,
+                "physical_block": 46
+              },
+              {
+                "logical_start": 192,
+                "logical_end": 222,
+                "physical_block": 119
+              }
+            ],
+            "nonfinite_slots": [],
+            "first_nonfinite": null
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1804,
+          "proposal_epoch": 1790,
+          "state_row0": {
+            "request_row": 0,
+            "position": 222,
+            "window_start": 95,
+            "window_end": 223,
+            "slot_block": 119,
+            "slot_offset": 30,
+            "expected_block": 119,
+            "expected_offset": 30,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "kv_row0": {
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "request_row": 0,
+            "position": 222,
+            "invalid_window_indices": 0,
+            "before_scatter": {
+              "slot_block": 119,
+              "slot_offset": 30,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 1,
+              "target_inf": 0,
+              "differs_source": 1
+            },
+            "after_scatter": {
+              "slot_block": 119,
+              "slot_offset": 30,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 0,
+              "target_inf": 0,
+              "differs_source": 0
+            },
+            "page_runs": [
+              {
+                "logical_start": 95,
+                "logical_end": 96,
+                "physical_block": 207
+              },
+              {
+                "logical_start": 96,
+                "logical_end": 128,
+                "physical_block": 206
+              },
+              {
+                "logical_start": 128,
+                "logical_end": 160,
+                "physical_block": 166
+              },
+              {
+                "logical_start": 160,
+                "logical_end": 192,
+                "physical_block": 46
+              },
+              {
+                "logical_start": 192,
+                "logical_end": 223,
+                "physical_block": 119
+              }
+            ],
+            "nonfinite_slots": [],
+            "first_nonfinite": null
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [
+              0
+            ],
+            "layer.1.residual": [
+              0
+            ],
+            "layer.1.ffn_input": [
+              0
+            ],
+            "layer.1.ffn_output": [
+              0
+            ],
+            "layer.1.output": [
+              0
+            ],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [
+              0
+            ],
+            "layer.1.attention.inverse_rope": [
+              0
+            ],
+            "layer.1.attention.wo_a": [
+              0
+            ],
+            "layer.1.attention.wo_b_local": [
+              0
+            ]
+          }
+        }
+      ],
+      "events": [
+        {
+          "key": [
+            1804,
+            "RuntimeError",
+            "Ascend DSpark Markov base logits contain NaN."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 3,
+          "stage": "markov",
+          "execution": 1804,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-aa302cee": 6,
+              "batch10-2-99d18a68": 6,
+              "batch10-3-90e8cc44": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        },
+        {
+          "key": [
+            1805,
+            "ValueError",
+            "Scheduled candidates lack current proposal owners."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 3,
+          "stage": "target_execute",
+          "execution": 1805,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-aa302cee": 6,
+              "batch10-2-99d18a68": 6,
+              "batch10-3-90e8cc44": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        }
+      ],
+      "route_scope": "capacity catalog, not failure layout",
+      "route": {
+        "layer_name": "model.layers.1.self_attn.attn",
+        "implementation": "AscendDSAImpl",
+        "branch": "decode_swa",
+        "multistream": true,
+        "compress_ratio": 0,
+        "window": 128,
+        "block_size": 32,
+        "kv_shape": [
+          16231,
+          32,
+          1,
+          512
+        ],
+        "slot_shape": [
+          12,
+          2
+        ],
+        "block_table_shape": [
+          2,
+          256
+        ],
+        "mask": {
+          "ori_mask_mode": 4,
+          "left": 127,
+          "right": 0
+        },
+        "operator": "_C_ascend.npu_sparse_attn_sharedkv",
+        "quant_methods": {
+          "wq_a": "AscendW8A8DynamicLinearMethod",
+          "wq_b": "AscendW8A8DynamicLinearMethod",
+          "wkv": "AscendW8A8DynamicLinearMethod",
+          "wo_b": "NoneType"
+        },
+        "wo_b_custom_op": "NoneType",
+        "wo_b_tp_size": 8
+      }
+    },
+    {
+      "rank": 4,
+      "first_nan_sha256": "7fffd28b02e5f9ee82080e7be24501031b2bee2dfbda3817b3fa3c1d63d8a9a2",
+      "rounds": [
+        {
+          "execution": 1802,
+          "proposal_epoch": 1788,
+          "state_row0": {
+            "request_row": 0,
+            "position": 220,
+            "window_start": 93,
+            "window_end": 221,
+            "slot_block": 119,
+            "slot_offset": 28,
+            "expected_block": 119,
+            "expected_offset": 28,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "kv_row0": {
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "request_row": 0,
+            "position": 220,
+            "invalid_window_indices": 0,
+            "before_scatter": {
+              "slot_block": 119,
+              "slot_offset": 28,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 1,
+              "target_inf": 0,
+              "differs_source": 1
+            },
+            "after_scatter": {
+              "slot_block": 119,
+              "slot_offset": 28,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 0,
+              "target_inf": 0,
+              "differs_source": 0
+            },
+            "page_runs": [
+              {
+                "logical_start": 93,
+                "logical_end": 96,
+                "physical_block": 207
+              },
+              {
+                "logical_start": 96,
+                "logical_end": 128,
+                "physical_block": 206
+              },
+              {
+                "logical_start": 128,
+                "logical_end": 160,
+                "physical_block": 166
+              },
+              {
+                "logical_start": 160,
+                "logical_end": 192,
+                "physical_block": 46
+              },
+              {
+                "logical_start": 192,
+                "logical_end": 221,
+                "physical_block": 119
+              }
+            ],
+            "nonfinite_slots": [],
+            "first_nonfinite": null
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1803,
+          "proposal_epoch": 1789,
+          "state_row0": {
+            "request_row": 0,
+            "position": 221,
+            "window_start": 94,
+            "window_end": 222,
+            "slot_block": 119,
+            "slot_offset": 29,
+            "expected_block": 119,
+            "expected_offset": 29,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "kv_row0": {
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "request_row": 0,
+            "position": 221,
+            "invalid_window_indices": 0,
+            "before_scatter": {
+              "slot_block": 119,
+              "slot_offset": 29,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 1,
+              "target_inf": 0,
+              "differs_source": 1
+            },
+            "after_scatter": {
+              "slot_block": 119,
+              "slot_offset": 29,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 0,
+              "target_inf": 0,
+              "differs_source": 0
+            },
+            "page_runs": [
+              {
+                "logical_start": 94,
+                "logical_end": 96,
+                "physical_block": 207
+              },
+              {
+                "logical_start": 96,
+                "logical_end": 128,
+                "physical_block": 206
+              },
+              {
+                "logical_start": 128,
+                "logical_end": 160,
+                "physical_block": 166
+              },
+              {
+                "logical_start": 160,
+                "logical_end": 192,
+                "physical_block": 46
+              },
+              {
+                "logical_start": 192,
+                "logical_end": 222,
+                "physical_block": 119
+              }
+            ],
+            "nonfinite_slots": [],
+            "first_nonfinite": null
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1804,
+          "proposal_epoch": 1790,
+          "state_row0": {
+            "request_row": 0,
+            "position": 222,
+            "window_start": 95,
+            "window_end": 223,
+            "slot_block": 119,
+            "slot_offset": 30,
+            "expected_block": 119,
+            "expected_offset": 30,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "kv_row0": {
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "request_row": 0,
+            "position": 222,
+            "invalid_window_indices": 0,
+            "before_scatter": {
+              "slot_block": 119,
+              "slot_offset": 30,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 1,
+              "target_inf": 0,
+              "differs_source": 1
+            },
+            "after_scatter": {
+              "slot_block": 119,
+              "slot_offset": 30,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 0,
+              "target_inf": 0,
+              "differs_source": 0
+            },
+            "page_runs": [
+              {
+                "logical_start": 95,
+                "logical_end": 96,
+                "physical_block": 207
+              },
+              {
+                "logical_start": 96,
+                "logical_end": 128,
+                "physical_block": 206
+              },
+              {
+                "logical_start": 128,
+                "logical_end": 160,
+                "physical_block": 166
+              },
+              {
+                "logical_start": 160,
+                "logical_end": 192,
+                "physical_block": 46
+              },
+              {
+                "logical_start": 192,
+                "logical_end": 223,
+                "physical_block": 119
+              }
+            ],
+            "nonfinite_slots": [],
+            "first_nonfinite": null
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [
+              0
+            ],
+            "layer.1.residual": [
+              0
+            ],
+            "layer.1.ffn_input": [
+              0
+            ],
+            "layer.1.ffn_output": [
+              0
+            ],
+            "layer.1.output": [
+              0
+            ],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [
+              0
+            ],
+            "layer.1.attention.inverse_rope": [
+              0
+            ],
+            "layer.1.attention.wo_a": [
+              0
+            ],
+            "layer.1.attention.wo_b_local": [
+              0
+            ]
+          }
+        }
+      ],
+      "events": [
+        {
+          "key": [
+            1804,
+            "RuntimeError",
+            "Ascend DSpark Markov base logits contain NaN."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 4,
+          "stage": "markov",
+          "execution": 1804,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-aa302cee": 6,
+              "batch10-2-99d18a68": 6,
+              "batch10-3-90e8cc44": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        },
+        {
+          "key": [
+            1805,
+            "ValueError",
+            "Scheduled candidates lack current proposal owners."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 4,
+          "stage": "target_execute",
+          "execution": 1805,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-aa302cee": 6,
+              "batch10-2-99d18a68": 6,
+              "batch10-3-90e8cc44": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        }
+      ],
+      "route_scope": "capacity catalog, not failure layout",
+      "route": {
+        "layer_name": "model.layers.1.self_attn.attn",
+        "implementation": "AscendDSAImpl",
+        "branch": "decode_swa",
+        "multistream": true,
+        "compress_ratio": 0,
+        "window": 128,
+        "block_size": 32,
+        "kv_shape": [
+          16231,
+          32,
+          1,
+          512
+        ],
+        "slot_shape": [
+          12,
+          2
+        ],
+        "block_table_shape": [
+          2,
+          256
+        ],
+        "mask": {
+          "ori_mask_mode": 4,
+          "left": 127,
+          "right": 0
+        },
+        "operator": "_C_ascend.npu_sparse_attn_sharedkv",
+        "quant_methods": {
+          "wq_a": "AscendW8A8DynamicLinearMethod",
+          "wq_b": "AscendW8A8DynamicLinearMethod",
+          "wkv": "AscendW8A8DynamicLinearMethod",
+          "wo_b": "NoneType"
+        },
+        "wo_b_custom_op": "NoneType",
+        "wo_b_tp_size": 8
+      }
+    },
+    {
+      "rank": 5,
+      "first_nan_sha256": "6156ec3c7298724a662d41f44f779186946fdd66e2d05051457e9f6e40d1b1f2",
+      "rounds": [
+        {
+          "execution": 1802,
+          "proposal_epoch": 1788,
+          "state_row0": {
+            "request_row": 0,
+            "position": 220,
+            "window_start": 93,
+            "window_end": 221,
+            "slot_block": 119,
+            "slot_offset": 28,
+            "expected_block": 119,
+            "expected_offset": 28,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "kv_row0": {
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "request_row": 0,
+            "position": 220,
+            "invalid_window_indices": 0,
+            "before_scatter": {
+              "slot_block": 119,
+              "slot_offset": 28,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 1,
+              "target_inf": 0,
+              "differs_source": 1
+            },
+            "after_scatter": {
+              "slot_block": 119,
+              "slot_offset": 28,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 0,
+              "target_inf": 0,
+              "differs_source": 0
+            },
+            "page_runs": [
+              {
+                "logical_start": 93,
+                "logical_end": 96,
+                "physical_block": 207
+              },
+              {
+                "logical_start": 96,
+                "logical_end": 128,
+                "physical_block": 206
+              },
+              {
+                "logical_start": 128,
+                "logical_end": 160,
+                "physical_block": 166
+              },
+              {
+                "logical_start": 160,
+                "logical_end": 192,
+                "physical_block": 46
+              },
+              {
+                "logical_start": 192,
+                "logical_end": 221,
+                "physical_block": 119
+              }
+            ],
+            "nonfinite_slots": [],
+            "first_nonfinite": null
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1803,
+          "proposal_epoch": 1789,
+          "state_row0": {
+            "request_row": 0,
+            "position": 221,
+            "window_start": 94,
+            "window_end": 222,
+            "slot_block": 119,
+            "slot_offset": 29,
+            "expected_block": 119,
+            "expected_offset": 29,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "kv_row0": {
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "request_row": 0,
+            "position": 221,
+            "invalid_window_indices": 0,
+            "before_scatter": {
+              "slot_block": 119,
+              "slot_offset": 29,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 1,
+              "target_inf": 0,
+              "differs_source": 1
+            },
+            "after_scatter": {
+              "slot_block": 119,
+              "slot_offset": 29,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 0,
+              "target_inf": 0,
+              "differs_source": 0
+            },
+            "page_runs": [
+              {
+                "logical_start": 94,
+                "logical_end": 96,
+                "physical_block": 207
+              },
+              {
+                "logical_start": 96,
+                "logical_end": 128,
+                "physical_block": 206
+              },
+              {
+                "logical_start": 128,
+                "logical_end": 160,
+                "physical_block": 166
+              },
+              {
+                "logical_start": 160,
+                "logical_end": 192,
+                "physical_block": 46
+              },
+              {
+                "logical_start": 192,
+                "logical_end": 222,
+                "physical_block": 119
+              }
+            ],
+            "nonfinite_slots": [],
+            "first_nonfinite": null
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1804,
+          "proposal_epoch": 1790,
+          "state_row0": {
+            "request_row": 0,
+            "position": 222,
+            "window_start": 95,
+            "window_end": 223,
+            "slot_block": 119,
+            "slot_offset": 30,
+            "expected_block": 119,
+            "expected_offset": 30,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "kv_row0": {
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "request_row": 0,
+            "position": 222,
+            "invalid_window_indices": 0,
+            "before_scatter": {
+              "slot_block": 119,
+              "slot_offset": 30,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 1,
+              "target_inf": 0,
+              "differs_source": 1
+            },
+            "after_scatter": {
+              "slot_block": 119,
+              "slot_offset": 30,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 0,
+              "target_inf": 0,
+              "differs_source": 0
+            },
+            "page_runs": [
+              {
+                "logical_start": 95,
+                "logical_end": 96,
+                "physical_block": 207
+              },
+              {
+                "logical_start": 96,
+                "logical_end": 128,
+                "physical_block": 206
+              },
+              {
+                "logical_start": 128,
+                "logical_end": 160,
+                "physical_block": 166
+              },
+              {
+                "logical_start": 160,
+                "logical_end": 192,
+                "physical_block": 46
+              },
+              {
+                "logical_start": 192,
+                "logical_end": 223,
+                "physical_block": 119
+              }
+            ],
+            "nonfinite_slots": [],
+            "first_nonfinite": null
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [
+              0
+            ],
+            "layer.1.residual": [
+              0
+            ],
+            "layer.1.ffn_input": [
+              0
+            ],
+            "layer.1.ffn_output": [
+              0
+            ],
+            "layer.1.output": [
+              0
+            ],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [
+              0
+            ],
+            "layer.1.attention.inverse_rope": [
+              0
+            ],
+            "layer.1.attention.wo_a": [
+              0
+            ],
+            "layer.1.attention.wo_b_local": [
+              0
+            ]
+          }
+        }
+      ],
+      "events": [
+        {
+          "key": [
+            1804,
+            "RuntimeError",
+            "Ascend DSpark Markov base logits contain NaN."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 5,
+          "stage": "markov",
+          "execution": 1804,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-aa302cee": 6,
+              "batch10-2-99d18a68": 6,
+              "batch10-3-90e8cc44": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        },
+        {
+          "key": [
+            1805,
+            "ValueError",
+            "Scheduled candidates lack current proposal owners."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 5,
+          "stage": "target_execute",
+          "execution": 1805,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-aa302cee": 6,
+              "batch10-2-99d18a68": 6,
+              "batch10-3-90e8cc44": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        }
+      ],
+      "route_scope": "capacity catalog, not failure layout",
+      "route": {
+        "layer_name": "model.layers.1.self_attn.attn",
+        "implementation": "AscendDSAImpl",
+        "branch": "decode_swa",
+        "multistream": true,
+        "compress_ratio": 0,
+        "window": 128,
+        "block_size": 32,
+        "kv_shape": [
+          16231,
+          32,
+          1,
+          512
+        ],
+        "slot_shape": [
+          12,
+          2
+        ],
+        "block_table_shape": [
+          2,
+          256
+        ],
+        "mask": {
+          "ori_mask_mode": 4,
+          "left": 127,
+          "right": 0
+        },
+        "operator": "_C_ascend.npu_sparse_attn_sharedkv",
+        "quant_methods": {
+          "wq_a": "AscendW8A8DynamicLinearMethod",
+          "wq_b": "AscendW8A8DynamicLinearMethod",
+          "wkv": "AscendW8A8DynamicLinearMethod",
+          "wo_b": "NoneType"
+        },
+        "wo_b_custom_op": "NoneType",
+        "wo_b_tp_size": 8
+      }
+    },
+    {
+      "rank": 6,
+      "first_nan_sha256": "1fc21a825767307417bc48ca105045cd006ea6a2ca961d218a372f3afa7ad745",
+      "rounds": [
+        {
+          "execution": 1802,
+          "proposal_epoch": 1788,
+          "state_row0": {
+            "request_row": 0,
+            "position": 220,
+            "window_start": 93,
+            "window_end": 221,
+            "slot_block": 119,
+            "slot_offset": 28,
+            "expected_block": 119,
+            "expected_offset": 28,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "kv_row0": {
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "request_row": 0,
+            "position": 220,
+            "invalid_window_indices": 0,
+            "before_scatter": {
+              "slot_block": 119,
+              "slot_offset": 28,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 1,
+              "target_inf": 0,
+              "differs_source": 1
+            },
+            "after_scatter": {
+              "slot_block": 119,
+              "slot_offset": 28,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 0,
+              "target_inf": 0,
+              "differs_source": 0
+            },
+            "page_runs": [
+              {
+                "logical_start": 93,
+                "logical_end": 96,
+                "physical_block": 207
+              },
+              {
+                "logical_start": 96,
+                "logical_end": 128,
+                "physical_block": 206
+              },
+              {
+                "logical_start": 128,
+                "logical_end": 160,
+                "physical_block": 166
+              },
+              {
+                "logical_start": 160,
+                "logical_end": 192,
+                "physical_block": 46
+              },
+              {
+                "logical_start": 192,
+                "logical_end": 221,
+                "physical_block": 119
+              }
+            ],
+            "nonfinite_slots": [],
+            "first_nonfinite": null
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1803,
+          "proposal_epoch": 1789,
+          "state_row0": {
+            "request_row": 0,
+            "position": 221,
+            "window_start": 94,
+            "window_end": 222,
+            "slot_block": 119,
+            "slot_offset": 29,
+            "expected_block": 119,
+            "expected_offset": 29,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "kv_row0": {
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "request_row": 0,
+            "position": 221,
+            "invalid_window_indices": 0,
+            "before_scatter": {
+              "slot_block": 119,
+              "slot_offset": 29,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 1,
+              "target_inf": 0,
+              "differs_source": 1
+            },
+            "after_scatter": {
+              "slot_block": 119,
+              "slot_offset": 29,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 0,
+              "target_inf": 0,
+              "differs_source": 0
+            },
+            "page_runs": [
+              {
+                "logical_start": 94,
+                "logical_end": 96,
+                "physical_block": 207
+              },
+              {
+                "logical_start": 96,
+                "logical_end": 128,
+                "physical_block": 206
+              },
+              {
+                "logical_start": 128,
+                "logical_end": 160,
+                "physical_block": 166
+              },
+              {
+                "logical_start": 160,
+                "logical_end": 192,
+                "physical_block": 46
+              },
+              {
+                "logical_start": 192,
+                "logical_end": 222,
+                "physical_block": 119
+              }
+            ],
+            "nonfinite_slots": [],
+            "first_nonfinite": null
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1804,
+          "proposal_epoch": 1790,
+          "state_row0": {
+            "request_row": 0,
+            "position": 222,
+            "window_start": 95,
+            "window_end": 223,
+            "slot_block": 119,
+            "slot_offset": 30,
+            "expected_block": 119,
+            "expected_offset": 30,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "kv_row0": {
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "request_row": 0,
+            "position": 222,
+            "invalid_window_indices": 0,
+            "before_scatter": {
+              "slot_block": 119,
+              "slot_offset": 30,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 1,
+              "target_inf": 0,
+              "differs_source": 1
+            },
+            "after_scatter": {
+              "slot_block": 119,
+              "slot_offset": 30,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 0,
+              "target_inf": 0,
+              "differs_source": 0
+            },
+            "page_runs": [
+              {
+                "logical_start": 95,
+                "logical_end": 96,
+                "physical_block": 207
+              },
+              {
+                "logical_start": 96,
+                "logical_end": 128,
+                "physical_block": 206
+              },
+              {
+                "logical_start": 128,
+                "logical_end": 160,
+                "physical_block": 166
+              },
+              {
+                "logical_start": 160,
+                "logical_end": 192,
+                "physical_block": 46
+              },
+              {
+                "logical_start": 192,
+                "logical_end": 223,
+                "physical_block": 119
+              }
+            ],
+            "nonfinite_slots": [],
+            "first_nonfinite": null
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [
+              0
+            ],
+            "layer.1.residual": [
+              0
+            ],
+            "layer.1.ffn_input": [
+              0
+            ],
+            "layer.1.ffn_output": [
+              0
+            ],
+            "layer.1.output": [
+              0
+            ],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        }
+      ],
+      "events": [
+        {
+          "key": [
+            1804,
+            "RuntimeError",
+            "Ascend DSpark Markov base logits contain NaN."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 6,
+          "stage": "markov",
+          "execution": 1804,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-aa302cee": 6,
+              "batch10-2-99d18a68": 6,
+              "batch10-3-90e8cc44": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        },
+        {
+          "key": [
+            1805,
+            "ValueError",
+            "Scheduled candidates lack current proposal owners."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 6,
+          "stage": "target_execute",
+          "execution": 1805,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-aa302cee": 6,
+              "batch10-2-99d18a68": 6,
+              "batch10-3-90e8cc44": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        }
+      ],
+      "route_scope": "capacity catalog, not failure layout",
+      "route": {
+        "layer_name": "model.layers.1.self_attn.attn",
+        "implementation": "AscendDSAImpl",
+        "branch": "decode_swa",
+        "multistream": true,
+        "compress_ratio": 0,
+        "window": 128,
+        "block_size": 32,
+        "kv_shape": [
+          16231,
+          32,
+          1,
+          512
+        ],
+        "slot_shape": [
+          12,
+          2
+        ],
+        "block_table_shape": [
+          2,
+          256
+        ],
+        "mask": {
+          "ori_mask_mode": 4,
+          "left": 127,
+          "right": 0
+        },
+        "operator": "_C_ascend.npu_sparse_attn_sharedkv",
+        "quant_methods": {
+          "wq_a": "AscendW8A8DynamicLinearMethod",
+          "wq_b": "AscendW8A8DynamicLinearMethod",
+          "wkv": "AscendW8A8DynamicLinearMethod",
+          "wo_b": "NoneType"
+        },
+        "wo_b_custom_op": "NoneType",
+        "wo_b_tp_size": 8
+      }
+    },
+    {
+      "rank": 7,
+      "first_nan_sha256": "98be1b9a9efd3f0425283178d69943c9f21d1f75e3870cf1c8fb340dc849909b",
+      "rounds": [
+        {
+          "execution": 1802,
+          "proposal_epoch": 1788,
+          "state_row0": {
+            "request_row": 0,
+            "position": 220,
+            "window_start": 93,
+            "window_end": 221,
+            "slot_block": 119,
+            "slot_offset": 28,
+            "expected_block": 119,
+            "expected_offset": 28,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "kv_row0": {
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "request_row": 0,
+            "position": 220,
+            "invalid_window_indices": 0,
+            "before_scatter": {
+              "slot_block": 119,
+              "slot_offset": 28,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 1,
+              "target_inf": 0,
+              "differs_source": 1
+            },
+            "after_scatter": {
+              "slot_block": 119,
+              "slot_offset": 28,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 0,
+              "target_inf": 0,
+              "differs_source": 0
+            },
+            "page_runs": [
+              {
+                "logical_start": 93,
+                "logical_end": 96,
+                "physical_block": 207
+              },
+              {
+                "logical_start": 96,
+                "logical_end": 128,
+                "physical_block": 206
+              },
+              {
+                "logical_start": 128,
+                "logical_end": 160,
+                "physical_block": 166
+              },
+              {
+                "logical_start": 160,
+                "logical_end": 192,
+                "physical_block": 46
+              },
+              {
+                "logical_start": 192,
+                "logical_end": 221,
+                "physical_block": 119
+              }
+            ],
+            "nonfinite_slots": [],
+            "first_nonfinite": null
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1803,
+          "proposal_epoch": 1789,
+          "state_row0": {
+            "request_row": 0,
+            "position": 221,
+            "window_start": 94,
+            "window_end": 222,
+            "slot_block": 119,
+            "slot_offset": 29,
+            "expected_block": 119,
+            "expected_offset": 29,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "kv_row0": {
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "request_row": 0,
+            "position": 221,
+            "invalid_window_indices": 0,
+            "before_scatter": {
+              "slot_block": 119,
+              "slot_offset": 29,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 1,
+              "target_inf": 0,
+              "differs_source": 1
+            },
+            "after_scatter": {
+              "slot_block": 119,
+              "slot_offset": 29,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 0,
+              "target_inf": 0,
+              "differs_source": 0
+            },
+            "page_runs": [
+              {
+                "logical_start": 94,
+                "logical_end": 96,
+                "physical_block": 207
+              },
+              {
+                "logical_start": 96,
+                "logical_end": 128,
+                "physical_block": 206
+              },
+              {
+                "logical_start": 128,
+                "logical_end": 160,
+                "physical_block": 166
+              },
+              {
+                "logical_start": 160,
+                "logical_end": 192,
+                "physical_block": 46
+              },
+              {
+                "logical_start": 192,
+                "logical_end": 222,
+                "physical_block": 119
+              }
+            ],
+            "nonfinite_slots": [],
+            "first_nonfinite": null
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1804,
+          "proposal_epoch": 1790,
+          "state_row0": {
+            "request_row": 0,
+            "position": 222,
+            "window_start": 95,
+            "window_end": 223,
+            "slot_block": 119,
+            "slot_offset": 30,
+            "expected_block": 119,
+            "expected_offset": 30,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "kv_row0": {
+            "row": 0,
+            "request_id": "batch10-3-90e8cc44",
+            "request_row": 0,
+            "position": 222,
+            "invalid_window_indices": 0,
+            "before_scatter": {
+              "slot_block": 119,
+              "slot_offset": 30,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 1,
+              "target_inf": 0,
+              "differs_source": 1
+            },
+            "after_scatter": {
+              "slot_block": 119,
+              "slot_offset": 30,
+              "slot_valid": 1,
+              "duplicate_slot": 0,
+              "source_nan": 0,
+              "source_inf": 0,
+              "target_nan": 0,
+              "target_inf": 0,
+              "differs_source": 0
+            },
+            "page_runs": [
+              {
+                "logical_start": 95,
+                "logical_end": 96,
+                "physical_block": 207
+              },
+              {
+                "logical_start": 96,
+                "logical_end": 128,
+                "physical_block": 206
+              },
+              {
+                "logical_start": 128,
+                "logical_end": 160,
+                "physical_block": 166
+              },
+              {
+                "logical_start": 160,
+                "logical_end": 192,
+                "physical_block": 46
+              },
+              {
+                "logical_start": 192,
+                "logical_end": 223,
+                "physical_block": 119
+              }
+            ],
+            "nonfinite_slots": [],
+            "first_nonfinite": null
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [
+              0
+            ],
+            "layer.1.residual": [
+              0
+            ],
+            "layer.1.ffn_input": [
+              0
+            ],
+            "layer.1.ffn_output": [
+              0
+            ],
+            "layer.1.output": [
+              0
+            ],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        }
+      ],
+      "events": [
+        {
+          "key": [
+            1804,
+            "RuntimeError",
+            "Ascend DSpark Markov base logits contain NaN."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 7,
+          "stage": "markov",
+          "execution": 1804,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-aa302cee": 6,
+              "batch10-2-99d18a68": 6,
+              "batch10-3-90e8cc44": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        },
+        {
+          "key": [
+            1805,
+            "ValueError",
+            "Scheduled candidates lack current proposal owners."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 7,
+          "stage": "target_execute",
+          "execution": 1805,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-aa302cee": 6,
+              "batch10-2-99d18a68": 6,
+              "batch10-3-90e8cc44": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        }
+      ],
+      "route_scope": "capacity catalog, not failure layout",
+      "route": {
+        "layer_name": "model.layers.1.self_attn.attn",
+        "implementation": "AscendDSAImpl",
+        "branch": "decode_swa",
+        "multistream": true,
+        "compress_ratio": 0,
+        "window": 128,
+        "block_size": 32,
+        "kv_shape": [
+          16231,
+          32,
+          1,
+          512
+        ],
+        "slot_shape": [
+          12,
+          2
+        ],
+        "block_table_shape": [
+          2,
+          256
+        ],
+        "mask": {
+          "ori_mask_mode": 4,
+          "left": 127,
+          "right": 0
+        },
+        "operator": "_C_ascend.npu_sparse_attn_sharedkv",
+        "quant_methods": {
+          "wq_a": "AscendW8A8DynamicLinearMethod",
+          "wq_b": "AscendW8A8DynamicLinearMethod",
+          "wkv": "AscendW8A8DynamicLinearMethod",
+          "wo_b": "NoneType"
+        },
+        "wo_b_custom_op": "NoneType",
+        "wo_b_tp_size": 8
+      }
+    }
+  ],
+  "cleanup": {
+    "schema_version": 2,
+    "performance_eligible": false,
+    "started_utc": "2026-09-13T06:55:40.827836+00:00",
+    "timeout_seconds": 12,
+    "finalize_timeout_seconds": 4,
+    "outer_timeout_seconds": 16,
+    "supervisor_failure_grace_seconds": 24,
+    "status": "worker_cleanup_incomplete",
+    "shutdown_completed": true,
+    "engine_returned": true,
+    "thread_completed": true,
+    "timed_out": false,
+    "success": false,
+    "force_events": [],
+    "forced_cleanup": false,
+    "force_observation_scope": "frontend Core process-manager warning on cleanup thread; not descendant logs",
+    "graceful_worker_exit": false,
+    "event_loop": "closed",
+    "error": null,
+    "recording_error": null,
+    "returned_utc": "2026-09-13T06:55:40.993782+00:00",
+    "engine_started_utc": "2026-09-13T06:55:40.828621+00:00",
+    "engine_finished_utc": "2026-09-13T06:55:40.993820+00:00",
+    "engine_elapsed_seconds": 0.1652004849165678,
+    "returned_after_outer_deadline": false,
+    "elapsed_seconds": 0.20302961766719818,
+    "observed_utc": "2026-09-13T06:55:41.030869+00:00",
+    "worker_cleanup": {
+      "performance_eligible": false,
+      "parent_pid": 162464,
+      "point": "ctx128-n4-t12-skewed",
+      "started_utc": "2026-09-13T06:55:40.824740+00:00",
+      "status": "running",
+      "force_events": [],
+      "forced_cleanup": false,
+      "error": null,
+      "recording_error": null
+    }
+  },
+  "cleanup_failure": {
+    "completed_points": 9,
+    "error": "RuntimeError: Profile engine cleanup failed: worker_cleanup_incomplete",
+    "performance_eligible": false,
+    "phase": "cleanup",
+    "points_status": "failed",
+    "prior_error": "RuntimeError: EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause."
+  },
+  "root_cause": "UNKNOWN: finite semantic window; raw attention NaN on ranks 0-5, local finite on 6-7; no real Q/KV payload"
+}

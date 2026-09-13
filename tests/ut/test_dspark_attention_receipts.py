@@ -78,6 +78,14 @@ def test_real_dispatch_aot_copyback_and_repeated_replay(tmp_path, monkeypatch, s
         slot_mapping=torch.zeros((6, 2), dtype=torch.int32, device=device),
     )
     cache = torch.ones(64, 4, 1, 4, device=device)
+    from tests.ut.test_dspark_operator_capture import MODULE
+    from tools.dspark import operator_replay
+
+    monkeypatch.setattr(operator_replay, "runtime_identity", lambda: {"scope": "dispatcher fixture, not native SWA"})
+
+    capsule = MODULE.OperatorCapture(bank, {"point": "test", "max_tokens": 6, "max_seq_len": 128})
+    sinks = torch.zeros(1, device=device)
+    sas = torch.zeros(1024, dtype=torch.int32, device=device)
     calls = []
 
     def leaf(layer, x, caches, metadata, gather, output):
@@ -93,6 +101,22 @@ def test_real_dispatch_aot_copyback_and_repeated_replay(tmp_path, monkeypatch, s
             if stage != "kv_window":
                 probe.write(stage, x)
         probe.window(cache, meta, 6, 4)
+        capsule.wrap(lambda q, **kw: (q, None))(
+            x[:, None, :],
+            ori_kv=cache,
+            ori_block_table=meta.block_table,
+            cu_seqlens_q=meta.query_start_loc,
+            seqused_kv=meta.seq_lens,
+            sinks=sinks,
+            metadata=sas,
+            softmax_scale=0.5,
+            cmp_ratio=1,
+            ori_mask_mode=4,
+            ori_win_left=3,
+            ori_win_right=0,
+            layout_q="TND",
+            layout_kv="PA_ND",
+        )
         output.copy_(x)
 
     wrapper = NS(
@@ -199,6 +223,7 @@ def test_real_dispatch_aot_copyback_and_repeated_replay(tmp_path, monkeypatch, s
                 bank.attention_receipts,
                 bank.epoch_input,
                 *probe.kv.tensors,
+                *capsule.tensors,
             )
         ]
         evidence = []
@@ -206,6 +231,7 @@ def test_real_dispatch_aot_copyback_and_repeated_replay(tmp_path, monkeypatch, s
             bank.receipts.fill_(-1)
             bank.attention_receipts.fill_(-1)
             probe.kv.receipts.fill_(-1)
+            capsule.reset()
             bank.epoch_input.fill_(epoch)
             meta.seq_lens.add_(6)
             if epoch == 13:
@@ -232,6 +258,28 @@ def test_real_dispatch_aot_copyback_and_repeated_replay(tmp_path, monkeypatch, s
                 }
             )
             assert probe.kv.receipts.cpu().flatten().tolist() == [epoch] * 4
+            assert len(capsule.plans) == 1
+            buffers = next(iter(capsule.plans.values()))["buffers"]
+            assert buffers["receipts"].cpu().tolist() == [epoch] * 2
+            torch.testing.assert_close(buffers["q"].cpu(), x[:, None, :].cpu(), equal_nan=True)
+            record = {
+                "point": "test",
+                "rank": 0,
+                "execution": epoch,
+                "proposal_epoch": epoch - 1,
+                "request_ids": ["real-dispatch"],
+                "query_start_loc_cpu": [0, 6],
+                "graph_capacity": 6,
+                "graph_object_id": 1,
+                "head_flags": [[epoch == 13]],
+                "target_internal": {"attention": {"kv": {"binding": {}}}},
+            }
+            pending = {"identity": record}
+            capsule.own(pending)
+            capsule.save(record, pending, tmp_path)
+            saved = torch.load(tmp_path / f"rank-0-operator-{epoch}.pt", weights_only=True)
+            assert saved["values"]["receipts"].tolist() == [epoch] * 2
+            torch.testing.assert_close(saved["values"]["q"], x[:, None, :].cpu(), equal_nan=True)
             assert bank.receipts[:9].cpu().flatten().tolist() == [epoch] * 9
             assert bank.attention_receipts.cpu().flatten().tolist() == ([-1] * 12 if shared else [epoch] * 12)
             assert probe.state[0, 1].cpu().item() == 12 + 6 * (epoch - 10) - 6
@@ -246,6 +294,7 @@ def test_real_dispatch_aot_copyback_and_repeated_replay(tmp_path, monkeypatch, s
                     bank.attention_receipts,
                     bank.epoch_input,
                     *probe.kv.tensors,
+                    *capsule.tensors,
                 )
             ]
         if device == "npu":

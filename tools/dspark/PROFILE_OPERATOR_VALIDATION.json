@@ -1,0 +1,54 @@
+{
+  "kind": "CPU/source/mock; not new NPU validation",
+  "python": "3.12.13",
+  "torch": "2.10.0 macOS CPU",
+  "server_archive": "2.10.0+cpu Linux / torch_npu2.10.0.post2",
+  "archive_focused_passed": 1098,
+  "local_host_focused": {
+    "passed": 626,
+    "skipped": 9,
+    "files": 27,
+    "seconds": 37.36,
+    "conftest": "--noconftest",
+    "sha256": "05597e9ae361ed1a74c45cfe1794ab2a1652a24c1f245824841533164e66ca13"
+  },
+  "skips": [
+    "4 real native SWA eager/ACLGraph controls, missing torch_npu",
+    "2 actual NPU dispatcher/npugraph_ex/ACLGraph tests, missing torch_npu",
+    "3 installed vllm/Ascend tests"
+  ],
+  "final_dispatch_and_capsule": {
+    "passed": 19,
+    "skipped": 2,
+    "seconds": 5.85,
+    "sha256": "fb14ba3f5b7fca3141e21a05201f36bea0e8a1434908eea6681533f8616cb85c"
+  },
+  "production_root_cause": "UNKNOWN",
+  "original_nan": "reproduced in supplied archive; no new model run",
+  "new_NPU_capture_and_replay": "PENDING",
+  "worker_exit": "worker_cleanup_incomplete in archive; unchanged",
+  "final_related_and_abi": {
+    "passed": 47,
+    "skipped": 2,
+    "seconds": 8.72,
+    "sha256": "b070a1b92c21c33ac64293a30d1391d6e2b107d996af681d6558a0f16ad8148c"
+  },
+  "changed_file_hooks": "passed",
+  "full_format_ci": {
+    "returncode": 1,
+    "failed_hooks": [
+      "ruff check",
+      "ruff format",
+      "codespell",
+      "typos",
+      "markdownlint",
+      "Lint GitHub Actions workflow files",
+      "Lint shell scripts",
+      "Check for forbidden imports"
+    ],
+    "auto_modified_files": 78,
+    "auto_modified_task_files": [],
+    "same_as_previous_baseline": true,
+    "execution": "isolated worktree, staged patch; baseline formatter edits discarded"
+  }
+}

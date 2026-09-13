@@ -37,6 +37,7 @@ STATE_COLUMNS = (
 
 class AttentionProbe:
     def __init__(self, bank, layer):
+        self.operator = None
         self.bank = bank
         self.prefix = f"layer.{layer}.attention."
         self.routes = {}

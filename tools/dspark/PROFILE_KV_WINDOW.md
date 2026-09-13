@@ -1,5 +1,7 @@
 # DSpark layer 1 KV 窗口：7wU85bLE 审计与局部诊断
 
+后续有效窗口有限而raw attention异常的审计与算子重放见 [Fppa5L9e](PROFILE_OPERATOR_REPLAY.md)。
+
 本轮为**局部诊断补充，不是生产修复**。已证明所观测的 KV 语义窗口含 NaN，尚未证明
 异常逻辑/物理 slot、最后写入者、错误页归属或具体 kernel。Core/custom op、模型数值、
 confidence、采样、NaN/owner 检查、stream 等待和退出预算保持不变；root cause=UNKNOWN。

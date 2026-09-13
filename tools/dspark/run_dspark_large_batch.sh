@@ -61,7 +61,7 @@ main() {
         tests/ut/test_dspark_attention_receipts.py \
         tests/ut/test_dspark_attention_validity.py \
         tests/ut/test_dspark_profile_attention.py \
-        tests/ut/test_dspark_profile_kv.py \
+        tests/ut/test_dspark_profile_kv.py tests/ut/test_dspark_operator_capture.py tests/ut/test_dspark_operator_npu.py \
         tests/ut/test_dspark_replay_diagnostics.py \
         tests/ut/test_dspark_nan_diagnostics.py tests/ut/test_dspark_profile_failure.py tests/ut/test_dspark_worker_exit.py \
         tests/ut/test_dspark_post_shutdown.py \

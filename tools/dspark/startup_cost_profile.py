@@ -437,8 +437,17 @@ def diagnostic_points(points, stop):
 
 
 def profile_engine_kwargs(
-    parsed, directory, diagnostic, experiment=None, target_layer=None, worker_exit=False, attention=False
+    parsed,
+    directory,
+    diagnostic,
+    experiment=None,
+    target_layer=None,
+    worker_exit=False,
+    attention=False,
+    operator_capture=None,
 ):
+    if operator_capture is not None and not attention:
+        raise ValueError("Operator capture requires attention detail")
     if attention and (experiment != "target-boundaries" or target_layer is None):
         raise ValueError("Attention detail requires target-boundaries and target_layer")
     if worker_exit and experiment != "target-boundaries":
@@ -475,6 +484,8 @@ def profile_engine_kwargs(
         }
         if target_layer is not None:
             kwargs["additional_config"]["dspark_profile_observation"]["target_layer"] = target_layer
+        if operator_capture is not None:
+            kwargs["additional_config"]["dspark_profile_observation"]["operator_capture"] = operator_capture
         if attention:
             kwargs["additional_config"]["dspark_profile_observation"]["attention"] = True
     if experiment in (
@@ -516,6 +527,7 @@ def run(args):
                 "experiment": experiment or "full-diagnostic",
                 "target_layer": target_layer,
                 "target_attention": getattr(args, "profile_target_attention", False),
+                "operator_capture": getattr(args, "profile_operator_capture", False),
                 "worker_exit_trace": getattr(args, "profile_worker_exit", False),
                 "status": "running",
                 "root_cause": "ROOT_CAUSE_NOT_YET_PROVEN",
@@ -567,6 +579,15 @@ def run(args):
                 target_layer,
                 getattr(args, "profile_worker_exit", False),
                 getattr(args, "profile_target_attention", False),
+                (
+                    {
+                        "point": points[-1]["id"],
+                        "max_tokens": points[-1]["capacity"],
+                        "max_seq_len": points[-1]["context_ceiling"],
+                    }
+                    if getattr(args, "profile_operator_capture", False)
+                    else None
+                ),
             ),
             parsed,
         )

@@ -117,6 +117,8 @@ class TargetBoundaryFlags:
             values += (self.attention_flags, self.attention_receipts)
         if self.attention_probe is not None:
             values += (self.attention_probe.state, *self.attention_probe.kv.tensors)
+            if self.attention_probe.operator is not None:
+                values += self.attention_probe.operator.tensors
         return sum(x.numel() * x.element_size() for x in values)
 
 
@@ -150,6 +152,13 @@ def install_target_boundaries(model, config):
         model.layers[index]._dspark_layer_snapshots = bank
     if additional["dspark_profile_observation"].get("attention", False):
         install_attention_probe(bank, model, bank.target_layer)
+    capture_options = additional["dspark_profile_observation"].get("operator_capture")
+    if capture_options is not None:
+        from vllm_ascend.diagnostics.dspark_profile_operator import OperatorCapture
+
+        if bank.attention_probe is None:
+            raise ValueError("Operator capture requires attention detail")
+        bank.attention_probe.operator = OperatorCapture(bank, capture_options)
 
 
 class TargetCapture(AuxiliaryCapture):
@@ -177,6 +186,8 @@ class TargetProfileObservation(AuxiliaryProfileObservation):
             self.bank.attention_receipts.fill_(-1)
         if self.bank.attention_probe is not None:
             self.bank.attention_probe.kv.receipts.fill_(-1)
+            if self.bank.attention_probe.operator is not None:
+                self.bank.attention_probe.operator.reset()
         self.bank.epoch_input.fill_(self.execution)
         # These are the actual captured DSA fields; the previous experiment
         # observed `positions`, while DSA decode names it `input_positions`.
@@ -211,6 +222,14 @@ class TargetProfileObservation(AuxiliaryProfileObservation):
         if self.bank.attention_probe is not None:
             self.integer("target_internal.attention_state", self.bank.attention_probe.state[: desc.num_tokens])
             self.bank.attention_probe.kv.packet(self, desc.num_tokens)
+            if self.bank.attention_probe.operator is not None:
+                operator = self.bank.attention_probe.operator
+                if desc.num_tokens <= operator.options["max_tokens"]:
+                    plans = [p for p in operator.plans.values() if p["capacity"] == desc.num_tokens]
+                    if not plans:
+                        raise ValueError("Operator capture missed bounded FULL shape")
+                    self.integer("operator.receipts", torch.stack([p["buffers"]["receipts"] for p in plans]))
+                operator.own(self.pending)
 
     def complete_record(self, record, pending):
         device = record["device_integers"]
@@ -228,6 +247,14 @@ class TargetProfileObservation(AuxiliaryProfileObservation):
                 and capacity in self.bank.attention_probe.routes
                 and self.bank.attention_probe.kv.fresh(device, capacity or 0, record["execution"])
             )
+        if self.bank.attention_probe is not None and self.bank.attention_probe.operator is not None:
+            if capacity is not None and capacity <= self.bank.attention_probe.operator.options["max_tokens"]:
+                op_receipts = device.get("operator.receipts", [])
+                fresh = (
+                    fresh
+                    and sum(op_receipts[i : i + 2] == [record["execution"]] * 2 for i in range(0, len(op_receipts), 2))
+                    == 1
+                )
         if capacity is not None and not fresh:
             self.recording_error = "Target internal flags missing/stale; no complete replay receipt"
         boundaries = []
@@ -300,6 +327,10 @@ class TargetProfileObservation(AuxiliaryProfileObservation):
                 "scope": "parallel Q/KV inputs and a sequential output path; not one causal boundary chain",
             }
         self.save_attention_validity(record, fresh)
+        if self.bank.attention_probe is not None and self.bank.attention_probe.operator is not None:
+            if "operator_packets" in pending and not fresh:
+                raise ValueError("Operator capsule unavailable without current target/KV receipts")
+            self.bank.attention_probe.operator.save(record, pending, self.directory)
         self.target_counts[record["target_internal"]["coverage"]] += 1
         nonfinite = any(v["nan"] or v["inf"] for b in boundaries for v in b["rows"] if v["row"] < record["target_rows"])
         self.target_counts["nonfinite_rounds"] += nonfinite
@@ -325,6 +356,7 @@ class TargetProfileObservation(AuxiliaryProfileObservation):
                 "raw_receipts": record["device_integers"].get("raw_receipts"),
                 "consume_receipts": record["device_integers"].get("consume_receipts"),
                 "kv_receipts": record["device_integers"].get("kv.receipts"),
+                "operator_receipts": record["device_integers"].get("operator.receipts"),
             }
         )
         status = "failed" if not good else "passed" if len(previous) == VALIDITY_ROUNDS else "pending"
@@ -335,6 +367,7 @@ class TargetProfileObservation(AuxiliaryProfileObservation):
             "status": status,
             "required_boundaries": list(self.bank.names),
             "kv_required": True,
+            "operator_required": self.bank.attention_probe.operator is not None,
             "rounds": list(previous),
             "error": (self.recording_error or "Incomplete/nonconsecutive FULL receipts") if not good else None,
             "snapshot": self.snapshot(),
