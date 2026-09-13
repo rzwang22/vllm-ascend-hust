@@ -1,5 +1,8 @@
 # SWA 修复：局部验证通过后的完整模型验收
 
+后续 iwviRLAg 完整模型数值/FULL 已通过，cleanup 失败。当前退出修复与命令见
+[worker 最终化验收](PROFILE_WORKER_FINALIZATION.md)，下面保留此前入口交付时的历史状态。
+
 ## 已读取的归档
 
 `dspark-swa-lifecycle.sGR4YXDq-evidence.tar.gz` 的实际 SHA256 为

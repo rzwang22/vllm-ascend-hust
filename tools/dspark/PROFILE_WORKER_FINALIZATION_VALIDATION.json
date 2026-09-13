@@ -1,0 +1,54 @@
+{
+  "baseline_plugin": "08ade2ad1f13e0bd2add275dbc369fae198f6102",
+  "unchanged_core": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+  "local_platform": "macOS-26.4-arm64-arm-64bit",
+  "python": "3.12.13",
+  "cpu_mock_regressions": {
+    "passed": 226,
+    "failed": 0,
+    "skipped": 0,
+    "scope": "profile teardown, worker exit, failure propagation, weak lifetimes, SWA acceptance entry, FULL observer, profile context/observation/auxiliary/target",
+    "junit_local": "/tmp/dspark-exit-regressions.xml",
+    "includes": "real multiprocessing spawn/kill/join; actual Core/Ascend shutdown function bodies with device leaves mocked; real host observer stack"
+  },
+  "ruff": "passed",
+  "bash_syntax": "passed",
+  "diff_check": "passed",
+  "full_format_ci": {
+    "command": "bash format.sh ci (disposable worktree with staged patch)",
+    "returncode": 1,
+    "failed_hooks": [
+      "ruff check..................................................................Failed",
+      "ruff format.................................................................Failed",
+      "codespell...................................................................Failed",
+      "typos.......................................................................Failed",
+      "markdownlint................................................................Failed",
+      "Lint GitHub Actions workflow files..........................................Failed",
+      "Lint shell scripts..........................................................Failed",
+      "Check for forbidden imports.................................................Failed"
+    ],
+    "auto_modified_files_outside_task": 78,
+    "auto_modified_task_files": [],
+    "note": "Repository-wide existing failures; working tree untouched. Changed-file manual hooks separately all pass."
+  },
+  "NPU_natural_exit": "PENDING",
+  "NPU_model_rerun": "NOT_RUN",
+  "prior_archive_numerical_FULL": "PASSED_THIS_RUN",
+  "SWA_22_3_23": "not rerun",
+  "native_destructor_cause": "UNKNOWN",
+  "production_model_changes": false,
+  "performance_eligible": false,
+  "changed_file_manual_hooks": {
+    "returncode": 0,
+    "passed": [
+      "ruff check",
+      "ruff format",
+      "codespell",
+      "typos",
+      "markdownlint",
+      "shellcheck",
+      "package/import/custom policy hooks"
+    ],
+    "not_applicable": "C++/workflow/PNG hooks have no changed files"
+  }
+}

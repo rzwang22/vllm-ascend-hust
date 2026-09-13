@@ -1,0 +1,1892 @@
+{
+  "archive": "dspark-large-batch.iwviRLAg-evidence.tar.gz",
+  "archive_sha256": "199da908dcd93d22540ac3f2c6cd905a26d2695b94ed0731e1005de9dd984f44",
+  "plugin": "08ade2ad1f13e0bd2add275dbc369fae198f6102",
+  "core_source": {
+    "expected_head": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+    "selected_remote": "rzwang",
+    "status": "verified",
+    "head_before": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+    "remote_url": "https://github.com/rzwang22/vllm-hust.git",
+    "origin_url_before": "https://github.com/vLLM-HUST/vllm-hust.git",
+    "fetched_head": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+    "actual_head": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970"
+  },
+  "raw_model_report_recomputed_equal": true,
+  "points": [
+    {
+      "point": "ctx128-n1-t6-balanced",
+      "generation_complete": true,
+      "tokens": [
+        512
+      ],
+      "numeric": "no_nan_observed_at_enabled_boundaries",
+      "graph": "VALIDATED_FULL_SAMPLES"
+    },
+    {
+      "point": "ctx128-n1-t6-skewed",
+      "generation_complete": true,
+      "tokens": [
+        512
+      ],
+      "numeric": "no_nan_observed_at_enabled_boundaries",
+      "graph": "VALIDATED_FULL_SAMPLES"
+    },
+    {
+      "point": "ctx128-n2-t6-balanced",
+      "generation_complete": true,
+      "tokens": [
+        512,
+        512
+      ],
+      "numeric": "no_nan_observed_at_enabled_boundaries",
+      "graph": "VALIDATED_FULL_SAMPLES"
+    },
+    {
+      "point": "ctx128-n2-t6-skewed",
+      "generation_complete": true,
+      "tokens": [
+        512,
+        512
+      ],
+      "numeric": "no_nan_observed_at_enabled_boundaries",
+      "graph": "VALIDATED_FULL_SAMPLES"
+    },
+    {
+      "point": "ctx128-n2-t12-balanced",
+      "generation_complete": true,
+      "tokens": [
+        512,
+        512
+      ],
+      "numeric": "no_nan_observed_at_enabled_boundaries",
+      "graph": "VALIDATED_FULL_SAMPLES"
+    },
+    {
+      "point": "ctx128-n2-t12-skewed",
+      "generation_complete": true,
+      "tokens": [
+        512,
+        512
+      ],
+      "numeric": "no_nan_observed_at_enabled_boundaries",
+      "graph": "VALIDATED_FULL_SAMPLES"
+    },
+    {
+      "point": "ctx128-n4-t6-balanced",
+      "generation_complete": true,
+      "tokens": [
+        512,
+        512,
+        512,
+        512
+      ],
+      "numeric": "no_nan_observed_at_enabled_boundaries",
+      "graph": "VALIDATED_FULL_SAMPLES"
+    },
+    {
+      "point": "ctx128-n4-t6-skewed",
+      "generation_complete": true,
+      "tokens": [
+        512,
+        512,
+        512,
+        512
+      ],
+      "numeric": "no_nan_observed_at_enabled_boundaries",
+      "graph": "VALIDATED_FULL_SAMPLES"
+    },
+    {
+      "point": "ctx128-n4-t12-balanced",
+      "generation_complete": true,
+      "tokens": [
+        512,
+        512,
+        512,
+        512
+      ],
+      "numeric": "no_nan_observed_at_enabled_boundaries",
+      "graph": "VALIDATED_FULL_SAMPLES"
+    },
+    {
+      "point": "ctx128-n4-t12-skewed",
+      "generation_complete": true,
+      "tokens": [
+        512,
+        512,
+        512,
+        512
+      ],
+      "numeric": "no_nan_observed_at_enabled_boundaries",
+      "graph": "VALIDATED_FULL_SAMPLES"
+    }
+  ],
+  "request_count": 26,
+  "raw_hashes": {
+    "ctx128-n1-t6-balanced": "7d0db022c88e441baf161e91496a2555b1a9dc5719e4980ce40ebdd99e3f6e70",
+    "ctx128-n1-t6-skewed": "c66db33700d72387eceebf25da3d590332087b2704c08023727745df24cf4323",
+    "ctx128-n2-t6-balanced": "b5fabb6aef41487d0f876a00169236f132ffab558b3a1bff5ddc7f09393ff45b",
+    "ctx128-n2-t6-skewed": "bd5626987fa1d17ceceefaac8e54452cb41757ffa830610ac3358729e92ea016",
+    "ctx128-n2-t12-balanced": "94dbfab238269aa7be9f0d9c4fa5944e10180edda46b6aae4c92041766db4f10",
+    "ctx128-n2-t12-skewed": "f3a37e92edcce9cec773f8083691fd328b7014a05f0b4affdb7cead24fc5777b",
+    "ctx128-n4-t6-balanced": "c76d058076aa9e0d9745898004fdb2e144c02a9f41689b66e7e8db003b560beb",
+    "ctx128-n4-t6-skewed": "366f69c6a037888d9ceb64292e667959268a0af645a8cc930956c774a9e3df4c",
+    "ctx128-n4-t12-balanced": "97fb6a37810479df09c41293a5e9c8e512a66b8c598aa8fa70d4dd917c5b6149",
+    "ctx128-n4-t12-skewed": "ce57d3de706c8784ab90e536e2611ee540c5d622fa1fba22d7542764e2dfb069"
+  },
+  "pipestatus": {
+    "acceptance-report.pipestatus": "1 0",
+    "acceptance-entry.pipestatus": "0 0",
+    "core-source.pipestatus": "0 0",
+    "frozen-inputs.pipestatus": "0 0",
+    "source.pipestatus": "0 0",
+    "checkpoint.pipestatus": "0 0",
+    "local-validation.pipestatus": "0 0",
+    "generation.pipestatus": "1 0"
+  },
+  "worker_timeline": [
+    {
+      "rank": 0,
+      "step_count": 181,
+      "returned_stages": {
+        "queue.rpc_broadcast_mq.cancel": "2026-09-13T16:13:25.291273+00:00",
+        "queue.rpc_broadcast_mq.shutdown": "2026-09-13T16:13:25.291310+00:00",
+        "queue.worker_response_mq.cancel": "2026-09-13T16:13:25.291416+00:00",
+        "queue.worker_response_mq.shutdown": "2026-09-13T16:13:25.291455+00:00",
+        "ascend.attention_probe": "2026-09-13T16:13:25.291848+00:00",
+        "ascend.kv_transfer": "2026-09-13T16:13:25.291916+00:00",
+        "device.existing_synchronize": "2026-09-13T16:13:25.292149+00:00",
+        "model_runner.free_before_shutdown": "2026-09-13T16:13:25.292989+00:00",
+        "python.gc_collect": "2026-09-13T16:13:26.598088+00:00",
+        "device.empty_cache": "2026-09-13T16:13:26.613411+00:00",
+        "model_runner.shutdown": "2026-09-13T16:13:26.613537+00:00",
+        "ascend.worker.shutdown": "2026-09-13T16:13:26.613593+00:00",
+        "WorkerWrapperBase.shutdown": "2026-09-13T16:13:26.613702+00:00",
+        "distributed.destroy_process_group": "2026-09-13T16:13:28.547525+00:00",
+        "hccl.registry.release": "2026-09-13T16:13:26.752734+00:00",
+        "group._TP._release_hccl_resources": "2026-09-13T16:13:26.684690+00:00",
+        "group._TP.destroy": "2026-09-13T16:13:26.703991+00:00",
+        "group._DCP._release_hccl_resources": "2026-09-13T16:13:26.705275+00:00",
+        "group._DCP.destroy": "2026-09-13T16:13:26.707082+00:00",
+        "group._PCP._release_hccl_resources": "2026-09-13T16:13:26.708258+00:00",
+        "group._PCP.destroy": "2026-09-13T16:13:26.716459+00:00",
+        "group._PP._release_hccl_resources": "2026-09-13T16:13:26.717596+00:00",
+        "group._PP.destroy": "2026-09-13T16:13:26.726473+00:00",
+        "group._DP._release_hccl_resources": "2026-09-13T16:13:26.727606+00:00",
+        "group._DP.destroy": "2026-09-13T16:13:26.736805+00:00",
+        "group._EP._release_hccl_resources": "2026-09-13T16:13:26.738516+00:00",
+        "group._EP.destroy": "2026-09-13T16:13:26.752085+00:00",
+        "distributed.destroy_model_parallel": "2026-09-13T16:13:26.752173+00:00",
+        "group._WORLD._release_hccl_resources": "2026-09-13T16:13:26.752781+00:00",
+        "group._WORLD.destroy": "2026-09-13T16:13:26.772468+00:00",
+        "distributed.destroy_distributed_environment": "2026-09-13T16:13:28.547699+00:00",
+        "WorkerProc.shutdown": "2026-09-13T16:13:28.547751+00:00"
+      },
+      "finalization_stages": [
+        {
+          "stage": "shutdown_wrapper",
+          "event": "scope_unwound",
+          "unix_ns": 1789316008547898168,
+          "is_finalizing": false
+        },
+        {
+          "stage": "multiprocessing.exit_function",
+          "event": "begin",
+          "unix_ns": 1789316008549512399,
+          "is_finalizing": false
+        },
+        {
+          "stage": "multiprocessing.exit_function",
+          "event": "returned",
+          "unix_ns": 1789316008948990642,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "begin",
+          "unix_ns": 1789316008949496038,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "returned",
+          "unix_ns": 1789316008950081926,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "begin",
+          "unix_ns": 1789316008950591572,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "returned",
+          "unix_ns": 1789316008951042778,
+          "is_finalizing": false
+        },
+        {
+          "stage": "atexit",
+          "event": "marker",
+          "unix_ns": 1789316008951468484,
+          "is_finalizing": false
+        }
+      ],
+      "latest_gc": [
+        {
+          "stage": "gc.callback.2",
+          "event": "start",
+          "unix_ns": 1789316010104175604,
+          "is_finalizing": true
+        }
+      ],
+      "latest": {
+        "rank": 0,
+        "pid": 201278,
+        "instance": "8ab59d2ba8174347b425aef76379e393",
+        "request": "f36c86300f8440b6bd72fffa1b9b6a03",
+        "point": "ctx128-n4-t12-skewed",
+        "performance_eligible": false,
+        "seq": 171,
+        "call_id": 171,
+        "monotonic_ns": 4516934267846935,
+        "unix_ns": 1789316010104175604,
+        "thread_id": 281473554643136,
+        "is_finalizing": true,
+        "stage": "gc.callback.2",
+        "event": "start",
+        "alive": {
+          "worker_proc": true,
+          "worker_wrapper": true,
+          "worker": true,
+          "runner": true,
+          "speculator": true,
+          "target_model": true,
+          "graph_manager": true,
+          "cost_profiler": true,
+          "profile_observation": true,
+          "full_replay_observer": true,
+          "auxiliary_capture": true,
+          "target_flags": true,
+          "persistent_hidden": true,
+          "async_output_thread": true,
+          "graph.0.proxy": true,
+          "graph.0.native": true,
+          "graph.1.proxy": true,
+          "graph.1.native": true,
+          "graph.2.proxy": true,
+          "graph.2.native": true,
+          "graph.3.proxy": true,
+          "graph.3.native": true,
+          "graph.4.proxy": true,
+          "graph.4.native": true,
+          "graph.5.proxy": true,
+          "graph.5.native": true,
+          "graph.6.proxy": true,
+          "graph.6.native": true,
+          "capture.0.source.0": true,
+          "capture.0.source.1": true,
+          "capture.0.source.2": true,
+          "capture.1.source.0": true,
+          "capture.1.source.1": true,
+          "capture.1.source.2": true,
+          "capture.2.source.0": true,
+          "capture.2.source.1": true,
+          "capture.2.source.2": true,
+          "capture.3.source.0": true,
+          "capture.3.source.1": true,
+          "capture.3.source.2": true,
+          "capture.4.source.0": true,
+          "capture.4.source.1": true,
+          "capture.4.source.2": true,
+          "capture.5.source.0": true,
+          "capture.5.source.1": true,
+          "capture.5.source.2": true,
+          "capture.6.source.0": true,
+          "capture.6.source.1": true,
+          "capture.6.source.2": true
+        },
+        "dropped_reentrant_events": 0,
+        "recording_error": null,
+        "gc_info": {
+          "generation": 2,
+          "collected": 0,
+          "uncollectable": 0
+        }
+      },
+      "pending": [
+        {
+          "seq": 171,
+          "call_id": 171,
+          "monotonic_ns": 4516934267846935,
+          "unix_ns": 1789316010104175604,
+          "thread_id": 281473554643136,
+          "is_finalizing": true,
+          "stage": "gc.callback.2",
+          "event": "start",
+          "dropped_reentrant_events": 0,
+          "recording_error": null,
+          "gc_info": {
+            "generation": 2,
+            "collected": 0,
+            "uncollectable": 0
+          }
+        }
+      ],
+      "append_truncated": {
+        "ordinary": 0,
+        "critical": 0,
+        "error": 0
+      },
+      "history_overwritten": 155,
+      "original_exitcode": -15
+    },
+    {
+      "rank": 1,
+      "step_count": 181,
+      "returned_stages": {
+        "queue.rpc_broadcast_mq.cancel": "2026-09-13T16:13:25.290315+00:00",
+        "queue.rpc_broadcast_mq.shutdown": "2026-09-13T16:13:25.290352+00:00",
+        "queue.worker_response_mq.cancel": "2026-09-13T16:13:25.290463+00:00",
+        "queue.worker_response_mq.shutdown": "2026-09-13T16:13:25.290504+00:00",
+        "ascend.attention_probe": "2026-09-13T16:13:25.290906+00:00",
+        "ascend.kv_transfer": "2026-09-13T16:13:25.290978+00:00",
+        "device.existing_synchronize": "2026-09-13T16:13:25.291220+00:00",
+        "model_runner.free_before_shutdown": "2026-09-13T16:13:25.291912+00:00",
+        "python.gc_collect": "2026-09-13T16:13:26.114533+00:00",
+        "device.empty_cache": "2026-09-13T16:13:26.130104+00:00",
+        "model_runner.shutdown": "2026-09-13T16:13:26.130235+00:00",
+        "ascend.worker.shutdown": "2026-09-13T16:13:26.130290+00:00",
+        "WorkerWrapperBase.shutdown": "2026-09-13T16:13:26.130387+00:00",
+        "distributed.destroy_process_group": "2026-09-13T16:13:28.547335+00:00",
+        "hccl.registry.release": "2026-09-13T16:13:26.310250+00:00",
+        "group._TP._release_hccl_resources": "2026-09-13T16:13:26.173661+00:00",
+        "group._TP.destroy": "2026-09-13T16:13:26.222553+00:00",
+        "group._DCP._release_hccl_resources": "2026-09-13T16:13:26.223798+00:00",
+        "group._DCP.destroy": "2026-09-13T16:13:26.229563+00:00",
+        "group._PCP._release_hccl_resources": "2026-09-13T16:13:26.230828+00:00",
+        "group._PCP.destroy": "2026-09-13T16:13:26.233321+00:00",
+        "group._PP._release_hccl_resources": "2026-09-13T16:13:26.234482+00:00",
+        "group._PP.destroy": "2026-09-13T16:13:26.238867+00:00",
+        "group._DP._release_hccl_resources": "2026-09-13T16:13:26.240050+00:00",
+        "group._DP.destroy": "2026-09-13T16:13:26.243420+00:00",
+        "group._EP._release_hccl_resources": "2026-09-13T16:13:26.244924+00:00",
+        "group._EP.destroy": "2026-09-13T16:13:26.309608+00:00",
+        "distributed.destroy_model_parallel": "2026-09-13T16:13:26.309704+00:00",
+        "group._WORLD._release_hccl_resources": "2026-09-13T16:13:26.310296+00:00",
+        "group._WORLD.destroy": "2026-09-13T16:13:26.366263+00:00",
+        "distributed.destroy_distributed_environment": "2026-09-13T16:13:28.547506+00:00",
+        "WorkerProc.shutdown": "2026-09-13T16:13:28.547562+00:00"
+      },
+      "finalization_stages": [
+        {
+          "stage": "shutdown_wrapper",
+          "event": "scope_unwound",
+          "unix_ns": 1789316008547703886,
+          "is_finalizing": false
+        },
+        {
+          "stage": "multiprocessing.exit_function",
+          "event": "begin",
+          "unix_ns": 1789316008550035206,
+          "is_finalizing": false
+        },
+        {
+          "stage": "multiprocessing.exit_function",
+          "event": "returned",
+          "unix_ns": 1789316008989326912,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "begin",
+          "unix_ns": 1789316008989847449,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "returned",
+          "unix_ns": 1789316008990453306,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "begin",
+          "unix_ns": 1789316008990980253,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "returned",
+          "unix_ns": 1789316008991427899,
+          "is_finalizing": false
+        },
+        {
+          "stage": "atexit",
+          "event": "marker",
+          "unix_ns": 1789316008991843514,
+          "is_finalizing": false
+        }
+      ],
+      "latest_gc": [
+        {
+          "stage": "gc.callback.2",
+          "event": "start",
+          "unix_ns": 1789316010193897531,
+          "is_finalizing": true
+        }
+      ],
+      "latest": {
+        "rank": 1,
+        "pid": 201331,
+        "instance": "fb9033592e9a430cb620686fd141f3e3",
+        "request": "f36c86300f8440b6bd72fffa1b9b6a03",
+        "point": "ctx128-n4-t12-skewed",
+        "performance_eligible": false,
+        "seq": 171,
+        "call_id": 171,
+        "monotonic_ns": 4516934357568872,
+        "unix_ns": 1789316010193897531,
+        "thread_id": 281473523255488,
+        "is_finalizing": true,
+        "stage": "gc.callback.2",
+        "event": "start",
+        "alive": {
+          "worker_proc": true,
+          "worker_wrapper": true,
+          "worker": true,
+          "runner": true,
+          "speculator": true,
+          "target_model": true,
+          "graph_manager": true,
+          "cost_profiler": true,
+          "profile_observation": true,
+          "full_replay_observer": true,
+          "auxiliary_capture": true,
+          "target_flags": true,
+          "persistent_hidden": true,
+          "async_output_thread": true,
+          "graph.0.proxy": true,
+          "graph.0.native": true,
+          "graph.1.proxy": true,
+          "graph.1.native": true,
+          "graph.2.proxy": true,
+          "graph.2.native": true,
+          "graph.3.proxy": true,
+          "graph.3.native": true,
+          "graph.4.proxy": true,
+          "graph.4.native": true,
+          "graph.5.proxy": true,
+          "graph.5.native": true,
+          "graph.6.proxy": true,
+          "graph.6.native": true,
+          "capture.0.source.0": true,
+          "capture.0.source.1": true,
+          "capture.0.source.2": true,
+          "capture.1.source.0": true,
+          "capture.1.source.1": true,
+          "capture.1.source.2": true,
+          "capture.2.source.0": true,
+          "capture.2.source.1": true,
+          "capture.2.source.2": true,
+          "capture.3.source.0": true,
+          "capture.3.source.1": true,
+          "capture.3.source.2": true,
+          "capture.4.source.0": true,
+          "capture.4.source.1": true,
+          "capture.4.source.2": true,
+          "capture.5.source.0": true,
+          "capture.5.source.1": true,
+          "capture.5.source.2": true,
+          "capture.6.source.0": true,
+          "capture.6.source.1": true,
+          "capture.6.source.2": true
+        },
+        "dropped_reentrant_events": 0,
+        "recording_error": null,
+        "gc_info": {
+          "generation": 2,
+          "collected": 0,
+          "uncollectable": 0
+        }
+      },
+      "pending": [
+        {
+          "seq": 171,
+          "call_id": 171,
+          "monotonic_ns": 4516934357568872,
+          "unix_ns": 1789316010193897531,
+          "thread_id": 281473523255488,
+          "is_finalizing": true,
+          "stage": "gc.callback.2",
+          "event": "start",
+          "dropped_reentrant_events": 0,
+          "recording_error": null,
+          "gc_info": {
+            "generation": 2,
+            "collected": 0,
+            "uncollectable": 0
+          }
+        }
+      ],
+      "append_truncated": {
+        "ordinary": 0,
+        "critical": 0,
+        "error": 0
+      },
+      "history_overwritten": 155,
+      "original_exitcode": -15
+    },
+    {
+      "rank": 2,
+      "step_count": 181,
+      "returned_stages": {
+        "queue.rpc_broadcast_mq.cancel": "2026-09-13T16:13:25.290168+00:00",
+        "queue.rpc_broadcast_mq.shutdown": "2026-09-13T16:13:25.290207+00:00",
+        "queue.worker_response_mq.cancel": "2026-09-13T16:13:25.290323+00:00",
+        "queue.worker_response_mq.shutdown": "2026-09-13T16:13:25.290365+00:00",
+        "ascend.attention_probe": "2026-09-13T16:13:25.290773+00:00",
+        "ascend.kv_transfer": "2026-09-13T16:13:25.290845+00:00",
+        "device.existing_synchronize": "2026-09-13T16:13:25.291068+00:00",
+        "model_runner.free_before_shutdown": "2026-09-13T16:13:25.291739+00:00",
+        "python.gc_collect": "2026-09-13T16:13:26.080728+00:00",
+        "device.empty_cache": "2026-09-13T16:13:26.095655+00:00",
+        "model_runner.shutdown": "2026-09-13T16:13:26.095788+00:00",
+        "ascend.worker.shutdown": "2026-09-13T16:13:26.095843+00:00",
+        "WorkerWrapperBase.shutdown": "2026-09-13T16:13:26.095943+00:00",
+        "distributed.destroy_process_group": "2026-09-13T16:13:28.623433+00:00",
+        "hccl.registry.release": "2026-09-13T16:13:26.320834+00:00",
+        "group._TP._release_hccl_resources": "2026-09-13T16:13:26.172901+00:00",
+        "group._TP.destroy": "2026-09-13T16:13:26.231198+00:00",
+        "group._DCP._release_hccl_resources": "2026-09-13T16:13:26.232480+00:00",
+        "group._DCP.destroy": "2026-09-13T16:13:26.235586+00:00",
+        "group._PCP._release_hccl_resources": "2026-09-13T16:13:26.236849+00:00",
+        "group._PCP.destroy": "2026-09-13T16:13:26.241592+00:00",
+        "group._PP._release_hccl_resources": "2026-09-13T16:13:26.242766+00:00",
+        "group._PP.destroy": "2026-09-13T16:13:26.249212+00:00",
+        "group._DP._release_hccl_resources": "2026-09-13T16:13:26.250411+00:00",
+        "group._DP.destroy": "2026-09-13T16:13:26.256226+00:00",
+        "group._EP._release_hccl_resources": "2026-09-13T16:13:26.257764+00:00",
+        "group._EP.destroy": "2026-09-13T16:13:26.320087+00:00",
+        "distributed.destroy_model_parallel": "2026-09-13T16:13:26.320230+00:00",
+        "group._WORLD._release_hccl_resources": "2026-09-13T16:13:26.320886+00:00",
+        "group._WORLD.destroy": "2026-09-13T16:13:26.382214+00:00",
+        "distributed.destroy_distributed_environment": "2026-09-13T16:13:28.623650+00:00",
+        "WorkerProc.shutdown": "2026-09-13T16:13:28.623707+00:00"
+      },
+      "finalization_stages": [
+        {
+          "stage": "shutdown_wrapper",
+          "event": "scope_unwound",
+          "unix_ns": 1789316008623853748,
+          "is_finalizing": false
+        },
+        {
+          "stage": "multiprocessing.exit_function",
+          "event": "begin",
+          "unix_ns": 1789316008626013206,
+          "is_finalizing": false
+        },
+        {
+          "stage": "multiprocessing.exit_function",
+          "event": "returned",
+          "unix_ns": 1789316008980091163,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "begin",
+          "unix_ns": 1789316008980681220,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "returned",
+          "unix_ns": 1789316008981332869,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "begin",
+          "unix_ns": 1789316008982059678,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "returned",
+          "unix_ns": 1789316008982615185,
+          "is_finalizing": false
+        },
+        {
+          "stage": "atexit",
+          "event": "marker",
+          "unix_ns": 1789316008983610918,
+          "is_finalizing": false
+        }
+      ],
+      "latest_gc": [
+        {
+          "stage": "gc.callback.2",
+          "event": "start",
+          "unix_ns": 1789316010085628094,
+          "is_finalizing": true
+        }
+      ],
+      "latest": {
+        "rank": 2,
+        "pid": 201410,
+        "instance": "eca34c90aa19402289638989461db84e",
+        "request": "f36c86300f8440b6bd72fffa1b9b6a03",
+        "point": "ctx128-n4-t12-skewed",
+        "performance_eligible": false,
+        "seq": 171,
+        "call_id": 171,
+        "monotonic_ns": 4516934249299555,
+        "unix_ns": 1789316010085628094,
+        "thread_id": 281473606817984,
+        "is_finalizing": true,
+        "stage": "gc.callback.2",
+        "event": "start",
+        "alive": {
+          "worker_proc": true,
+          "worker_wrapper": true,
+          "worker": true,
+          "runner": true,
+          "speculator": true,
+          "target_model": true,
+          "graph_manager": true,
+          "cost_profiler": true,
+          "profile_observation": true,
+          "full_replay_observer": true,
+          "auxiliary_capture": true,
+          "target_flags": true,
+          "persistent_hidden": true,
+          "async_output_thread": true,
+          "graph.0.proxy": true,
+          "graph.0.native": true,
+          "graph.1.proxy": true,
+          "graph.1.native": true,
+          "graph.2.proxy": true,
+          "graph.2.native": true,
+          "graph.3.proxy": true,
+          "graph.3.native": true,
+          "graph.4.proxy": true,
+          "graph.4.native": true,
+          "graph.5.proxy": true,
+          "graph.5.native": true,
+          "graph.6.proxy": true,
+          "graph.6.native": true,
+          "capture.0.source.0": true,
+          "capture.0.source.1": true,
+          "capture.0.source.2": true,
+          "capture.1.source.0": true,
+          "capture.1.source.1": true,
+          "capture.1.source.2": true,
+          "capture.2.source.0": true,
+          "capture.2.source.1": true,
+          "capture.2.source.2": true,
+          "capture.3.source.0": true,
+          "capture.3.source.1": true,
+          "capture.3.source.2": true,
+          "capture.4.source.0": true,
+          "capture.4.source.1": true,
+          "capture.4.source.2": true,
+          "capture.5.source.0": true,
+          "capture.5.source.1": true,
+          "capture.5.source.2": true,
+          "capture.6.source.0": true,
+          "capture.6.source.1": true,
+          "capture.6.source.2": true
+        },
+        "dropped_reentrant_events": 0,
+        "recording_error": null,
+        "gc_info": {
+          "generation": 2,
+          "collected": 0,
+          "uncollectable": 0
+        }
+      },
+      "pending": [
+        {
+          "seq": 171,
+          "call_id": 171,
+          "monotonic_ns": 4516934249299555,
+          "unix_ns": 1789316010085628094,
+          "thread_id": 281473606817984,
+          "is_finalizing": true,
+          "stage": "gc.callback.2",
+          "event": "start",
+          "dropped_reentrant_events": 0,
+          "recording_error": null,
+          "gc_info": {
+            "generation": 2,
+            "collected": 0,
+            "uncollectable": 0
+          }
+        }
+      ],
+      "append_truncated": {
+        "ordinary": 0,
+        "critical": 0,
+        "error": 0
+      },
+      "history_overwritten": 155,
+      "original_exitcode": -15
+    },
+    {
+      "rank": 3,
+      "step_count": 181,
+      "returned_stages": {
+        "queue.rpc_broadcast_mq.cancel": "2026-09-13T16:13:25.289892+00:00",
+        "queue.rpc_broadcast_mq.shutdown": "2026-09-13T16:13:25.289932+00:00",
+        "queue.worker_response_mq.cancel": "2026-09-13T16:13:25.290047+00:00",
+        "queue.worker_response_mq.shutdown": "2026-09-13T16:13:25.290087+00:00",
+        "ascend.attention_probe": "2026-09-13T16:13:25.290507+00:00",
+        "ascend.kv_transfer": "2026-09-13T16:13:25.290589+00:00",
+        "device.existing_synchronize": "2026-09-13T16:13:25.290812+00:00",
+        "model_runner.free_before_shutdown": "2026-09-13T16:13:25.291436+00:00",
+        "python.gc_collect": "2026-09-13T16:13:26.107942+00:00",
+        "device.empty_cache": "2026-09-13T16:13:26.123148+00:00",
+        "model_runner.shutdown": "2026-09-13T16:13:26.123279+00:00",
+        "ascend.worker.shutdown": "2026-09-13T16:13:26.123335+00:00",
+        "WorkerWrapperBase.shutdown": "2026-09-13T16:13:26.123441+00:00",
+        "distributed.destroy_process_group": "2026-09-13T16:13:28.547160+00:00",
+        "hccl.registry.release": "2026-09-13T16:13:26.330806+00:00",
+        "group._TP._release_hccl_resources": "2026-09-13T16:13:26.188491+00:00",
+        "group._TP.destroy": "2026-09-13T16:13:26.241203+00:00",
+        "group._DCP._release_hccl_resources": "2026-09-13T16:13:26.242467+00:00",
+        "group._DCP.destroy": "2026-09-13T16:13:26.247303+00:00",
+        "group._PCP._release_hccl_resources": "2026-09-13T16:13:26.253331+00:00",
+        "group._PCP.destroy": "2026-09-13T16:13:26.263671+00:00",
+        "group._PP._release_hccl_resources": "2026-09-13T16:13:26.264906+00:00",
+        "group._PP.destroy": "2026-09-13T16:13:26.267189+00:00",
+        "group._DP._release_hccl_resources": "2026-09-13T16:13:26.268362+00:00",
+        "group._DP.destroy": "2026-09-13T16:13:26.268942+00:00",
+        "group._EP._release_hccl_resources": "2026-09-13T16:13:26.270474+00:00",
+        "group._EP.destroy": "2026-09-13T16:13:26.330178+00:00",
+        "distributed.destroy_model_parallel": "2026-09-13T16:13:26.330271+00:00",
+        "group._WORLD._release_hccl_resources": "2026-09-13T16:13:26.330852+00:00",
+        "group._WORLD.destroy": "2026-09-13T16:13:26.392222+00:00",
+        "distributed.destroy_distributed_environment": "2026-09-13T16:13:28.547314+00:00",
+        "WorkerProc.shutdown": "2026-09-13T16:13:28.547371+00:00"
+      },
+      "finalization_stages": [
+        {
+          "stage": "shutdown_wrapper",
+          "event": "scope_unwound",
+          "unix_ns": 1789316008547505333,
+          "is_finalizing": false
+        },
+        {
+          "stage": "multiprocessing.exit_function",
+          "event": "begin",
+          "unix_ns": 1789316008549898644,
+          "is_finalizing": false
+        },
+        {
+          "stage": "multiprocessing.exit_function",
+          "event": "returned",
+          "unix_ns": 1789316008959089102,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "begin",
+          "unix_ns": 1789316008959555338,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "returned",
+          "unix_ns": 1789316008960079435,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "begin",
+          "unix_ns": 1789316008960608792,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "returned",
+          "unix_ns": 1789316008961064607,
+          "is_finalizing": false
+        },
+        {
+          "stage": "atexit",
+          "event": "marker",
+          "unix_ns": 1789316008961485993,
+          "is_finalizing": false
+        }
+      ],
+      "latest_gc": [
+        {
+          "stage": "gc.callback.2",
+          "event": "start",
+          "unix_ns": 1789316010313104709,
+          "is_finalizing": true
+        },
+        {
+          "stage": "gc.callback.2",
+          "event": "stop",
+          "unix_ns": 1789316011135529550,
+          "is_finalizing": true
+        }
+      ],
+      "latest": {
+        "rank": 3,
+        "pid": 201491,
+        "instance": "de5dbbcfec9947acbedb147fb122bc23",
+        "request": "f36c86300f8440b6bd72fffa1b9b6a03",
+        "point": "ctx128-n4-t12-skewed",
+        "performance_eligible": false,
+        "seq": 172,
+        "call_id": null,
+        "monotonic_ns": 4516935299200181,
+        "unix_ns": 1789316011135529550,
+        "thread_id": 281473637865664,
+        "is_finalizing": true,
+        "stage": "gc.callback.2",
+        "event": "stop",
+        "alive": {
+          "worker_proc": true,
+          "worker_wrapper": true,
+          "worker": true,
+          "runner": true,
+          "speculator": true,
+          "target_model": true,
+          "graph_manager": true,
+          "cost_profiler": true,
+          "profile_observation": true,
+          "full_replay_observer": true,
+          "auxiliary_capture": true,
+          "target_flags": true,
+          "persistent_hidden": true,
+          "async_output_thread": true,
+          "graph.0.proxy": true,
+          "graph.0.native": true,
+          "graph.1.proxy": true,
+          "graph.1.native": true,
+          "graph.2.proxy": true,
+          "graph.2.native": true,
+          "graph.3.proxy": true,
+          "graph.3.native": true,
+          "graph.4.proxy": true,
+          "graph.4.native": true,
+          "graph.5.proxy": true,
+          "graph.5.native": true,
+          "graph.6.proxy": true,
+          "graph.6.native": true,
+          "capture.0.source.0": true,
+          "capture.0.source.1": true,
+          "capture.0.source.2": true,
+          "capture.1.source.0": true,
+          "capture.1.source.1": true,
+          "capture.1.source.2": true,
+          "capture.2.source.0": true,
+          "capture.2.source.1": true,
+          "capture.2.source.2": true,
+          "capture.3.source.0": true,
+          "capture.3.source.1": true,
+          "capture.3.source.2": true,
+          "capture.4.source.0": true,
+          "capture.4.source.1": true,
+          "capture.4.source.2": true,
+          "capture.5.source.0": true,
+          "capture.5.source.1": true,
+          "capture.5.source.2": true,
+          "capture.6.source.0": true,
+          "capture.6.source.1": true,
+          "capture.6.source.2": true
+        },
+        "dropped_reentrant_events": 0,
+        "recording_error": null,
+        "gc_info": {
+          "generation": 2,
+          "collected": 0,
+          "uncollectable": 0
+        }
+      },
+      "pending": [],
+      "append_truncated": {
+        "ordinary": 0,
+        "critical": 0,
+        "error": 0
+      },
+      "history_overwritten": 156,
+      "original_exitcode": null
+    },
+    {
+      "rank": 4,
+      "step_count": 181,
+      "returned_stages": {
+        "queue.rpc_broadcast_mq.cancel": "2026-09-13T16:13:25.289804+00:00",
+        "queue.rpc_broadcast_mq.shutdown": "2026-09-13T16:13:25.289841+00:00",
+        "queue.worker_response_mq.cancel": "2026-09-13T16:13:25.289949+00:00",
+        "queue.worker_response_mq.shutdown": "2026-09-13T16:13:25.289990+00:00",
+        "ascend.attention_probe": "2026-09-13T16:13:25.290370+00:00",
+        "ascend.kv_transfer": "2026-09-13T16:13:25.290438+00:00",
+        "device.existing_synchronize": "2026-09-13T16:13:25.290661+00:00",
+        "model_runner.free_before_shutdown": "2026-09-13T16:13:25.291256+00:00",
+        "python.gc_collect": "2026-09-13T16:13:26.074485+00:00",
+        "device.empty_cache": "2026-09-13T16:13:26.089326+00:00",
+        "model_runner.shutdown": "2026-09-13T16:13:26.089442+00:00",
+        "ascend.worker.shutdown": "2026-09-13T16:13:26.089492+00:00",
+        "WorkerWrapperBase.shutdown": "2026-09-13T16:13:26.089581+00:00",
+        "distributed.destroy_process_group": "2026-09-13T16:13:28.547242+00:00",
+        "hccl.registry.release": "2026-09-13T16:13:26.330862+00:00",
+        "group._TP._release_hccl_resources": "2026-09-13T16:13:26.143241+00:00",
+        "group._TP.destroy": "2026-09-13T16:13:26.220844+00:00",
+        "group._DCP._release_hccl_resources": "2026-09-13T16:13:26.222058+00:00",
+        "group._DCP.destroy": "2026-09-13T16:13:26.230815+00:00",
+        "group._PCP._release_hccl_resources": "2026-09-13T16:13:26.231997+00:00",
+        "group._PCP.destroy": "2026-09-13T16:13:26.240871+00:00",
+        "group._PP._release_hccl_resources": "2026-09-13T16:13:26.242006+00:00",
+        "group._PP.destroy": "2026-09-13T16:13:26.250900+00:00",
+        "group._DP._release_hccl_resources": "2026-09-13T16:13:26.252017+00:00",
+        "group._DP.destroy": "2026-09-13T16:13:26.262242+00:00",
+        "group._EP._release_hccl_resources": "2026-09-13T16:13:26.263748+00:00",
+        "group._EP.destroy": "2026-09-13T16:13:26.330263+00:00",
+        "distributed.destroy_model_parallel": "2026-09-13T16:13:26.330344+00:00",
+        "group._WORLD._release_hccl_resources": "2026-09-13T16:13:26.330905+00:00",
+        "group._WORLD.destroy": "2026-09-13T16:13:26.392425+00:00",
+        "distributed.destroy_distributed_environment": "2026-09-13T16:13:28.547379+00:00",
+        "WorkerProc.shutdown": "2026-09-13T16:13:28.547427+00:00"
+      },
+      "finalization_stages": [
+        {
+          "stage": "shutdown_wrapper",
+          "event": "scope_unwound",
+          "unix_ns": 1789316008547545074,
+          "is_finalizing": false
+        },
+        {
+          "stage": "multiprocessing.exit_function",
+          "event": "begin",
+          "unix_ns": 1789316008549703692,
+          "is_finalizing": false
+        },
+        {
+          "stage": "multiprocessing.exit_function",
+          "event": "returned",
+          "unix_ns": 1789316008940822866,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "begin",
+          "unix_ns": 1789316008941316763,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "returned",
+          "unix_ns": 1789316008942380886,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "begin",
+          "unix_ns": 1789316008942887523,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "returned",
+          "unix_ns": 1789316008943368849,
+          "is_finalizing": false
+        },
+        {
+          "stage": "atexit",
+          "event": "marker",
+          "unix_ns": 1789316008943813675,
+          "is_finalizing": false
+        }
+      ],
+      "latest_gc": [
+        {
+          "stage": "gc.callback.2",
+          "event": "start",
+          "unix_ns": 1789316009991943996,
+          "is_finalizing": true
+        }
+      ],
+      "latest": {
+        "rank": 4,
+        "pid": 201569,
+        "instance": "f38009f5d91048db86de7b357ac3637b",
+        "request": "f36c86300f8440b6bd72fffa1b9b6a03",
+        "point": "ctx128-n4-t12-skewed",
+        "performance_eligible": false,
+        "seq": 171,
+        "call_id": 171,
+        "monotonic_ns": 4516934155615477,
+        "unix_ns": 1789316009991943996,
+        "thread_id": 281473240189120,
+        "is_finalizing": true,
+        "stage": "gc.callback.2",
+        "event": "start",
+        "alive": {
+          "worker_proc": true,
+          "worker_wrapper": true,
+          "worker": true,
+          "runner": true,
+          "speculator": true,
+          "target_model": true,
+          "graph_manager": true,
+          "cost_profiler": true,
+          "profile_observation": true,
+          "full_replay_observer": true,
+          "auxiliary_capture": true,
+          "target_flags": true,
+          "persistent_hidden": true,
+          "async_output_thread": true,
+          "graph.0.proxy": true,
+          "graph.0.native": true,
+          "graph.1.proxy": true,
+          "graph.1.native": true,
+          "graph.2.proxy": true,
+          "graph.2.native": true,
+          "graph.3.proxy": true,
+          "graph.3.native": true,
+          "graph.4.proxy": true,
+          "graph.4.native": true,
+          "graph.5.proxy": true,
+          "graph.5.native": true,
+          "graph.6.proxy": true,
+          "graph.6.native": true,
+          "capture.0.source.0": true,
+          "capture.0.source.1": true,
+          "capture.0.source.2": true,
+          "capture.1.source.0": true,
+          "capture.1.source.1": true,
+          "capture.1.source.2": true,
+          "capture.2.source.0": true,
+          "capture.2.source.1": true,
+          "capture.2.source.2": true,
+          "capture.3.source.0": true,
+          "capture.3.source.1": true,
+          "capture.3.source.2": true,
+          "capture.4.source.0": true,
+          "capture.4.source.1": true,
+          "capture.4.source.2": true,
+          "capture.5.source.0": true,
+          "capture.5.source.1": true,
+          "capture.5.source.2": true,
+          "capture.6.source.0": true,
+          "capture.6.source.1": true,
+          "capture.6.source.2": true
+        },
+        "dropped_reentrant_events": 0,
+        "recording_error": null,
+        "gc_info": {
+          "generation": 2,
+          "collected": 0,
+          "uncollectable": 0
+        }
+      },
+      "pending": [
+        {
+          "seq": 171,
+          "call_id": 171,
+          "monotonic_ns": 4516934155615477,
+          "unix_ns": 1789316009991943996,
+          "thread_id": 281473240189120,
+          "is_finalizing": true,
+          "stage": "gc.callback.2",
+          "event": "start",
+          "dropped_reentrant_events": 0,
+          "recording_error": null,
+          "gc_info": {
+            "generation": 2,
+            "collected": 0,
+            "uncollectable": 0
+          }
+        }
+      ],
+      "append_truncated": {
+        "ordinary": 0,
+        "critical": 0,
+        "error": 0
+      },
+      "history_overwritten": 155,
+      "original_exitcode": -15
+    },
+    {
+      "rank": 5,
+      "step_count": 181,
+      "returned_stages": {
+        "queue.rpc_broadcast_mq.cancel": "2026-09-13T16:13:25.290682+00:00",
+        "queue.rpc_broadcast_mq.shutdown": "2026-09-13T16:13:25.290723+00:00",
+        "queue.worker_response_mq.cancel": "2026-09-13T16:13:25.290835+00:00",
+        "queue.worker_response_mq.shutdown": "2026-09-13T16:13:25.290881+00:00",
+        "ascend.attention_probe": "2026-09-13T16:13:25.291310+00:00",
+        "ascend.kv_transfer": "2026-09-13T16:13:25.291389+00:00",
+        "device.existing_synchronize": "2026-09-13T16:13:25.291650+00:00",
+        "model_runner.free_before_shutdown": "2026-09-13T16:13:25.292447+00:00",
+        "python.gc_collect": "2026-09-13T16:13:26.669101+00:00",
+        "device.empty_cache": "2026-09-13T16:13:26.684423+00:00",
+        "model_runner.shutdown": "2026-09-13T16:13:26.684565+00:00",
+        "ascend.worker.shutdown": "2026-09-13T16:13:26.684622+00:00",
+        "WorkerWrapperBase.shutdown": "2026-09-13T16:13:26.684733+00:00",
+        "distributed.destroy_process_group": "2026-09-13T16:13:28.623803+00:00",
+        "hccl.registry.release": "2026-09-13T16:13:26.762951+00:00",
+        "group._TP._release_hccl_resources": "2026-09-13T16:13:26.723670+00:00",
+        "group._TP.destroy": "2026-09-13T16:13:26.734347+00:00",
+        "group._DCP._release_hccl_resources": "2026-09-13T16:13:26.735669+00:00",
+        "group._DCP.destroy": "2026-09-13T16:13:26.743193+00:00",
+        "group._PCP._release_hccl_resources": "2026-09-13T16:13:26.744594+00:00",
+        "group._PCP.destroy": "2026-09-13T16:13:26.746415+00:00",
+        "group._PP._release_hccl_resources": "2026-09-13T16:13:26.747638+00:00",
+        "group._PP.destroy": "2026-09-13T16:13:26.749703+00:00",
+        "group._DP._release_hccl_resources": "2026-09-13T16:13:26.750951+00:00",
+        "group._DP.destroy": "2026-09-13T16:13:26.757035+00:00",
+        "group._EP._release_hccl_resources": "2026-09-13T16:13:26.758683+00:00",
+        "group._EP.destroy": "2026-09-13T16:13:26.762301+00:00",
+        "distributed.destroy_model_parallel": "2026-09-13T16:13:26.762397+00:00",
+        "group._WORLD._release_hccl_resources": "2026-09-13T16:13:26.762998+00:00",
+        "group._WORLD.destroy": "2026-09-13T16:13:26.772584+00:00",
+        "distributed.destroy_distributed_environment": "2026-09-13T16:13:28.624015+00:00",
+        "WorkerProc.shutdown": "2026-09-13T16:13:28.624072+00:00"
+      },
+      "finalization_stages": [
+        {
+          "stage": "shutdown_wrapper",
+          "event": "scope_unwound",
+          "unix_ns": 1789316008624228233,
+          "is_finalizing": false
+        },
+        {
+          "stage": "multiprocessing.exit_function",
+          "event": "begin",
+          "unix_ns": 1789316008627839189,
+          "is_finalizing": false
+        },
+        {
+          "stage": "multiprocessing.exit_function",
+          "event": "returned",
+          "unix_ns": 1789316008987339466,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "begin",
+          "unix_ns": 1789316008987876913,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "returned",
+          "unix_ns": 1789316008988462761,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "begin",
+          "unix_ns": 1789316008989039848,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "returned",
+          "unix_ns": 1789316008989597155,
+          "is_finalizing": false
+        },
+        {
+          "stage": "atexit",
+          "event": "marker",
+          "unix_ns": 1789316008990117812,
+          "is_finalizing": false
+        }
+      ],
+      "latest_gc": [
+        {
+          "stage": "gc.callback.2",
+          "event": "start",
+          "unix_ns": 1789316010318503899,
+          "is_finalizing": true
+        },
+        {
+          "stage": "gc.callback.2",
+          "event": "stop",
+          "unix_ns": 1789316011734261496,
+          "is_finalizing": true
+        }
+      ],
+      "latest": {
+        "rank": 5,
+        "pid": 201655,
+        "instance": "9f1b1f295741492ea77c0cc851e754e3",
+        "request": "f36c86300f8440b6bd72fffa1b9b6a03",
+        "point": "ctx128-n4-t12-skewed",
+        "performance_eligible": false,
+        "seq": 172,
+        "call_id": null,
+        "monotonic_ns": 4516935897931467,
+        "unix_ns": 1789316011734261496,
+        "thread_id": 281473603938496,
+        "is_finalizing": true,
+        "stage": "gc.callback.2",
+        "event": "stop",
+        "alive": {
+          "worker_proc": true,
+          "worker_wrapper": true,
+          "worker": true,
+          "runner": true,
+          "speculator": true,
+          "target_model": true,
+          "graph_manager": true,
+          "cost_profiler": true,
+          "profile_observation": true,
+          "full_replay_observer": true,
+          "auxiliary_capture": true,
+          "target_flags": true,
+          "persistent_hidden": true,
+          "async_output_thread": true,
+          "graph.0.proxy": true,
+          "graph.0.native": true,
+          "graph.1.proxy": true,
+          "graph.1.native": true,
+          "graph.2.proxy": true,
+          "graph.2.native": true,
+          "graph.3.proxy": true,
+          "graph.3.native": true,
+          "graph.4.proxy": true,
+          "graph.4.native": true,
+          "graph.5.proxy": true,
+          "graph.5.native": true,
+          "graph.6.proxy": true,
+          "graph.6.native": true,
+          "capture.0.source.0": true,
+          "capture.0.source.1": true,
+          "capture.0.source.2": true,
+          "capture.1.source.0": true,
+          "capture.1.source.1": true,
+          "capture.1.source.2": true,
+          "capture.2.source.0": true,
+          "capture.2.source.1": true,
+          "capture.2.source.2": true,
+          "capture.3.source.0": true,
+          "capture.3.source.1": true,
+          "capture.3.source.2": true,
+          "capture.4.source.0": true,
+          "capture.4.source.1": true,
+          "capture.4.source.2": true,
+          "capture.5.source.0": true,
+          "capture.5.source.1": true,
+          "capture.5.source.2": true,
+          "capture.6.source.0": true,
+          "capture.6.source.1": true,
+          "capture.6.source.2": true
+        },
+        "dropped_reentrant_events": 0,
+        "recording_error": null,
+        "gc_info": {
+          "generation": 2,
+          "collected": 0,
+          "uncollectable": 0
+        }
+      },
+      "pending": [],
+      "append_truncated": {
+        "ordinary": 0,
+        "critical": 0,
+        "error": 0
+      },
+      "history_overwritten": 156,
+      "original_exitcode": null
+    },
+    {
+      "rank": 6,
+      "step_count": 181,
+      "returned_stages": {
+        "queue.rpc_broadcast_mq.cancel": "2026-09-13T16:13:25.289904+00:00",
+        "queue.rpc_broadcast_mq.shutdown": "2026-09-13T16:13:25.289943+00:00",
+        "queue.worker_response_mq.cancel": "2026-09-13T16:13:25.290056+00:00",
+        "queue.worker_response_mq.shutdown": "2026-09-13T16:13:25.290099+00:00",
+        "ascend.attention_probe": "2026-09-13T16:13:25.290483+00:00",
+        "ascend.kv_transfer": "2026-09-13T16:13:25.290555+00:00",
+        "device.existing_synchronize": "2026-09-13T16:13:25.290763+00:00",
+        "model_runner.free_before_shutdown": "2026-09-13T16:13:25.291405+00:00",
+        "python.gc_collect": "2026-09-13T16:13:26.103372+00:00",
+        "device.empty_cache": "2026-09-13T16:13:26.118579+00:00",
+        "model_runner.shutdown": "2026-09-13T16:13:26.118695+00:00",
+        "ascend.worker.shutdown": "2026-09-13T16:13:26.118745+00:00",
+        "WorkerWrapperBase.shutdown": "2026-09-13T16:13:26.118836+00:00",
+        "distributed.destroy_process_group": "2026-09-13T16:13:28.466186+00:00",
+        "hccl.registry.release": "2026-09-13T16:13:26.341125+00:00",
+        "group._TP._release_hccl_resources": "2026-09-13T16:13:26.178759+00:00",
+        "group._TP.destroy": "2026-09-13T16:13:26.241114+00:00",
+        "group._DCP._release_hccl_resources": "2026-09-13T16:13:26.242323+00:00",
+        "group._DCP.destroy": "2026-09-13T16:13:26.249684+00:00",
+        "group._PCP._release_hccl_resources": "2026-09-13T16:13:26.250907+00:00",
+        "group._PCP.destroy": "2026-09-13T16:13:26.256917+00:00",
+        "group._PP._release_hccl_resources": "2026-09-13T16:13:26.258079+00:00",
+        "group._PP.destroy": "2026-09-13T16:13:26.262912+00:00",
+        "group._DP._release_hccl_resources": "2026-09-13T16:13:26.264051+00:00",
+        "group._DP.destroy": "2026-09-13T16:13:26.273082+00:00",
+        "group._EP._release_hccl_resources": "2026-09-13T16:13:26.274547+00:00",
+        "group._EP.destroy": "2026-09-13T16:13:26.340511+00:00",
+        "distributed.destroy_model_parallel": "2026-09-13T16:13:26.340594+00:00",
+        "group._WORLD._release_hccl_resources": "2026-09-13T16:13:26.341169+00:00",
+        "group._WORLD.destroy": "2026-09-13T16:13:26.402589+00:00",
+        "distributed.destroy_distributed_environment": "2026-09-13T16:13:28.466317+00:00",
+        "WorkerProc.shutdown": "2026-09-13T16:13:28.466366+00:00"
+      },
+      "finalization_stages": [
+        {
+          "stage": "shutdown_wrapper",
+          "event": "scope_unwound",
+          "unix_ns": 1789316008466496138,
+          "is_finalizing": false
+        },
+        {
+          "stage": "multiprocessing.exit_function",
+          "event": "begin",
+          "unix_ns": 1789316008468649266,
+          "is_finalizing": false
+        },
+        {
+          "stage": "multiprocessing.exit_function",
+          "event": "returned",
+          "unix_ns": 1789316008913006868,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "begin",
+          "unix_ns": 1789316008913478664,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "returned",
+          "unix_ns": 1789316008914000950,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "begin",
+          "unix_ns": 1789316008914495087,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "returned",
+          "unix_ns": 1789316008914955923,
+          "is_finalizing": false
+        },
+        {
+          "stage": "atexit",
+          "event": "marker",
+          "unix_ns": 1789316008915380298,
+          "is_finalizing": false
+        }
+      ],
+      "latest_gc": [
+        {
+          "stage": "gc.callback.2",
+          "event": "start",
+          "unix_ns": 1789316010312990358,
+          "is_finalizing": true
+        },
+        {
+          "stage": "gc.callback.2",
+          "event": "stop",
+          "unix_ns": 1789316011127563307,
+          "is_finalizing": true
+        }
+      ],
+      "latest": {
+        "rank": 6,
+        "pid": 201736,
+        "instance": "fda0fd1b39414df0a78c711d15d37390",
+        "request": "f36c86300f8440b6bd72fffa1b9b6a03",
+        "point": "ctx128-n4-t12-skewed",
+        "performance_eligible": false,
+        "seq": 172,
+        "call_id": null,
+        "monotonic_ns": 4516935291234728,
+        "unix_ns": 1789316011127563307,
+        "thread_id": 281473264064704,
+        "is_finalizing": true,
+        "stage": "gc.callback.2",
+        "event": "stop",
+        "alive": {
+          "worker_proc": true,
+          "worker_wrapper": true,
+          "worker": true,
+          "runner": true,
+          "speculator": true,
+          "target_model": true,
+          "graph_manager": true,
+          "cost_profiler": true,
+          "profile_observation": true,
+          "full_replay_observer": true,
+          "auxiliary_capture": true,
+          "target_flags": true,
+          "persistent_hidden": true,
+          "async_output_thread": true,
+          "graph.0.proxy": true,
+          "graph.0.native": true,
+          "graph.1.proxy": true,
+          "graph.1.native": true,
+          "graph.2.proxy": true,
+          "graph.2.native": true,
+          "graph.3.proxy": true,
+          "graph.3.native": true,
+          "graph.4.proxy": true,
+          "graph.4.native": true,
+          "graph.5.proxy": true,
+          "graph.5.native": true,
+          "graph.6.proxy": true,
+          "graph.6.native": true,
+          "capture.0.source.0": true,
+          "capture.0.source.1": true,
+          "capture.0.source.2": true,
+          "capture.1.source.0": true,
+          "capture.1.source.1": true,
+          "capture.1.source.2": true,
+          "capture.2.source.0": true,
+          "capture.2.source.1": true,
+          "capture.2.source.2": true,
+          "capture.3.source.0": true,
+          "capture.3.source.1": true,
+          "capture.3.source.2": true,
+          "capture.4.source.0": true,
+          "capture.4.source.1": true,
+          "capture.4.source.2": true,
+          "capture.5.source.0": true,
+          "capture.5.source.1": true,
+          "capture.5.source.2": true,
+          "capture.6.source.0": true,
+          "capture.6.source.1": true,
+          "capture.6.source.2": true
+        },
+        "dropped_reentrant_events": 0,
+        "recording_error": null,
+        "gc_info": {
+          "generation": 2,
+          "collected": 0,
+          "uncollectable": 0
+        }
+      },
+      "pending": [],
+      "append_truncated": {
+        "ordinary": 0,
+        "critical": 0,
+        "error": 0
+      },
+      "history_overwritten": 156,
+      "original_exitcode": null
+    },
+    {
+      "rank": 7,
+      "step_count": 181,
+      "returned_stages": {
+        "queue.rpc_broadcast_mq.cancel": "2026-09-13T16:13:25.290673+00:00",
+        "queue.rpc_broadcast_mq.shutdown": "2026-09-13T16:13:25.290713+00:00",
+        "queue.worker_response_mq.cancel": "2026-09-13T16:13:25.290826+00:00",
+        "queue.worker_response_mq.shutdown": "2026-09-13T16:13:25.290870+00:00",
+        "ascend.attention_probe": "2026-09-13T16:13:25.291277+00:00",
+        "ascend.kv_transfer": "2026-09-13T16:13:25.291351+00:00",
+        "device.existing_synchronize": "2026-09-13T16:13:25.291615+00:00",
+        "model_runner.free_before_shutdown": "2026-09-13T16:13:25.292422+00:00",
+        "python.gc_collect": "2026-09-13T16:13:26.119875+00:00",
+        "device.empty_cache": "2026-09-13T16:13:26.135561+00:00",
+        "model_runner.shutdown": "2026-09-13T16:13:26.135825+00:00",
+        "ascend.worker.shutdown": "2026-09-13T16:13:26.135885+00:00",
+        "WorkerWrapperBase.shutdown": "2026-09-13T16:13:26.135996+00:00",
+        "distributed.destroy_process_group": "2026-09-13T16:13:28.623776+00:00",
+        "hccl.registry.release": "2026-09-13T16:13:26.341934+00:00",
+        "group._TP._release_hccl_resources": "2026-09-13T16:13:26.209389+00:00",
+        "group._TP.destroy": "2026-09-13T16:13:26.251629+00:00",
+        "group._DCP._release_hccl_resources": "2026-09-13T16:13:26.253303+00:00",
+        "group._DCP.destroy": "2026-09-13T16:13:26.258982+00:00",
+        "group._PCP._release_hccl_resources": "2026-09-13T16:13:26.260236+00:00",
+        "group._PCP.destroy": "2026-09-13T16:13:26.268967+00:00",
+        "group._PP._release_hccl_resources": "2026-09-13T16:13:26.270350+00:00",
+        "group._PP.destroy": "2026-09-13T16:13:26.279114+00:00",
+        "group._DP._release_hccl_resources": "2026-09-13T16:13:26.280433+00:00",
+        "group._DP.destroy": "2026-09-13T16:13:26.282485+00:00",
+        "group._EP._release_hccl_resources": "2026-09-13T16:13:26.284426+00:00",
+        "group._EP.destroy": "2026-09-13T16:13:26.340963+00:00",
+        "distributed.destroy_model_parallel": "2026-09-13T16:13:26.341214+00:00",
+        "group._WORLD._release_hccl_resources": "2026-09-13T16:13:26.341980+00:00",
+        "group._WORLD.destroy": "2026-09-13T16:13:26.403059+00:00",
+        "distributed.destroy_distributed_environment": "2026-09-13T16:13:28.624019+00:00",
+        "WorkerProc.shutdown": "2026-09-13T16:13:28.624075+00:00"
+      },
+      "finalization_stages": [
+        {
+          "stage": "shutdown_wrapper",
+          "event": "scope_unwound",
+          "unix_ns": 1789316008624220293,
+          "is_finalizing": false
+        },
+        {
+          "stage": "multiprocessing.exit_function",
+          "event": "begin",
+          "unix_ns": 1789316008634971341,
+          "is_finalizing": false
+        },
+        {
+          "stage": "multiprocessing.exit_function",
+          "event": "returned",
+          "unix_ns": 1789316008944917609,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "begin",
+          "unix_ns": 1789316008945935542,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "returned",
+          "unix_ns": 1789316008946599961,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "begin",
+          "unix_ns": 1789316008947193148,
+          "is_finalizing": false
+        },
+        {
+          "stage": "threading.shutdown",
+          "event": "returned",
+          "unix_ns": 1789316008947736335,
+          "is_finalizing": false
+        },
+        {
+          "stage": "atexit",
+          "event": "marker",
+          "unix_ns": 1789316008948232772,
+          "is_finalizing": false
+        }
+      ],
+      "latest_gc": [
+        {
+          "stage": "gc.callback.2",
+          "event": "start",
+          "unix_ns": 1789316010814914513,
+          "is_finalizing": true
+        },
+        {
+          "stage": "gc.callback.2",
+          "event": "stop",
+          "unix_ns": 1789316011703720302,
+          "is_finalizing": true
+        }
+      ],
+      "latest": {
+        "rank": 7,
+        "pid": 201815,
+        "instance": "145befa5d70549e88f5df2f665bfafb8",
+        "request": "f36c86300f8440b6bd72fffa1b9b6a03",
+        "point": "ctx128-n4-t12-skewed",
+        "performance_eligible": false,
+        "seq": 172,
+        "call_id": null,
+        "monotonic_ns": 4516935867390843,
+        "unix_ns": 1789316011703720302,
+        "thread_id": 281472907102400,
+        "is_finalizing": true,
+        "stage": "gc.callback.2",
+        "event": "stop",
+        "alive": {
+          "worker_proc": true,
+          "worker_wrapper": true,
+          "worker": true,
+          "runner": true,
+          "speculator": true,
+          "target_model": true,
+          "graph_manager": true,
+          "cost_profiler": true,
+          "profile_observation": true,
+          "full_replay_observer": true,
+          "auxiliary_capture": true,
+          "target_flags": true,
+          "persistent_hidden": true,
+          "async_output_thread": true,
+          "graph.0.proxy": true,
+          "graph.0.native": true,
+          "graph.1.proxy": true,
+          "graph.1.native": true,
+          "graph.2.proxy": true,
+          "graph.2.native": true,
+          "graph.3.proxy": true,
+          "graph.3.native": true,
+          "graph.4.proxy": true,
+          "graph.4.native": true,
+          "graph.5.proxy": true,
+          "graph.5.native": true,
+          "graph.6.proxy": true,
+          "graph.6.native": true,
+          "capture.0.source.0": true,
+          "capture.0.source.1": true,
+          "capture.0.source.2": true,
+          "capture.1.source.0": true,
+          "capture.1.source.1": true,
+          "capture.1.source.2": true,
+          "capture.2.source.0": true,
+          "capture.2.source.1": true,
+          "capture.2.source.2": true,
+          "capture.3.source.0": true,
+          "capture.3.source.1": true,
+          "capture.3.source.2": true,
+          "capture.4.source.0": true,
+          "capture.4.source.1": true,
+          "capture.4.source.2": true,
+          "capture.5.source.0": true,
+          "capture.5.source.1": true,
+          "capture.5.source.2": true,
+          "capture.6.source.0": true,
+          "capture.6.source.1": true,
+          "capture.6.source.2": true
+        },
+        "dropped_reentrant_events": 0,
+        "recording_error": null,
+        "gc_info": {
+          "generation": 2,
+          "collected": 0,
+          "uncollectable": 0
+        }
+      },
+      "pending": [],
+      "append_truncated": {
+        "ordinary": 0,
+        "critical": 0,
+        "error": 0
+      },
+      "history_overwritten": 156,
+      "original_exitcode": null
+    }
+  ],
+  "numerical_and_FULL_acceptance": "PASSED_THIS_RUN",
+  "worker_natural_exit": false,
+  "overall_pass": false,
+  "cleanup": {
+    "schema_version": 2,
+    "performance_eligible": false,
+    "started_utc": "2026-09-13T16:13:25.278220+00:00",
+    "timeout_seconds": 12,
+    "finalize_timeout_seconds": 4,
+    "outer_timeout_seconds": 16,
+    "supervisor_failure_grace_seconds": 24,
+    "status": "forced_cleanup",
+    "shutdown_completed": true,
+    "engine_returned": true,
+    "thread_completed": true,
+    "timed_out": false,
+    "success": false,
+    "force_events": [
+      {
+        "observed_utc": "2026-09-13T16:13:37.288530+00:00",
+        "message": "[shutdown] Process manager: force killing remaining processes count=1"
+      }
+    ],
+    "forced_cleanup": true,
+    "force_observation_scope": "frontend Core process-manager warning on cleanup thread; not descendant logs",
+    "graceful_worker_exit": false,
+    "event_loop": "closed",
+    "error": null,
+    "recording_error": null,
+    "returned_utc": "2026-09-13T16:13:37.295078+00:00",
+    "engine_started_utc": "2026-09-13T16:13:25.278928+00:00",
+    "engine_finished_utc": "2026-09-13T16:13:37.295103+00:00",
+    "engine_elapsed_seconds": 12.016175265423954,
+    "returned_after_outer_deadline": false,
+    "elapsed_seconds": 12.021322831511497,
+    "observed_utc": "2026-09-13T16:13:37.299542+00:00",
+    "worker_cleanup": {
+      "performance_eligible": false,
+      "parent_pid": 201211,
+      "point": "ctx128-n4-t12-skewed",
+      "started_utc": "2026-09-13T16:13:25.283097+00:00",
+      "status": "returned",
+      "force_events": [
+        {
+          "observed_utc": "2026-09-13T16:13:30.288130+00:00",
+          "message": "[shutdown] Executor: workers still running after grace period; sending SIGTERM count=8"
+        },
+        {
+          "observed_utc": "2026-09-13T16:13:34.298524+00:00",
+          "message": "[shutdown] Executor: workers still running after SIGTERM; sending SIGKILL count=4"
+        }
+      ],
+      "forced_cleanup": true,
+      "error": null,
+      "recording_error": null,
+      "elapsed_seconds": 9.03802857361734,
+      "finished_utc": "2026-09-13T16:13:34.319145+00:00",
+      "workers": [
+        {
+          "pid": 201278,
+          "rank": 0,
+          "name": "VllmWorker-0",
+          "raw_exitcode": -15,
+          "signal": 15,
+          "signal_name": "SIGTERM",
+          "exit_status": "available"
+        },
+        {
+          "pid": 201331,
+          "rank": 1,
+          "name": "VllmWorker-1",
+          "raw_exitcode": -15,
+          "signal": 15,
+          "signal_name": "SIGTERM",
+          "exit_status": "available"
+        },
+        {
+          "pid": 201410,
+          "rank": 2,
+          "name": "VllmWorker-2",
+          "raw_exitcode": -15,
+          "signal": 15,
+          "signal_name": "SIGTERM",
+          "exit_status": "available"
+        },
+        {
+          "pid": 201491,
+          "rank": 3,
+          "name": "VllmWorker-3",
+          "raw_exitcode": null,
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "unavailable: not reaped/exited"
+        },
+        {
+          "pid": 201569,
+          "rank": 4,
+          "name": "VllmWorker-4",
+          "raw_exitcode": -15,
+          "signal": 15,
+          "signal_name": "SIGTERM",
+          "exit_status": "available"
+        },
+        {
+          "pid": 201655,
+          "rank": 5,
+          "name": "VllmWorker-5",
+          "raw_exitcode": null,
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "unavailable: not reaped/exited"
+        },
+        {
+          "pid": 201736,
+          "rank": 6,
+          "name": "VllmWorker-6",
+          "raw_exitcode": null,
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "unavailable: not reaped/exited"
+        },
+        {
+          "pid": 201815,
+          "rank": 7,
+          "name": "VllmWorker-7",
+          "raw_exitcode": null,
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "unavailable: not reaped/exited"
+        }
+      ]
+    }
+  },
+  "supervisor": {
+    "schema_version": 1,
+    "performance_eligible": false,
+    "child_pid": 201071,
+    "owned_process_group": 201071,
+    "command": [
+      "/usr/local/python3.12.13/bin/python",
+      "/workspace/vllm-ascend-hust/tools/dspark/run_confidence_verification.py",
+      "--plugin",
+      "/workspace/vllm-ascend-hust",
+      "--core",
+      "/workspace/vllm-hust",
+      "--plugin-sha",
+      "08ade2ad1f13e0bd2add275dbc369fae198f6102",
+      "--model",
+      "/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8",
+      "--manifest",
+      "/workspace/dspark-results/dspark-repeated-input.WSJur2Ev/input/manifest.json",
+      "--num-prompts",
+      "400",
+      "--output-len",
+      "256",
+      "--warmup-prompts",
+      "4",
+      "--max-model-len",
+      "8192",
+      "--max-num-batched-tokens",
+      "8192",
+      "--gpu-memory-utilization",
+      "0.9",
+      "--stage",
+      "profile",
+      "--batch",
+      "64",
+      "--capture",
+      "6",
+      "12",
+      "24",
+      "48",
+      "96",
+      "192",
+      "384",
+      "--output-dir",
+      "/workspace/dspark-results/dspark-large-batch.iwviRLAg/runs/b64",
+      "--profile-experiment",
+      "target-boundaries",
+      "--profile-stop-after-point",
+      "ctx128-n4-t12-skewed",
+      "--profile-target-layer",
+      "1",
+      "--profile-worker-exit",
+      "--profile-target-attention",
+      "--profile-contexts",
+      "128",
+      "2048",
+      "--profile-output-tokens",
+      "512",
+      "--profile-warmup",
+      "2",
+      "--profile-samples",
+      "5"
+    ],
+    "first_failure": {
+      "source": "engine-failure.json",
+      "receipt": {
+        "schema_version": 1,
+        "phase": "cleanup",
+        "performance_eligible": false,
+        "observed_utc": "2026-09-13T16:13:37.299812+00:00",
+        "point": "ctx128-n4-t12-skewed",
+        "pending_operation": null,
+        "error": "RuntimeError: Profile cleanup forced_cleanup: see cleanup receipt",
+        "observed_frontend_error": "RuntimeError: Profile cleanup forced_cleanup: see cleanup receipt"
+      }
+    },
+    "signals_sent": [],
+    "raw_returncode": 1,
+    "failure_grace_seconds": 24,
+    "term_grace_seconds": 5,
+    "max_runtime_seconds": 3600.0,
+    "stop_file": "/workspace/dspark-results/dspark-large-batch.iwviRLAg/STOP",
+    "started_utc": "2026-09-13T15:58:03.004075+00:00",
+    "observed_utc": "2026-09-13T16:13:37.348476+00:00",
+    "completed_utc": "2026-09-13T16:13:39.967216+00:00"
+  },
+  "residual_processes": [],
+  "residual_source": "generation.log final RESIDUAL_PROCESSES; after forced cleanup, not a natural-exit receipt",
+  "limits": "B64 engine; ten points with actual request counts 1/2/4; no performance or general long-context claim",
+  "native_destructor_root_cause": "UNKNOWN",
+  "performance_eligible": false
+}

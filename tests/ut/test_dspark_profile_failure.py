@@ -33,11 +33,12 @@ ROOT = Path(__file__).parents[2]
 
 @pytest.fixture(autouse=True)
 def cleanup_observer_source(monkeypatch):
-    name = "vllm_ascend.diagnostics.dspark_cleanup"
-    spec = importlib.util.spec_from_file_location(name, ROOT / "vllm_ascend/diagnostics/dspark_cleanup.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    monkeypatch.setitem(sys.modules, name, module)
+    for leaf in ("dspark_cleanup", "dspark_profile_teardown"):
+        name = f"vllm_ascend.diagnostics.{leaf}"
+        spec = importlib.util.spec_from_file_location(name, ROOT / f"vllm_ascend/diagnostics/{leaf}.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        monkeypatch.setitem(sys.modules, name, module)
 
 
 def core_path(relative):
@@ -325,6 +326,14 @@ def test_success_two_points_and_bounded_cleanup(tmp_path, fast_bounds):
 
 
 def load_executor(monkeypatch):
+    name = "vllm_ascend.diagnostics.dspark_profile_teardown"
+    teardown_spec = importlib.util.spec_from_file_location(
+        name, ROOT / "vllm_ascend/diagnostics/dspark_profile_teardown.py"
+    )
+    teardown = importlib.util.module_from_spec(teardown_spec)
+    teardown_spec.loader.exec_module(teardown)
+    monkeypatch.setitem(sys.modules, name, teardown)
+
     class Base:
         def __init__(self, vllm_config, monitor_workers=True):
             self.is_failed = self.shutting_down = False
@@ -405,6 +414,9 @@ def test_frozen_worker_escalation_receipt_controls_frontend_result(
 
         def kill(self):
             self.exitcode = -signal.SIGKILL
+
+        def join(self, timeout):
+            pass  # This fake already publishes its exit status synchronously.
 
     def original_shutdown(self):
         self.shutting_down = True

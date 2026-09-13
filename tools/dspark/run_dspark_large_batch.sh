@@ -84,9 +84,20 @@ PYTEST
         [[ " $* " != *" --profile-operator-capture "* ]] || return 1
         logged local-validation python -m tools.dspark.swa_acceptance audit-local \
             "$acceptance_archive" "$CONF_OUT/local-validation.json" || return "$?"
-        # The archived 22/3/23 tests already passed; only validate this new host entry.
+        # The archived 22/3/23 tests already passed; validate entry and host teardown.
         logged acceptance-entry python -m pytest --noconftest -q -ra \
-            tests/ut/test_dspark_swa_acceptance.py --basetemp "$CONF_OUT/entry-tests" --junitxml "$CONF_OUT/acceptance-entry.xml" || return "$?"
+            tests/ut/test_dspark_swa_acceptance.py tests/ut/test_dspark_profile_teardown.py \
+            tests/ut/test_dspark_worker_exit.py tests/ut/test_dspark_profile_failure.py \
+            tests/ut/test_dspark_post_shutdown.py \
+            --basetemp "$CONF_OUT/entry-tests" --junitxml "$CONF_OUT/acceptance-entry.xml" || return "$?"
+        logged acceptance-entry-check python - "$CONF_OUT/acceptance-entry.xml" <<'PYTEST'
+import sys
+import xml.etree.ElementTree as ET
+cases = ET.parse(sys.argv[1]).getroot().findall('.//testcase')
+assert cases and not any(c.find(k) is not None for c in cases for k in ('failure', 'error', 'skipped'))
+print(f'Host entry/teardown: {len(cases)} passed, zero failures/skips; no NPU or model verification claimed')
+PYTEST
+        test "$?" -eq 0 || return 1
     else
     logged focused python -m pytest -q -ra \
         tests/ut/test_dspark_repeated_inputs.py tests/ut/test_dspark_startup_cost_profile.py \

@@ -18,6 +18,7 @@ from pathlib import Path
 from vllm.v1.executor.multiproc_executor import MultiprocExecutor
 
 from vllm_ascend.diagnostics.dspark_cleanup import EXECUTOR_FORCE_MESSAGES, ShutdownForceObserver
+from vllm_ascend.diagnostics.dspark_profile_teardown import reap_workers
 
 
 def process_status(handle):
@@ -182,6 +183,16 @@ class ProfileMultiprocExecutor(MultiprocExecutor):
             if watch is not None:
                 watch.close()
             logger.removeHandler(observer)
+            # Core's escalation returns immediately after kill(). Reap owned
+            # handles before publishing status, within the existing frontend
+            # budget (5s grace + 4s TERM + <=1s join, frontend 12s).
+            try:
+                state["reap"] = reap_workers(workers)
+                if any(row["status"] != "reaped" for row in state["reap"]["workers"]):
+                    state["recording_error"] = state["recording_error"] or "Worker reap incomplete; see reap receipt"
+            except Exception as error:
+                state["reap"] = {"status": "unavailable", "error": f"{type(error).__name__}: {error}"}
+                state["recording_error"] = state["recording_error"] or "Worker reap unavailable; see reap receipt"
             state.update(
                 elapsed_seconds=time.monotonic() - started, finished_utc=datetime.now(timezone.utc).isoformat()
             )

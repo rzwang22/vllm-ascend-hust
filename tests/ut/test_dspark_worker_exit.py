@@ -171,6 +171,8 @@ def load_integration(monkeypatch, trace_module):
     module("vllm.v1.executor", multiproc_executor=core)
     module("vllm.distributed", parallel_state=parallel)
     monkeypatch.setitem(sys.modules, "vllm_ascend.diagnostics.dspark_worker_exit", trace_module)
+    teardown = load_source("teardown_test", ROOT / "vllm_ascend/diagnostics/dspark_profile_teardown.py")
+    monkeypatch.setitem(sys.modules, "vllm_ascend.diagnostics.dspark_profile_teardown", teardown)
     post = load_source("post_shutdown_test", ROOT / "vllm_ascend/diagnostics/dspark_post_shutdown.py")
     monkeypatch.setitem(sys.modules, "vllm_ascend.diagnostics.dspark_post_shutdown", post)
     # Interpreter hooks are exercised in disposable subprocesses, not pytest.
@@ -199,6 +201,8 @@ def test_actual_death_queue_loop_and_shutdown_path(monkeypatch, trace, trace_mod
     runner.attn_groups = [2]
     runner.speculator = object()
     runner.model = object()
+    runner._dspark_benchmark_replay_observer = SimpleNamespace(close=lambda: calls.append("close_full_observer"))
+    runner._dspark_cost_profiler = SimpleNamespace(close=lambda: calls.append("close_profile_observer"))
     worker = impl.ProfileNPUWorker.__new__(impl.ProfileNPUWorker)
     worker._exit_trace = trace
     worker.profiler = None
@@ -248,6 +252,8 @@ def test_actual_death_queue_loop_and_shutdown_path(monkeypatch, trace, trace_mod
     else:
         proc.shutdown()
         assert calls == [
+            "close_full_observer",
+            "close_profile_observer",
             "probe",
             "kv_transfer",
             "synchronize",

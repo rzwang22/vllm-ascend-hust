@@ -43,6 +43,8 @@ class _FullReplayObserver:
         self.manager = runner.cudagraph_manager
         self.original_execute = runner.execute_model
         self.original_fullgraph = self.manager.run_fullgraph
+        self.execute_had_local = "execute_model" in vars(runner)
+        self.fullgraph_had_local = "run_fullgraph" in vars(self.manager)
         self.observer_id = str(uuid4())
         self.pending: list[Any] | None = None
         self.shapes: dict[tuple[int, int], int] = {}
@@ -79,6 +81,24 @@ class _FullReplayObserver:
                 self.nan_diagnostic.phase = "startup_profile"
         runner.execute_model = self.execute_model
         self.manager.run_fullgraph = self.run_fullgraph
+
+    def close(self):
+        """Remove the outermost host wrappers, preserving preexisting methods."""
+        if self.runner is None:
+            return
+        for obj, name, installed, original, had_local in (
+            (self.runner, "execute_model", self.execute_model, self.original_execute, self.execute_had_local),
+            (self.manager, "run_fullgraph", self.run_fullgraph, self.original_fullgraph, self.fullgraph_had_local),
+        ):
+            if getattr(obj, name) == installed:
+                if had_local:
+                    setattr(obj, name, original)
+                else:
+                    delattr(obj, name)
+        if getattr(self.nan_diagnostic, "profile_runner", None) is self.runner:
+            self.nan_diagnostic.profile_runner = None
+        self.original_execute = self.original_fullgraph = None
+        self.runner = self.manager = self.nan_diagnostic = self.pending = None
 
     def execute_model(
         self,

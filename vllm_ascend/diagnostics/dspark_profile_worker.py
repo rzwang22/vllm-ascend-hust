@@ -152,6 +152,7 @@ class ProfileNPUWorker(NPUWorker):
         # Lazy imports occur only during teardown, after the ordinary worker has
         # loaded its real profiler/model runner and installed distributed patches.
         from vllm_ascend.attention import path_probe
+        from vllm_ascend.diagnostics.dspark_profile_teardown import shutdown_profile_observers
         from vllm_ascend.worker import worker as worker_module
 
         trace = self._exit_trace
@@ -165,6 +166,10 @@ class ProfileNPUWorker(NPUWorker):
                 else:
                     trace.record(f"ascend.{name}", "absent")
             runner = getattr(self, "model_runner", None)
+            for name in ("_dspark_benchmark_replay_observer", "_dspark_cost_profiler"):
+                observer = getattr(runner, name, None)
+                if observer is not None:
+                    scope.enter_context(trace.wrapping(observer, "close", f"profile.{name}.close"))
             if runner is not None and callable(getattr(runner, "shutdown", None)):
                 module = inspect.getmodule(runner.shutdown)
                 scope.enter_context(trace.wrapping(runner, "shutdown", "model_runner.shutdown"))
@@ -175,4 +180,9 @@ class ProfileNPUWorker(NPUWorker):
                     scope.enter_context(
                         trace.wrapping(module, "free_before_shutdown", "model_runner.free_before_shutdown")
                     )
-            return trace.call("ascend.worker.shutdown", super().shutdown)
+            return trace.call(
+                "profile.observers_and_worker.shutdown",
+                shutdown_profile_observers,
+                runner,
+                lambda: trace.call("ascend.worker.shutdown", super(ProfileNPUWorker, self).shutdown),
+            )

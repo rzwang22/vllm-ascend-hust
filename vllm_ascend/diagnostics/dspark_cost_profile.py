@@ -41,6 +41,8 @@ class IsolatedCostProfiler:
         self.last_full_batch = None
         self.graph = runner.cudagraph_manager.run_fullgraph
         self.draft = runner.speculator._execute_draft
+        self.graph_had_local = "run_fullgraph" in vars(runner.cudagraph_manager)
+        self.draft_had_local = "_execute_draft" in vars(runner.speculator)
         runner.cudagraph_manager.run_fullgraph = self.target
         runner.speculator._execute_draft = self.propose
         self.observation = None
@@ -62,6 +64,31 @@ class IsolatedCostProfiler:
                 self.observation = AuxiliaryProfileObservation(runner, options)
             else:
                 self.observation = ProfileObservation(runner, options)
+
+    def close(self):
+        """Unwind host wrappers before Core releases their underlying resources.
+
+        Called after the worker dispatch loop has stopped. No replay, snapshot,
+        device wait or graph destruction occurs here. Core still owns the
+        runner, model and speculator until its existing shutdown/GC sequence.
+        """
+        if self.runner is None:
+            return
+        if self.observation is not None:
+            self.observation.close()
+        for obj, name, installed, original, had_local in (
+            (self.runner.cudagraph_manager, "run_fullgraph", self.target, self.graph, self.graph_had_local),
+            (self.runner.speculator, "_execute_draft", self.propose, self.draft, self.draft_had_local),
+        ):
+            if getattr(obj, name) == installed:
+                if had_local:
+                    setattr(obj, name, original)
+                else:
+                    delattr(obj, name)
+        self.observation = self.graph = self.draft = self.runner = None
+        self.last_full_batch = None
+        # Events remain owned by the closed profiler on the runner; none are
+        # queried, synchronized or explicitly destroyed during this host detach.
 
     def timed(self, kind, size, function, argument):
         batch = self.runner.input_batch
