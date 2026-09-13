@@ -249,40 +249,63 @@ def run(capsule, mode, metadata, watch=None):
     def invoke():
         nonlocal before, after
         if watch is not None:
+            watch["python_invocations"] = watch.get("python_invocations", 0) + 1
             before = inputs["ori_kv"][watch["block"], watch["offset"]].clone()
         output = op(q, **inputs, **params)[0]
         if watch is not None:
             after = inputs["ori_kv"][watch["block"], watch["offset"]].clone()
         return output
 
-    def observe(phase):
+    def observe(phase, executed):
         if watch is not None:
-            from tools.dspark.operator_slot_controls import save_watch
+            from tools.dspark.operator_slot_controls import record_capture, save_watch
 
-            save_watch(watch, phase, before, after)
+            if executed:
+                save_watch(watch, phase, before, after)
+            else:
+                record_capture(watch)
 
+    snapshots = execute_replays(invoke, observe, mode, torch.npu, watch)
+    return snapshots, inputs["metadata"].cpu(), runtime_identity()
+
+
+def execute_replays(invoke, observe, mode, npu, watch=None):
+    """Capture records work; only warmup/eager/explicit replay produces observations."""
+
+    def begin(phase):
+        if watch is not None:
+            watch["active_phase"] = phase
+
+    snapshots = []
     if mode == "aclgraph":
-        warm_stream = torch.npu.Stream()
-        warm_stream.wait_stream(torch.npu.current_stream())
-        with torch.npu.stream(warm_stream):
+        begin("warmup")
+        warm_stream = npu.Stream()
+        warm_stream.wait_stream(npu.current_stream())
+        with npu.stream(warm_stream):
             invoke()
-        torch.npu.current_stream().wait_stream(warm_stream)
-        observe("warmup")
-        graph = torch.npu.NPUGraph()
-        with torch.npu.graph(graph):
+        npu.current_stream().wait_stream(warm_stream)
+        observe("warmup", True)
+        begin("capture")
+        graph = npu.NPUGraph()
+        with npu.graph(graph):
             output = invoke()
-        observe("capture")
-        snapshots = []
+        observe("capture", False)  # no read of graph-allocated clone storage
         for iteration in range(3):
+            phase = f"replay-{iteration}"
+            begin(phase)
+            if watch is not None:
+                watch["replays_submitted"] = iteration + 1
             graph.replay()
             snapshots.append(output.cpu().clone())
-            observe(f"replay-{iteration}")
+            observe(phase, True)
     else:
-        snapshots = []
         for iteration in range(3):
+            phase = f"eager-{iteration}"
+            begin(phase)
             snapshots.append(invoke().cpu())
-            observe(f"eager-{iteration}")
-    return snapshots, inputs["metadata"].cpu(), runtime_identity()
+            observe(phase, True)
+    begin("complete")
+    return snapshots
 
 
 def compare_output(output, reference, valid):
@@ -351,16 +374,26 @@ def main():
         watch = {"block": args.slot_block, "offset": args.slot_offset, "snapshots": [], "records": []}
     ref = reference(capsule)
     torch.save(ref, args.output / "reference.pt")
-    outputs, metadata, runtime = (
-        ([], None, runtime_identity())
-        if args.mode == "reference"
-        else run(capsule, args.mode, args.metadata, watch=watch)
-    )
-    if watch is not None:
-        torch.save(watch["snapshots"], args.output / "slot-watch.pt")
-        (args.output / "slot-watch.json").write_text(
-            json.dumps({k: v for k, v in watch.items() if k != "snapshots"}, indent=2) + "\n"
+    try:
+        outputs, metadata, runtime = (
+            ([], None, runtime_identity())
+            if args.mode == "reference"
+            else run(capsule, args.mode, args.metadata, watch=watch)
         )
+    except BaseException as error:
+        if watch is not None:
+            from tools.dspark.operator_slot_controls import write_watch
+
+            watch["error"] = repr(error)
+            try:
+                write_watch(watch, args.output)
+            except Exception as export_error:
+                print(f"Watch export failed (original error retained): {export_error}", file=sys.stderr)
+        raise
+    if watch is not None:
+        from tools.dspark.operator_slot_controls import write_watch
+
+        write_watch(watch, args.output)
     if outputs:
         torch.save({"outputs": outputs, "metadata": metadata}, args.output / "replay.pt")
     valid = int(capsule["values"]["cu_seqlens_q"][-1])
@@ -368,7 +401,7 @@ def main():
         "capsule": file_identity(args.capsule),
         "identity": capsule["identity"],
         "intervention": intervention,
-        "slot_watch": None if watch is None else watch["records"],
+        "slot_watch": None if watch is None else {k: v for k, v in watch.items() if k != "snapshots"},
         "captured_output_scope": "original capture; not an observation of counterfactual input"
         if intervention
         else "original capture",

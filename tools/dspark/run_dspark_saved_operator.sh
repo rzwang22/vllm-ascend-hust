@@ -75,11 +75,29 @@ if test -n "$slot_controls"; then
   logged watch-preflight timeout --signal=TERM --kill-after=15s 180s python -m pytest -q -ra \
     tests/ut/test_dspark_operator_slot_controls.py::test_npu_watch_observes_each_graph_replay \
     --basetemp "$out/watch-test" --junitxml "$out/watch.xml"
-  logged watch-acceptance python - "$out/watch.xml" <<'CHECK'
+  logged watch-acceptance python - "$out/watch.xml" "$out/watch-test" <<'CHECK'
 import sys
 import xml.etree.ElementTree as ET
+from pathlib import Path
+import torch
 cases = ET.parse(sys.argv[1]).getroot().findall('.//testcase')
 assert len(cases) == 1 and not any(c.find(k) is not None for c in cases for k in ('failure', 'error', 'skipped'))
+root = Path(sys.argv[2])
+for name in ('capture-semantics.pt', 'native-watch-evidence.pt'):
+    files = list(root.rglob(name))
+    assert len(files) == 1, (name, files)
+    evidence = torch.load(files[0], map_location='cpu', weights_only=True)
+    if name == 'capture-semantics.pt':
+        assert 'error' not in evidence and evidence['replays_completed'] == 3
+        assert not evidence['stages'][0]['snapshot_valid']
+        assert evidence['stages'][0]['counter'].item() == 0
+    else:
+        watch = evidence['watch']
+        assert 'error' not in evidence['expectations']
+        assert len(watch['snapshots']) == 4 and watch['replays_submitted'] == 3
+        assert [s['phase'] for s in watch['snapshots']] == ['warmup', 'replay-0', 'replay-1', 'replay-2']
+        assert watch['stages'][1]['status'] == 'captured_not_replayed'
+print('WATCH_ACCEPTED: capture unavailable; warmup + 3 executed replay snapshots')
 CHECK
   for control in original-1802 original-1803 1803-from-1802 1802-from-1803; do
     extra=(--mode aclgraph --metadata saved)

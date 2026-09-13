@@ -3,10 +3,13 @@
 """Counterfactual byte accounting; no claim of native NPU execution."""
 
 import copy
+import inspect
 import json
 import os
 import subprocess
 import sys
+from contextlib import contextmanager, nullcontext
+from types import SimpleNamespace
 
 import pytest
 import torch
@@ -129,34 +132,245 @@ def test_formal_reference_cli_keeps_counterfactual_separate(tmp_path, monkeypatc
     assert not report["performance_eligible"]
 
 
+def native_capture_semantics(directory):
+    """Built-in operations only: distinguish deferred capture from a missing stream wait."""
+    import torch_npu
+
+    state = {
+        "torch": str(torch.__version__),
+        "torch_npu": str(torch_npu.__version__),
+        "stages": [],
+        "replays_submitted": 0,
+        "replays_completed": 0,
+    }
+    # Record the actual installed wrapper bytes, not an assumed release implementation.
+    state["graph_wrapper"] = replay.file_identity(inspect.getfile(torch_npu.npu.graph))
+    try:
+        counter = torch.zeros(1, dtype=torch.int32, device="npu")
+        state["active_phase"] = "builtin-warmup"
+        warm_counter = counter.clone()
+        warm_before = warm_counter.clone()
+        warm_counter.add_(1)
+        warm_after = warm_counter.clone()
+        state["warmup_values"] = torch.stack((warm_before, warm_after)).cpu()
+        state["warmup_expected"] = [0, 1]
+        state["warmup_completed"] = 1
+        assert state["warmup_values"].flatten().tolist() == state["warmup_expected"]
+        caller, capture_stream = torch.npu.current_stream(), torch.npu.Stream()
+        capture_stream.wait_stream(caller)
+        graph = torch.npu.NPUGraph()
+        state["active_phase"] = "capture"
+        with torch.npu.graph(graph, stream=capture_stream):
+            before = counter.clone()
+            counter.add_(1)
+            after = counter.clone()
+        # This local dependency rules out pending capture-stream work for the counter read.
+        caller.wait_stream(capture_stream)
+        captured_counter = counter.cpu().clone()
+        state["stages"].append(
+            {
+                "phase": "capture",
+                "counter": captured_counter,
+                "expected_counter": 0,
+                "replays_submitted": 0,
+                "replays_completed": 0,
+                "snapshot_valid": False,
+                "values": None,
+                "reason": "graph clone has not been executed by replay",
+                "before_ptr": before.data_ptr(),
+                "after_ptr": after.data_ptr(),
+            }
+        )
+        assert captured_counter.item() == 0, "capture executed work: deferred-capture contract not established"
+        for _ in range(3):
+            prior = state["replays_completed"]
+            state["active_phase"] = f"replay-{prior}"
+            state["replays_submitted"] += 1
+            graph.replay()
+            packet = torch.stack((before, after, counter)).cpu()
+            state["replays_completed"] += 1
+            state["stages"].append(
+                {
+                    "phase": state["active_phase"],
+                    "values": packet,
+                    "snapshot_valid": True,
+                    "expected": [prior, prior + 1, prior + 1],
+                    "replays_submitted": state["replays_submitted"],
+                    "replays_completed": state["replays_completed"],
+                }
+            )
+            assert packet.flatten().tolist() == [prior, prior + 1, prior + 1]
+        # Recheck owned CPU history after all graph-buffer reuse.
+        for stage in state["stages"][1:]:
+            assert stage["values"].flatten().tolist() == stage["expected"]
+        state["active_phase"] = "complete"
+    except BaseException as error:
+        state["error"] = repr(error)
+        raise
+    finally:
+        torch.save(state, directory / "capture-semantics.pt")
+
+
 def test_npu_watch_observes_each_graph_replay(monkeypatch, tmp_path):
-    """Native SWA and ACLGraph, changing only a synthetic guard slot between calls."""
+    """First prove capture semantics, then exercise the actual watched SWA/ACLGraph path."""
     pytest.importorskip("torch_npu")
     if not torch.npu.is_available():
         pytest.skip("requires actual Ascend SWA and ACLGraph")
     from tests.ut.test_dspark_operator_npu import synthetic
     from tools.dspark import operator_slot_controls as controls
 
-    capture = synthetic(False)
-    restored = {}
-    original_restore, original_save = replay.restore, controls.save_watch
-
-    def restore(capsule, device):
-        result = original_restore(capsule, device)
-        restored.update(result)
-        return result
-
-    def save(watch, phase, before, after):
-        original_save(watch, phase, before, after)
-        restored["ori_kv"][70, 31].add_(1)  # outside synthetic semantic reads
-
-    monkeypatch.setattr(replay, "restore", restore)
-    monkeypatch.setattr(controls, "save_watch", save)
     watch = {"block": 70, "offset": 31, "snapshots": [], "records": []}
-    outputs, _, _ = replay.run(capture, "aclgraph", "regenerated", watch=watch)
-    assert [r["phase"] for r in watch["records"]] == ["warmup", "capture", "replay-0", "replay-1", "replay-2"]
-    for i, snapshot in enumerate(watch["snapshots"]):
-        assert (snapshot["values"] == i).all(), "graph watch is stale or overwritten"
-    assert all(not r["changed_byte_ranges"] for r in watch["records"])
-    assert all(x[:11].isfinite().all() for x in outputs)
-    torch.save(watch, tmp_path / "native-watch-evidence.pt")
+    checks = []
+    state = {"expected_guard": 0, "guard_updates_submitted": 0, "checks": checks}
+    try:
+        native_capture_semantics(tmp_path)
+        capture = synthetic(False)
+        restored = {}
+        original_restore, original_save = replay.restore, controls.save_watch
+
+        def restore(capsule, device):
+            result = original_restore(capsule, device)
+            restored.update(result)
+            return result
+
+        def save(watch, phase, before, after):
+            expected = state["expected_guard"]
+            original_save(watch, phase, before, after)
+            checks.append(
+                {"phase": phase, "expected_guard": expected, "completed_call": watch["records"][-1]["completed_call"]}
+            )
+            # Advances only after a completed observation, never merely after capture.
+            restored["ori_kv"][70, 31].add_(1)
+            state["guard_updates_submitted"] += 1
+            state["expected_guard"] += 1
+
+        monkeypatch.setattr(replay, "restore", restore)
+        monkeypatch.setattr(controls, "save_watch", save)
+        outputs, _, _ = replay.run(capture, "aclgraph", "regenerated", watch=watch)
+        state["outputs"] = outputs
+        assert [r["phase"] for r in watch["records"]] == ["warmup", "replay-0", "replay-1", "replay-2"]
+        assert watch["stages"][1]["status"] == "captured_not_replayed"
+        assert not watch["stages"][1]["snapshot_valid"]
+        assert watch["replays_submitted"] == 3 and watch["python_invocations"] == 2
+        assert len({r["before_ptr"] for r in watch["records"][1:]}) == 1
+        assert len({r["after_ptr"] for r in watch["records"][1:]}) == 1
+        assert all(r["before_ptr"] != r["after_ptr"] for r in watch["records"])
+        for snapshot, check in zip(watch["snapshots"], checks):
+            assert snapshot["phase"] == check["phase"]
+            assert (snapshot["values"] == check["expected_guard"]).all(), "completed call snapshot differs from guard"
+        assert len(checks) == 4 and state["guard_updates_submitted"] == 4
+        assert all(not r["changed_byte_ranges"] for r in watch["records"])
+        assert all(x[:11].isfinite().all() for x in outputs)
+    except BaseException as error:
+        state["error"] = repr(error)
+        raise
+    finally:
+        # Evidence precedes test success and survives assertion/dispatch failures.
+        torch.save({"watch": watch, "expectations": state}, tmp_path / "native-watch-evidence.pt")
+        controls.write_watch(watch, tmp_path)
+
+
+@pytest.mark.parametrize("fail_phase", [None, "replay-1"])
+def test_deferred_capture_never_observed_and_failure_preserves_history(tmp_path, fail_phase):
+    """CPU scheduling regression with deliberately unexecuted capture buffers, not NPU proof."""
+    from tools.dspark import operator_slot_controls as controls
+
+    watch = {"records": [], "snapshots": []}
+    state = {"capturing": False, "guard": 0, "before": None, "after": None}
+    graph = SimpleNamespace()
+    stream = SimpleNamespace(wait_stream=lambda other: None)
+
+    def invoke():
+        if state["capturing"]:
+            state["before"] = torch.full((1, 512), torch.nan)
+            state["after"] = torch.full((1, 512), torch.nan)
+            graph.output = torch.full((1,), torch.nan)
+            return graph.output
+        state["before"] = torch.full((1, 512), float(state["guard"]))
+        state["after"] = state["before"].clone()
+        return torch.ones(1)
+
+    def execute():
+        if watch["active_phase"] == fail_phase:
+            raise RuntimeError("injected replay failure")
+        state["before"].fill_(state["guard"])
+        state["after"].fill_(state["guard"])
+        graph.output.fill_(1)
+
+    @contextmanager
+    def capture(g):
+        state["capturing"] = True
+        try:
+            yield
+        finally:
+            state["capturing"] = False
+
+    def observe(phase, executed):
+        if not executed:
+            controls.record_capture(watch)
+            return
+        controls.save_watch(watch, phase, state["before"], state["after"])
+        state["guard"] += 1
+
+    graph.replay = execute
+    backend = SimpleNamespace(
+        Stream=lambda: stream,
+        current_stream=lambda: stream,
+        stream=lambda s: nullcontext(),
+        NPUGraph=lambda: graph,
+        graph=capture,
+    )
+    try:
+        with pytest.raises(RuntimeError, match="injected") if fail_phase else nullcontext():
+            replay.execute_replays(invoke, observe, "aclgraph", backend, watch)
+    finally:
+        controls.write_watch(watch, tmp_path)
+    saved = torch.load(tmp_path / "slot-watch.pt", weights_only=True)
+    report = json.loads((tmp_path / "slot-watch.json").read_text())
+    assert report["stages"][1]["snapshot_valid"] is False
+    assert all(s["phase"] != "capture" for s in saved)
+    assert len(saved) == (2 if fail_phase else 4)
+    for s in saved:
+        assert (s["values"] == s["completed_call"] - 1).all()
+    assert report["replays_completed"] == (1 if fail_phase else 3)
+    assert report["replays_submitted"] == (2 if fail_phase else 3)
+
+
+def test_cli_failure_exports_partial_watch_and_preserves_error(tmp_path, monkeypatch):
+    from tools.dspark import operator_slot_controls as controls
+
+    base, _ = pair(tmp_path, monkeypatch)
+    torch.save(base, tmp_path / "input.pt")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "operator_replay",
+            str(tmp_path / "input.pt"),
+            "--output",
+            str(tmp_path / "out"),
+            "--watch-slot",
+            "--slot-block",
+            "3",
+            "--slot-offset",
+            "2",
+        ],
+    )
+
+    def fail(capsule, mode, metadata, watch):
+        before = torch.ones(1, 512, dtype=torch.bfloat16)
+        controls.save_watch(watch, "warmup", before, before)
+        controls.record_capture(watch)
+        watch["active_phase"] = "replay-0"
+        watch["replays_submitted"] = 1
+        raise RuntimeError("original native failure")
+
+    monkeypatch.setattr(replay, "run", fail)
+    with pytest.raises(RuntimeError, match="original native failure"):
+        replay.main()
+    record = json.loads((tmp_path / "out/slot-watch.json").read_text())
+    assert record["error"] == "RuntimeError('original native failure')"
+    assert record["active_phase"] == "replay-0" and record["replays_completed"] == 0
+    assert record["completed_calls"] == 1 and not record["stages"][1]["snapshot_valid"]
+    packet = torch.load(tmp_path / "out/slot-watch.pt", map_location="cpu", weights_only=True)
+    assert len(packet) == 1 and (packet[0]["values"] == 1).all()

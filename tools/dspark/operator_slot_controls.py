@@ -3,6 +3,7 @@
 """Explicit counterfactual copies of one physical KV slot; never a production fix."""
 
 import hashlib
+import json
 
 import torch
 
@@ -96,13 +97,51 @@ def replace_slot(base, donor, block, offset):
 def save_watch(watch, phase, before, after):
     """One 2-slot D2H per completed standalone invocation; no global sync."""
     packet = torch.stack((before, after)).cpu()
-    watch["snapshots"].append({"phase": phase, "values": packet})
+    completed = len(watch["records"]) + 1
+    state = {
+        "phase": phase,
+        "status": "completed",
+        "snapshot_valid": True,
+        "completed_call": completed,
+        "replays_submitted": watch.get("replays_submitted", 0),
+        "replays_completed": sum(r["phase"].startswith("replay-") for r in watch["records"])
+        + int(phase.startswith("replay-")),
+        "before_ptr": before.data_ptr(),
+        "after_ptr": after.data_ptr(),
+    }
+    watch.setdefault("stages", []).append(state)
+    watch["snapshots"].append({**state, "values": packet})
     watch["records"].append(
         {
-            "phase": phase,
+            **state,
             "before_sha256": slot_hash(packet[0]),
             "after_sha256": slot_hash(packet[1]),
             "changed_byte_ranges": changed_ranges(raw_bytes(packet[0]), raw_bytes(packet[1])),
             "d2h_bytes": packet.numel() * packet.element_size(),
         }
     )
+
+
+def record_capture(watch):
+    """No snapshot: capture_end does not submit graph execution."""
+    watch.setdefault("stages", []).append(
+        {
+            "phase": "capture",
+            "status": "captured_not_replayed",
+            "snapshot_valid": False,
+            "completed_calls": len(watch["records"]),
+            "replays_submitted": 0,
+        }
+    )
+
+
+def write_watch(watch, directory):
+    """Persist partial evidence too; CPU packets already own their storage."""
+    torch.save(watch["snapshots"], directory / "slot-watch.pt")
+    report = {k: v for k, v in watch.items() if k != "snapshots"}
+    report.update(
+        schema=2,
+        completed_calls=len(watch["records"]),
+        replays_completed=sum(r["phase"].startswith("replay-") for r in watch["records"]),
+    )
+    (directory / "slot-watch.json").write_text(json.dumps(report, indent=2) + "\n")

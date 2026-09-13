@@ -88,14 +88,17 @@ FP32位视图最大幅值约2.9663只是线索；这些文件没有其他层/压
 反向对照的 Q 等输入仍属于1802，不能预设必须产生与1803相同的head集合。
 CPU FP32是算术反事实，float64 sink-aware reference另行保留；两者均不冒充原生kernel验证。
 
-仅在无权重 replay 入口增加默认关闭的 `--watch-slot`：warmup、capture、三次replay都在
-实际 native attention 调用前后复制该1024字节槽位，保存五对拥有独立CPU存储的快照及字节差异。
-图内前后 clone 每轮重放执行；不在host补写设备回执，不增加模型内切点。
-每个完成阶段一次2KB D2H，共5次/10KB每组；图内两份1KB缓冲，栈叠临时2KB，
-保存CPU数据10KB。新增clone/局部读取和D2H等待可能影响局部时序，故四组使用同样观察设置，
-并与已归档无watch基线比较。保持已有stream顺序，无全局同步。
+后续 qe7Lb9dE 预检暴露了旧版本把capture当执行的问题，见
+[快照时序修复](PROFILE_WATCH_CAPTURE.md)。以下为修正后的验收约定：
+仅在无权重 replay 入口增加默认关闭的 `--watch-slot`：warmup、三次显式replay在
+实际 native attention 调用前后复制该1024字节槽位，保存四对拥有独立CPU存储的快照及字节差异。
+capture阶段只记 `captured_not_replayed`，`snapshot_valid=false`，不读取尚未执行的clone。
+图内前后clone每轮replay执行，CPU数据在下一轮buffer复用前取得所有权。
+每个完成阶段一次2KB D2H，共4次/8KB每组；图内两份1KB缓冲，栈叠临时2KB，保存CPU数据8KB。
+新增clone/局部读取和D2H等待可能影响局部时序，四组使用同样观察设置，
+并与已归档无watch基线比较。保持已有stream顺序，无新增全局同步。
 
-该观察只回答**所选槽位是否在单算子的warmup/capture/replay调用中改变**。
+该观察只回答**所选槽位是否在单算子的warmup/显式replay调用中改变**。
 不能由“未改变”判定完整模型中没有其他writer；若改变，也需复核前后读顺序和实际算子调用后再归因。
 先用真实NPU小型合成用例逐阶段更新独立guard槽位，证明图内快照确实随每轮变化且不被复用覆盖；
 预检零跳过后才运行四组真实数据。它不加载权重，也不把合成输入当原始故障复现。
@@ -111,7 +114,7 @@ CPU快照所有权、driver失败即停/退出码/归档；新NPU用例必须实
 执行全仓 `bash format.sh ci`，返回1；8个失败hook及78个被自动格式化的无关文件与前轮基线一致，
 没有自动修改本次文件；没有把这些无关改动带入工作区，不能报告全仓CI通过。
 
-验收顺序：预检1 passed零跳过；四组各3份输出和5对watch快照齐全，实际输入哈希及原格式/metadata
+验收顺序：预检1 passed零跳过；四组各3份输出和4对watch快照齐全，实际输入哈希及原格式/metadata
 保留，逐行/head NaN/Inf、有限幅值和误差写入result，OPP身份一致。
 预期用于检验“单槽位变化足以触发/消除异常”与“还需其他状态”，以及“该算子自身改变该槽位”
 与“完整模型中其他调用/资源更新改变该槽位”。不把预期写成强制PASS条件，也不吞掉数值异常。
