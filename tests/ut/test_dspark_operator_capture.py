@@ -2,8 +2,13 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Real-call capsules on CPU; no claim of custom NPU kernel reproduction."""
 
+import hashlib
 import importlib.util
 import json
+import os
+import subprocess
+import sys
+import tarfile
 from pathlib import Path
 from types import SimpleNamespace as NS
 
@@ -279,3 +284,84 @@ def test_unmapped_guard_is_preserved_but_required_page_is_rejected(tmp_path, mon
     capsule["values"]["page_ids"][0, 1] = -1
     with pytest.raises(ValueError, match="required page"):
         replay.validate(capsule)
+
+
+def test_compare_output_keeps_partial_head_errors_and_excludes_padding():
+    ref = torch.zeros(3, 2, 4, dtype=torch.float64)
+    output = ref.clone()
+    output[0, 1, 0] = torch.nan
+    output[1, 0, 2] = torch.inf
+    output[1, 1, 0] = 2
+    output[2] = torch.nan  # padding is not a failed valid row
+    result = replay.compare_output(output, ref, 2)
+    assert result["nan_row_heads"] == [[0, 1]]
+    assert result["inf_row_heads"] == [[1, 0]]
+    assert result["nan_components_per_row_head"] == [[0, 1], [0, 0]]
+    assert result["finite_comparison_elements"] == 14 and result["excluded_elements"] == 2
+    assert result["finite_max_abs_error"] == 2
+    assert result["finite_mean_abs_error"] == pytest.approx(2 / 14)
+    assert replay.compare_output(output * torch.nan, ref, 2)["finite_max_abs_error"] is None
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_saved_operator_driver_order_and_failure_archive(tmp_path, monkeypatch, fail):
+    """Execute the shell driver with fake operator processes, not fake NPU results."""
+    workspace = tmp_path / "workspace"
+    repo = workspace / "vllm-ascend-hust"
+    repo.mkdir(parents=True)
+    source = workspace / "dspark-results/dspark-large-batch.ZvqiDthD/runs/b64/worker-first-failure"
+    source.mkdir(parents=True)
+    script = (ROOT / "tools/dspark/run_dspark_saved_operator.sh").read_text().replace("/workspace", str(workspace))
+    for epoch, old_hash in (
+        (1803, "f065f77610d99505069c2077125a9bb8db1a2211af1200c05f8a16cd1d6001d8"),
+        (1802, "ba628505667035fd9c146d43a12f0709a50863ee24af59bffa634b48716673fd"),
+    ):
+        content = f"driver-only fixture {epoch}".encode()
+        (source / f"rank-0-operator-{epoch}.pt").write_bytes(content)
+        script = script.replace(old_hash, hashlib.sha256(content).hexdigest())
+    (source / "rank-0-operator-runtime.json").write_text("{}")
+    driver = tmp_path / "driver.sh"
+    driver.write_text(script)
+    binaries = tmp_path / "bin"
+    binaries.mkdir()
+    calls = tmp_path / "calls.jsonl"
+    shim = binaries / "shim"
+    shim.write_text(
+        f"#!{sys.executable}\n"
+        "import hashlib,json,os,sys\nfrom pathlib import Path\n"
+        "name=Path(sys.argv[0]).name; a=sys.argv[1:]\n"
+        "if name=='git':\n"
+        " if 'branch' in a: print('feat/dspark')\n"
+        " elif 'rev-parse' in a: print('897306c43bf800e2480cb5c0f3e2da408d85a2fd' if '-C' in a else 'test-plugin')\n"
+        "elif name=='timeout': os.execvp(a[3], a[3:])\n"
+        "elif name=='sha256sum':\n"
+        " if a[0]=='-c':\n"
+        "  for line in Path(a[1]).read_text().splitlines():\n"
+        "   expected,path=line.split('  ',1); assert hashlib.sha256(Path(path).read_bytes()).hexdigest()==expected\n"
+        " else: print(hashlib.sha256(Path(a[0]).read_bytes()).hexdigest(), a[0])\n"
+        "elif name=='python':\n"
+        f" with open({str(calls)!r},'a') as f: f.write(json.dumps(a)+'\\n')\n"
+        " if a[0]=='-': sys.stdin.read()\n"
+        f" elif {fail!r} and a[a.index('--output')+1].endswith('aclgraph-saved-1802'): sys.exit(7)\n"
+        " else: Path(a[a.index('--output')+1]).mkdir()\n"
+    )
+    shim.chmod(0o755)
+    for name in ("git", "timeout", "sha256sum", "python"):
+        (binaries / name).symlink_to(shim)
+    monkeypatch.setenv("PATH", str(binaries) + os.pathsep + os.environ["PATH"])
+    monkeypatch.setenv("ASCEND_CUSTOM_OPP_PATH", str(tmp_path))
+    process = subprocess.run(["bash", str(driver), "test-plugin"], text=True, capture_output=True, timeout=30)
+    assert process.returncode == (7 if fail else 0), process.stdout + process.stderr
+    commands = [json.loads(line) for line in calls.read_text().splitlines()]
+    cases = [Path(a[a.index("--output") + 1]).name for a in commands if "--output" in a]
+    expected = [
+        f"{mode}-{epoch}"
+        for mode in ("aclgraph-saved", "eager-saved", "aclgraph-regenerated")
+        for epoch in (1803, 1802)
+    ]
+    assert cases == (expected[:2] if fail else expected)
+    output = next(p for p in (workspace / "dspark-results").glob("dspark-saved-operator.*") if p.is_dir())
+    assert f"MAIN_RC={7 if fail else 0}" in (output / "status.txt").read_text()
+    assert (output / "aclgraph-saved-1802.pipestatus").read_text().strip() == ("7 0" if fail else "0 0")
+    with tarfile.open(str(output) + "-evidence.tar.gz") as archive:
+        assert any(name.endswith("/status.txt") for name in archive.getnames())

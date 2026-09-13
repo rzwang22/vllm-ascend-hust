@@ -265,6 +265,28 @@ def run(capsule, mode, metadata):
     return snapshots, inputs["metadata"].cpu(), runtime_identity()
 
 
+def compare_output(output, reference, valid):
+    """Report valid row/head failures and errors on the finite intersection only."""
+    output, reference = output[:valid].double(), reference[:valid].double()
+    finite = output.isfinite() & reference.isfinite()
+    errors = (output - reference).abs()[finite]
+    return {
+        "nan_row_heads": output.isnan().any(-1).nonzero().tolist(),
+        "inf_row_heads": output.isinf().any(-1).nonzero().tolist(),
+        "nan_components_per_row_head": output.isnan().sum(-1).tolist(),
+        "inf_components_per_row_head": output.isinf().sum(-1).tolist(),
+        "output_finite_abs_max": float(output[output.isfinite()].abs().max()) if output.isfinite().any() else None,
+        "reference_finite_abs_max": float(reference[reference.isfinite()].abs().max())
+        if reference.isfinite().any()
+        else None,
+        "finite_comparison_elements": int(finite.sum()),
+        "excluded_elements": int((~finite).sum()),
+        "finite_max_abs_error": float(errors.max()) if errors.numel() else None,
+        "finite_mean_abs_error": float(errors.mean()) if errors.numel() else None,
+        "finite_rmse": float(errors.square().mean().sqrt()) if errors.numel() else None,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("capsule", type=Path)
@@ -302,6 +324,8 @@ def main():
             float((x[:valid].double() - ref[:valid]).abs().max()) if torch.isfinite(x[:valid]).all() else None
             for x in outputs
         ],
+        "captured_comparison": compare_output(capsule["values"]["output"], ref, valid),
+        "replay_comparisons": [compare_output(x, ref, valid) for x in outputs],
         "runtime": runtime,
     }
     (args.output / "result.json").write_text(json.dumps(result, indent=2) + "\n")

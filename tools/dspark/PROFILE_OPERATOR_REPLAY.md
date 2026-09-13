@@ -7,6 +7,9 @@ Core/custom op、权重、confidence、原 NaN/owner 检查、stream 顺序及�
 后续 operator capsule 格式编号的序列化兼容修复、独立 CPU 读取验证和服务器门槛见
 [序列化修复记录](PROFILE_OPERATOR_SERIALIZATION.md)。
 
+已取得真实输入后的 [ZvqiDthD CPU 审计与单卡重放](PROFILE_SAVED_OPERATOR_ZvqiDthD.md)
+进一步发现：有效历史 KV 可在保持有限时变为极大值，不能用 NaN/Inf flags 代替内容正确性。
+
 ## 归档证据
 
 已直接读取 `dspark-large-batch.Fppa5L9e-evidence.tar.gz`：168成员、235782231展开bytes，
