@@ -277,8 +277,10 @@ def test_real_dispatch_aot_copyback_and_repeated_replay(tmp_path, monkeypatch, s
             pending = {"identity": record}
             capsule.own(pending)
             capsule.save(record, pending, tmp_path)
-            saved = torch.load(tmp_path / f"rank-0-operator-{epoch}.pt", weights_only=True)
+            saved = torch.load(tmp_path / f"rank-0-operator-{epoch}.pt", map_location="cpu", weights_only=True)
             assert saved["values"]["receipts"].tolist() == [epoch] * 2
+            assert all(v["npu_format"] is None or type(v["npu_format"]) is int for v in saved["layouts"].values())
+            assert torch.serialization.get_unsafe_globals_in_checkpoint(tmp_path / f"rank-0-operator-{epoch}.pt") == []
             torch.testing.assert_close(saved["values"]["q"], x[:, None, :].cpu(), equal_nan=True)
             assert bank.receipts[:9].cpu().flatten().tolist() == [epoch] * 9
             assert bank.attention_receipts.cpu().flatten().tolist() == ([-1] * 12 if shared else [epoch] * 12)

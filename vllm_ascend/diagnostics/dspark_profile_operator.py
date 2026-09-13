@@ -6,6 +6,7 @@ import hashlib
 import json
 import sys
 import time
+from enum import Enum
 from pathlib import Path
 
 import torch
@@ -19,6 +20,7 @@ GUARD_PAGES = 2
 def descriptor(tensor):
     backend = sys.modules.get("torch_npu")
     base = tensor._base
+    npu_format = backend.get_npu_format(tensor) if tensor.device.type == "npu" and backend else None
     return {
         "shape": list(tensor.shape),
         "stride": list(tensor.stride()),
@@ -28,8 +30,21 @@ def descriptor(tensor):
         "storage_ptr": tensor.untyped_storage().data_ptr(),
         "storage_nbytes": tensor.untyped_storage().nbytes(),
         "base_dtype": str(base.dtype) if base is not None else str(tensor.dtype),
-        "npu_format": backend.get_npu_format(tensor) if tensor.device.type == "npu" and backend else None,
+        "npu_format": None if npu_format is None else int(npu_format),
     }
+
+
+def plain_metadata(value):
+    """Keep capsule metadata independent of backend classes for weights-only load."""
+    if value is None or type(value) in (bool, int, float, str):
+        return value
+    if isinstance(value, Enum):
+        return plain_metadata(value.value)
+    if type(value) is dict:
+        return {plain_metadata(k): plain_metadata(v) for k, v in value.items()}
+    if type(value) in (list, tuple):
+        return type(value)(plain_metadata(v) for v in value)
+    raise TypeError(f"Unsupported operator capsule metadata type: {type(value).__qualname__}")
 
 
 def byte_pack(tensors):
@@ -220,6 +235,9 @@ class OperatorCapture:
             == record["query_start_loc_cpu"],
             "host_transfer_seconds": time.monotonic() - started,
         }
+        # Values are owned CPU tensors; only metadata is normalized. Do not
+        # stringify backend objects or register pickle globals to admit them.
+        capsule = {**plain_metadata({k: v for k, v in capsule.items() if k != "values"}), "values": values}
         path = Path(directory) / f"rank-{record['rank']}-operator-{record['execution']}.pt"
         temporary = path.with_suffix(".tmp")
         torch.save(capsule, temporary)

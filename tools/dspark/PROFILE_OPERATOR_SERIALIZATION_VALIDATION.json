@@ -1,0 +1,62 @@
+{
+  "kind": "diagnostic serialization compatibility fix; CPU/source/mock validation, not NPU validation",
+  "baseline_plugin": "8b1fc3fa4df12c90af9913b024e98d148204dba0",
+  "core": "897306c43bf800e2480cb5c0f3e2da408d85a2fd",
+  "local": {
+    "python": "3.12.13",
+    "torch": "2.10.0",
+    "platform": "macOS CPU",
+    "torch_npu": "not installed"
+  },
+  "server_reported_not_independently_verified": {
+    "python": "3.12.13",
+    "torch": "2.10.0+cpu",
+    "torch_npu": "2.10.0.post2",
+    "result_directory": "/workspace/dspark-results/dspark-compile-check.ShmgeaMM",
+    "archive_read": false
+  },
+  "related_suite": {
+    "passed": 97,
+    "skipped": 6,
+    "files": 7,
+    "conftest": "--noconftest",
+    "log_sha256": "ea47d21a688e7ff79e9a4ffcab0307e85e105b66df46fc547c86da58c5c078c6",
+    "junit_sha256": "b6805b22b0d76ab1637ff1d6cfd190666b16a9a7eb44114dabfd4399b4e09c65"
+  },
+  "skips": [
+    "4 real native SWA eager/ACLGraph controls: torch_npu unavailable",
+    "2 actual dispatcher npugraph_ex/ACLGraph parameters: torch_npu unavailable"
+  ],
+  "serialization": {
+    "regressions_passed": 22,
+    "legacy_enum_failure_reproduced": true,
+    "restricted_complete_capsule_load": "passed for None/int/IntEnum via formal replay CLI in fresh CPU processes",
+    "unsafe_globals": [],
+    "torch_npu_imported_in_child": false,
+    "safe_globals_added": false,
+    "final_test_file_passed": 22,
+    "final_log_sha256": "92f6a759cf61ee33265b244d8dbecf312b2b6e0a0c50385860009f750f05baf7"
+  },
+  "cpu_dispatcher_AOT": "both shared-storage negative control and independent-storage repeated replay passed",
+  "NPU_serialization_and_replay": "PENDING",
+  "original_attention_NaN": "OPEN; no model execution in this round",
+  "worker_natural_exit": "OPEN; no model execution in this round",
+  "changed_file_hooks": "passed",
+  "full_format_ci": {
+    "returncode": 1,
+    "failed_hooks": [
+      "ruff check",
+      "ruff format",
+      "codespell",
+      "typos",
+      "markdownlint",
+      "Lint GitHub Actions workflow files",
+      "Lint shell scripts",
+      "Check for forbidden imports"
+    ],
+    "auto_modified_files": 78,
+    "auto_modified_task_files": [],
+    "same_hooks_and_modified_paths_as_baseline": true,
+    "execution": "bash format.sh ci in isolated worktree with staged patch; unrelated formatter edits discarded"
+  }
+}

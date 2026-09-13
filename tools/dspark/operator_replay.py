@@ -110,6 +110,11 @@ def validate(capsule):
     return capsule
 
 
+def check_npu_format(expected, actual):
+    if expected is not None and (actual is None or int(actual) != expected):
+        raise ValueError("Original NPU format unavailable; no silent format conversion")
+
+
 def restore(capsule, device):
     """Keep original page numbers, descriptor sizes, strides and small-input aliases.
 
@@ -162,8 +167,7 @@ def restore(capsule, device):
         if expected_format is not None and device != "cpu":
             import torch_npu
 
-            if torch_npu.get_npu_format(value) != expected_format:
-                raise ValueError("Original NPU format unavailable; no silent format conversion")
+            check_npu_format(expected_format, torch_npu.get_npu_format(value))
     # Verify all restored views, including aliases, after every copy is complete.
     for name in result.keys() - {"ori_kv"}:
         if not torch.equal(

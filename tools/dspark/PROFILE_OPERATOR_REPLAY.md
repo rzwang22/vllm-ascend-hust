@@ -4,6 +4,9 @@
 Core/custom op、权重、confidence、原 NaN/owner 检查、stream 顺序及退出预算均未修改。
 所有产物 performance_eligible=false，不能生成成本表或性能结论。
 
+后续 operator capsule 格式编号的序列化兼容修复、独立 CPU 读取验证和服务器门槛见
+[序列化修复记录](PROFILE_OPERATOR_SERIALIZATION.md)。
+
 ## 归档证据
 
 已直接读取 `dspark-large-batch.Fppa5L9e-evidence.tar.gz`：168成员、235782231展开bytes，
