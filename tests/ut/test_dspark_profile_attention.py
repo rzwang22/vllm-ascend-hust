@@ -429,7 +429,7 @@ def test_installation_selects_real_nested_impl_and_rejects_other_routes(monkeypa
     else:
         attention.install_attention_probe(bank, model, 1)
         assert impl._dspark_attn_probe is impl.wo_b._dspark_attn_probe is bank.attention_probe
-        assert bank.allocated_bytes == 47024
+        assert bank.allocated_bytes == 1282008
 
 
 @pytest.mark.parametrize("stale", [False, True])

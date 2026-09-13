@@ -1,5 +1,7 @@
 # DSpark attention 诊断：Torch 2.10 静态尺寸兼容性
 
+后续有效窗口证据与局部 KV 来源诊断见 [7wU85bLE](PROFILE_KV_WINDOW.md)。
+
 本轮是**诊断编译兼容性修复**。独立 bank 修复继续保留；原 layer 1 attention NaN 和
 worker 自然退出没有新的模型运行证据，仍未关闭。Core/custom op、模型计算、confidence、
 退出顺序和超时均不变。没有 NPU 或模型运行，Ascend 验证为 **PENDING**。

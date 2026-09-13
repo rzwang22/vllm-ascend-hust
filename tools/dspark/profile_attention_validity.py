@@ -50,6 +50,7 @@ class AttentionValidity:
                         or not raw
                         or raw != [row["execution"]] * len(raw)
                         or row.get("consume_receipts") != raw
+                        or (data.get("kv_required") and row.get("kv_receipts") != [row["execution"]] * 4)
                     ):
                         raise RuntimeError("Attention validity contains stale/missing device receipts")
                 statuses.append(rank)

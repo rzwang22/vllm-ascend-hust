@@ -2208,7 +2208,10 @@ class AscendDSAImpl(DSAAttentionImpl):
             )
             if probe is not None:
                 probe.write("kv_rope", kv)
+                probe.kv.scatter(swa_kv_cache, kv, slot_mapping, 0)
             DeviceOperator.dsa_kv_compress_scatter(swa_kv_cache, kv, slot_mapping)
+            if probe is not None:
+                probe.kv.scatter(swa_kv_cache, kv, slot_mapping, 1)
 
         if is_prefill:
             q = self.cv_wq_b.matmul(q_b_quant, q_b_scale).unflatten(-1, (self.n_local_heads, self.head_dim))
@@ -2722,7 +2725,11 @@ class AscendDSAImpl(DSAAttentionImpl):
                 probe.write("kv_rope", kv)
 
             # swa exec kv
+            if probe is not None:
+                probe.kv.scatter(swa_kv_cache, kv, swa_decode_metadata.slot_mapping, 0)
             DeviceOperator.dsa_kv_compress_scatter(swa_kv_cache, kv, swa_decode_metadata.slot_mapping)
+            if probe is not None:
+                probe.kv.scatter(swa_kv_cache, kv, swa_decode_metadata.slot_mapping, 1)
 
         if self.compress_ratio > 1:
             compressor_decode_metadata = _require_decode_metadata(compressor_attn_metadata)

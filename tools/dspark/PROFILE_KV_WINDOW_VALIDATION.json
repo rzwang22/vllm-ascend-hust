@@ -1,0 +1,53 @@
+{
+  "kind": "CPU/source/mock, not NPU validation of new KV detail",
+  "python": "3.12.13",
+  "torch": "2.10.0 macOS CPU; server Linux 2.10.0+cpu/torch_npu2.10.0.post2",
+  "host_focused": {
+    "passed": 609,
+    "skipped": 5,
+    "seconds": 31.1,
+    "files": 25,
+    "conftest": "--noconftest"
+  },
+  "skips": [
+    "2 true Ascend npugraph_ex/ACLGraph cases missing torch_npu",
+    "3 installed vllm/Ascend cases"
+  ],
+  "archive_preflight": {
+    "passed": 4,
+    "skipped": 0,
+    "scope": "previous commit 9d4c3c6381cad4e6ba878fd63513a75b0a6e26ce only"
+  },
+  "archive_focused": 1089,
+  "new_npu_diagnostic": "PENDING",
+  "production_root_cause": "UNKNOWN",
+  "original_nan": "reproduced in audited archive; not newly run",
+  "worker_exit": "worker_cleanup_incomplete in archive; unchanged",
+  "additional_persistent_bytes_per_rank": 1234984,
+  "additional_packet_bytes_capacity_12": 38632,
+  "log_sha256": "8ec46dbef7f72d206ec3934d4c1be22f74762594a2dc316254308009f1ff8bc3",
+  "final_related_regression": {
+    "passed": 93,
+    "skipped": 2,
+    "seconds": 19.41,
+    "log_sha256": "bcd91d8e692b63ec699306e07e2d1584b28d721215ce4f5d527a2922f266c6af"
+  },
+  "changed_file_hooks": "passed",
+  "full_format_ci": {
+    "returncode": 1,
+    "failed_hooks": [
+      "ruff check",
+      "ruff format",
+      "codespell",
+      "typos",
+      "markdownlint",
+      "Lint GitHub Actions workflow files",
+      "Lint shell scripts",
+      "Check for forbidden imports"
+    ],
+    "baseline_modified_paths": 78,
+    "task_modified_paths": [],
+    "same_hooks_and_paths_as_previous_baseline": true,
+    "execution": "isolated detached worktree with staged patch; no baseline formatting changes kept"
+  }
+}

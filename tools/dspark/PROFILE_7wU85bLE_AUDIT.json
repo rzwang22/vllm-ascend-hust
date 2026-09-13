@@ -1,0 +1,2181 @@
+{
+  "kind": "independent offline archive verification, not a new NPU run",
+  "preflight_passed": 4,
+  "focused_passed": 1089,
+  "ignored_links": [
+    {
+      "path": "pytest/test_real_dispatch_aot_copybaccurrent",
+      "target": "/workspace/dspark-results/dspark-compile-check.7NnzsCBp/pytest/test_real_dispatch_aot_copybac3",
+      "followed": false
+    }
+  ],
+  "points": [
+    {
+      "point": "ctx128-n1-t6-balanced",
+      "raw_sha256": "af693fba2f21ed1b6eaa0f499d5e7d0b1c22d485dd9c5d35ef016d56b4b5c08e"
+    },
+    {
+      "point": "ctx128-n1-t6-skewed",
+      "raw_sha256": "05437922e733f66950f90470800d670c99a70eac36efdc129d260ad7d854d7ce"
+    },
+    {
+      "point": "ctx128-n2-t6-balanced",
+      "raw_sha256": "5af97a6c9cd21aa44f08f5a307be36bd26a857f70ecd7310461b22d3a038c775"
+    },
+    {
+      "point": "ctx128-n2-t6-skewed",
+      "raw_sha256": "72183ec10f343573f67b7b39f065bcfcfd8fc5a145cd1202315f704e75f29b96"
+    },
+    {
+      "point": "ctx128-n2-t12-balanced",
+      "raw_sha256": "d5d5959675f698f6ebab63f89366321af4e2fc41322136d23a46ac7faafaa1bd"
+    },
+    {
+      "point": "ctx128-n2-t12-skewed",
+      "raw_sha256": "be22211061a2b02dba6d5e5d257a755b10f678685fa2bc7f63738e8d64d6e379"
+    },
+    {
+      "point": "ctx128-n4-t6-balanced",
+      "raw_sha256": "8b96ff317c7660584e8a5831d08c1e5738ab1ac3736fcb79e89167d8ce5b8334"
+    },
+    {
+      "point": "ctx128-n4-t6-skewed",
+      "raw_sha256": "e4c0b9d418b8adb671196aa40a420feaab5cfa0e2c1a199dc24fe6a7ce77f7aa"
+    },
+    {
+      "point": "ctx128-n4-t12-balanced",
+      "raw_sha256": "9ae0ad5725b861f09b610e4977c315590dc5bfcba8d24e995c3c067ebb0e8028"
+    }
+  ],
+  "ranks": [
+    {
+      "rank": 0,
+      "first_nan_sha256": "d335a74b16dd1a68c65c2e8436b034dde1e0ad0cdab20bd9762868799b44a216",
+      "rounds": [
+        {
+          "execution": 1800,
+          "proposal_epoch": 1788,
+          "state_row0": {
+            "request_row": 0,
+            "position": 220,
+            "window_start": 93,
+            "window_end": 221,
+            "slot_block": 105,
+            "slot_offset": 28,
+            "expected_block": 105,
+            "expected_offset": 28,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-b5ceb0ef",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1801,
+          "proposal_epoch": 1789,
+          "state_row0": {
+            "request_row": 0,
+            "position": 221,
+            "window_start": 94,
+            "window_end": 222,
+            "slot_block": 105,
+            "slot_offset": 29,
+            "expected_block": 105,
+            "expected_offset": 29,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-b5ceb0ef",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1802,
+          "proposal_epoch": 1790,
+          "state_row0": {
+            "request_row": 0,
+            "position": 222,
+            "window_start": 95,
+            "window_end": 223,
+            "slot_block": 105,
+            "slot_offset": 30,
+            "expected_block": 105,
+            "expected_offset": 30,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-b5ceb0ef",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [
+              0
+            ],
+            "layer.1.residual": [
+              0
+            ],
+            "layer.1.ffn_input": [
+              0
+            ],
+            "layer.1.ffn_output": [
+              0
+            ],
+            "layer.1.output": [
+              0
+            ],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [
+              0
+            ],
+            "layer.1.attention.raw_attention": [
+              0
+            ],
+            "layer.1.attention.inverse_rope": [
+              0
+            ],
+            "layer.1.attention.wo_a": [
+              0
+            ],
+            "layer.1.attention.wo_b_local": [
+              0
+            ]
+          }
+        }
+      ],
+      "events": [
+        {
+          "key": [
+            1802,
+            "RuntimeError",
+            "Ascend DSpark Markov base logits contain NaN."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 0,
+          "stage": "markov",
+          "execution": 1802,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-b67892c5": 6,
+              "batch10-2-96aa4ea9": 6,
+              "batch10-3-b5ceb0ef": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        },
+        {
+          "key": [
+            1803,
+            "ValueError",
+            "Scheduled candidates lack current proposal owners."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 0,
+          "stage": "target_execute",
+          "execution": 1803,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-b67892c5": 6,
+              "batch10-2-96aa4ea9": 6,
+              "batch10-3-b5ceb0ef": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        }
+      ],
+      "route_scope": "capacity catalog, not failure layout",
+      "route": {
+        "layer_name": "model.layers.1.self_attn.attn",
+        "implementation": "AscendDSAImpl",
+        "branch": "decode_swa",
+        "multistream": true,
+        "compress_ratio": 0,
+        "window": 128,
+        "block_size": 32,
+        "kv_shape": [
+          16233,
+          32,
+          1,
+          512
+        ],
+        "slot_shape": [
+          12,
+          2
+        ],
+        "block_table_shape": [
+          2,
+          256
+        ],
+        "mask": {
+          "ori_mask_mode": 4,
+          "left": 127,
+          "right": 0
+        },
+        "operator": "_C_ascend.npu_sparse_attn_sharedkv",
+        "quant_methods": {
+          "wq_a": "AscendW8A8DynamicLinearMethod",
+          "wq_b": "AscendW8A8DynamicLinearMethod",
+          "wkv": "AscendW8A8DynamicLinearMethod",
+          "wo_b": "NoneType"
+        },
+        "wo_b_custom_op": "NoneType",
+        "wo_b_tp_size": 8
+      }
+    },
+    {
+      "rank": 1,
+      "first_nan_sha256": "40bd039bac5aeb33b68b8bce33acaecf683c49024e39669985e59cce7f89a243",
+      "rounds": [
+        {
+          "execution": 1800,
+          "proposal_epoch": 1788,
+          "state_row0": {
+            "request_row": 0,
+            "position": 220,
+            "window_start": 93,
+            "window_end": 221,
+            "slot_block": 105,
+            "slot_offset": 28,
+            "expected_block": 105,
+            "expected_offset": 28,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-b5ceb0ef",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1801,
+          "proposal_epoch": 1789,
+          "state_row0": {
+            "request_row": 0,
+            "position": 221,
+            "window_start": 94,
+            "window_end": 222,
+            "slot_block": 105,
+            "slot_offset": 29,
+            "expected_block": 105,
+            "expected_offset": 29,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-b5ceb0ef",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1802,
+          "proposal_epoch": 1790,
+          "state_row0": {
+            "request_row": 0,
+            "position": 222,
+            "window_start": 95,
+            "window_end": 223,
+            "slot_block": 105,
+            "slot_offset": 30,
+            "expected_block": 105,
+            "expected_offset": 30,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-b5ceb0ef",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [
+              0
+            ],
+            "layer.1.residual": [
+              0
+            ],
+            "layer.1.ffn_input": [
+              0
+            ],
+            "layer.1.ffn_output": [
+              0
+            ],
+            "layer.1.output": [
+              0
+            ],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [
+              0
+            ],
+            "layer.1.attention.raw_attention": [
+              0
+            ],
+            "layer.1.attention.inverse_rope": [
+              0
+            ],
+            "layer.1.attention.wo_a": [
+              0
+            ],
+            "layer.1.attention.wo_b_local": [
+              0
+            ]
+          }
+        }
+      ],
+      "events": [
+        {
+          "key": [
+            1802,
+            "RuntimeError",
+            "Ascend DSpark Markov base logits contain NaN."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 1,
+          "stage": "markov",
+          "execution": 1802,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-b67892c5": 6,
+              "batch10-2-96aa4ea9": 6,
+              "batch10-3-b5ceb0ef": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        },
+        {
+          "key": [
+            1803,
+            "ValueError",
+            "Scheduled candidates lack current proposal owners."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 1,
+          "stage": "target_execute",
+          "execution": 1803,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-b67892c5": 6,
+              "batch10-2-96aa4ea9": 6,
+              "batch10-3-b5ceb0ef": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        }
+      ],
+      "route_scope": "capacity catalog, not failure layout",
+      "route": {
+        "layer_name": "model.layers.1.self_attn.attn",
+        "implementation": "AscendDSAImpl",
+        "branch": "decode_swa",
+        "multistream": true,
+        "compress_ratio": 0,
+        "window": 128,
+        "block_size": 32,
+        "kv_shape": [
+          16233,
+          32,
+          1,
+          512
+        ],
+        "slot_shape": [
+          12,
+          2
+        ],
+        "block_table_shape": [
+          2,
+          256
+        ],
+        "mask": {
+          "ori_mask_mode": 4,
+          "left": 127,
+          "right": 0
+        },
+        "operator": "_C_ascend.npu_sparse_attn_sharedkv",
+        "quant_methods": {
+          "wq_a": "AscendW8A8DynamicLinearMethod",
+          "wq_b": "AscendW8A8DynamicLinearMethod",
+          "wkv": "AscendW8A8DynamicLinearMethod",
+          "wo_b": "NoneType"
+        },
+        "wo_b_custom_op": "NoneType",
+        "wo_b_tp_size": 8
+      }
+    },
+    {
+      "rank": 2,
+      "first_nan_sha256": "b7d3291499005c3e3cbaabc7a3256ba62a1cb910a033562a0599cadf79bc54d7",
+      "rounds": [
+        {
+          "execution": 1800,
+          "proposal_epoch": 1788,
+          "state_row0": {
+            "request_row": 0,
+            "position": 220,
+            "window_start": 93,
+            "window_end": 221,
+            "slot_block": 105,
+            "slot_offset": 28,
+            "expected_block": 105,
+            "expected_offset": 28,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-b5ceb0ef",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1801,
+          "proposal_epoch": 1789,
+          "state_row0": {
+            "request_row": 0,
+            "position": 221,
+            "window_start": 94,
+            "window_end": 222,
+            "slot_block": 105,
+            "slot_offset": 29,
+            "expected_block": 105,
+            "expected_offset": 29,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-b5ceb0ef",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1802,
+          "proposal_epoch": 1790,
+          "state_row0": {
+            "request_row": 0,
+            "position": 222,
+            "window_start": 95,
+            "window_end": 223,
+            "slot_block": 105,
+            "slot_offset": 30,
+            "expected_block": 105,
+            "expected_offset": 30,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-b5ceb0ef",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [
+              0
+            ],
+            "layer.1.residual": [
+              0
+            ],
+            "layer.1.ffn_input": [
+              0
+            ],
+            "layer.1.ffn_output": [
+              0
+            ],
+            "layer.1.output": [
+              0
+            ],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [
+              0
+            ],
+            "layer.1.attention.raw_attention": [
+              0
+            ],
+            "layer.1.attention.inverse_rope": [
+              0
+            ],
+            "layer.1.attention.wo_a": [
+              0
+            ],
+            "layer.1.attention.wo_b_local": [
+              0
+            ]
+          }
+        }
+      ],
+      "events": [
+        {
+          "key": [
+            1802,
+            "RuntimeError",
+            "Ascend DSpark Markov base logits contain NaN."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 2,
+          "stage": "markov",
+          "execution": 1802,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-b67892c5": 6,
+              "batch10-2-96aa4ea9": 6,
+              "batch10-3-b5ceb0ef": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        },
+        {
+          "key": [
+            1803,
+            "ValueError",
+            "Scheduled candidates lack current proposal owners."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 2,
+          "stage": "target_execute",
+          "execution": 1803,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-b67892c5": 6,
+              "batch10-2-96aa4ea9": 6,
+              "batch10-3-b5ceb0ef": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        }
+      ],
+      "route_scope": "capacity catalog, not failure layout",
+      "route": {
+        "layer_name": "model.layers.1.self_attn.attn",
+        "implementation": "AscendDSAImpl",
+        "branch": "decode_swa",
+        "multistream": true,
+        "compress_ratio": 0,
+        "window": 128,
+        "block_size": 32,
+        "kv_shape": [
+          16233,
+          32,
+          1,
+          512
+        ],
+        "slot_shape": [
+          12,
+          2
+        ],
+        "block_table_shape": [
+          2,
+          256
+        ],
+        "mask": {
+          "ori_mask_mode": 4,
+          "left": 127,
+          "right": 0
+        },
+        "operator": "_C_ascend.npu_sparse_attn_sharedkv",
+        "quant_methods": {
+          "wq_a": "AscendW8A8DynamicLinearMethod",
+          "wq_b": "AscendW8A8DynamicLinearMethod",
+          "wkv": "AscendW8A8DynamicLinearMethod",
+          "wo_b": "NoneType"
+        },
+        "wo_b_custom_op": "NoneType",
+        "wo_b_tp_size": 8
+      }
+    },
+    {
+      "rank": 3,
+      "first_nan_sha256": "5096b266aea883f2a86db0a4e4976205bbb22e38012fdee00aed9eb27dda9c94",
+      "rounds": [
+        {
+          "execution": 1800,
+          "proposal_epoch": 1788,
+          "state_row0": {
+            "request_row": 0,
+            "position": 220,
+            "window_start": 93,
+            "window_end": 221,
+            "slot_block": 105,
+            "slot_offset": 28,
+            "expected_block": 105,
+            "expected_offset": 28,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-b5ceb0ef",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1801,
+          "proposal_epoch": 1789,
+          "state_row0": {
+            "request_row": 0,
+            "position": 221,
+            "window_start": 94,
+            "window_end": 222,
+            "slot_block": 105,
+            "slot_offset": 29,
+            "expected_block": 105,
+            "expected_offset": 29,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-b5ceb0ef",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1802,
+          "proposal_epoch": 1790,
+          "state_row0": {
+            "request_row": 0,
+            "position": 222,
+            "window_start": 95,
+            "window_end": 223,
+            "slot_block": 105,
+            "slot_offset": 30,
+            "expected_block": 105,
+            "expected_offset": 30,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-b5ceb0ef",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [
+              0
+            ],
+            "layer.1.residual": [
+              0
+            ],
+            "layer.1.ffn_input": [
+              0
+            ],
+            "layer.1.ffn_output": [
+              0
+            ],
+            "layer.1.output": [
+              0
+            ],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [
+              0
+            ],
+            "layer.1.attention.raw_attention": [
+              0
+            ],
+            "layer.1.attention.inverse_rope": [
+              0
+            ],
+            "layer.1.attention.wo_a": [
+              0
+            ],
+            "layer.1.attention.wo_b_local": [
+              0
+            ]
+          }
+        }
+      ],
+      "events": [
+        {
+          "key": [
+            1802,
+            "RuntimeError",
+            "Ascend DSpark Markov base logits contain NaN."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 3,
+          "stage": "markov",
+          "execution": 1802,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-b67892c5": 6,
+              "batch10-2-96aa4ea9": 6,
+              "batch10-3-b5ceb0ef": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        },
+        {
+          "key": [
+            1803,
+            "ValueError",
+            "Scheduled candidates lack current proposal owners."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 3,
+          "stage": "target_execute",
+          "execution": 1803,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-b67892c5": 6,
+              "batch10-2-96aa4ea9": 6,
+              "batch10-3-b5ceb0ef": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        }
+      ],
+      "route_scope": "capacity catalog, not failure layout",
+      "route": {
+        "layer_name": "model.layers.1.self_attn.attn",
+        "implementation": "AscendDSAImpl",
+        "branch": "decode_swa",
+        "multistream": true,
+        "compress_ratio": 0,
+        "window": 128,
+        "block_size": 32,
+        "kv_shape": [
+          16233,
+          32,
+          1,
+          512
+        ],
+        "slot_shape": [
+          12,
+          2
+        ],
+        "block_table_shape": [
+          2,
+          256
+        ],
+        "mask": {
+          "ori_mask_mode": 4,
+          "left": 127,
+          "right": 0
+        },
+        "operator": "_C_ascend.npu_sparse_attn_sharedkv",
+        "quant_methods": {
+          "wq_a": "AscendW8A8DynamicLinearMethod",
+          "wq_b": "AscendW8A8DynamicLinearMethod",
+          "wkv": "AscendW8A8DynamicLinearMethod",
+          "wo_b": "NoneType"
+        },
+        "wo_b_custom_op": "NoneType",
+        "wo_b_tp_size": 8
+      }
+    },
+    {
+      "rank": 4,
+      "first_nan_sha256": "a18a52f676a701d90594612ba0375a445789a560c671901087110d7757a7ad3e",
+      "rounds": [
+        {
+          "execution": 1800,
+          "proposal_epoch": 1788,
+          "state_row0": {
+            "request_row": 0,
+            "position": 220,
+            "window_start": 93,
+            "window_end": 221,
+            "slot_block": 105,
+            "slot_offset": 28,
+            "expected_block": 105,
+            "expected_offset": 28,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-b5ceb0ef",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1801,
+          "proposal_epoch": 1789,
+          "state_row0": {
+            "request_row": 0,
+            "position": 221,
+            "window_start": 94,
+            "window_end": 222,
+            "slot_block": 105,
+            "slot_offset": 29,
+            "expected_block": 105,
+            "expected_offset": 29,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-b5ceb0ef",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1802,
+          "proposal_epoch": 1790,
+          "state_row0": {
+            "request_row": 0,
+            "position": 222,
+            "window_start": 95,
+            "window_end": 223,
+            "slot_block": 105,
+            "slot_offset": 30,
+            "expected_block": 105,
+            "expected_offset": 30,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-b5ceb0ef",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [
+              0
+            ],
+            "layer.1.residual": [
+              0
+            ],
+            "layer.1.ffn_input": [
+              0
+            ],
+            "layer.1.ffn_output": [
+              0
+            ],
+            "layer.1.output": [
+              0
+            ],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [
+              0
+            ],
+            "layer.1.attention.raw_attention": [
+              0
+            ],
+            "layer.1.attention.inverse_rope": [
+              0
+            ],
+            "layer.1.attention.wo_a": [
+              0
+            ],
+            "layer.1.attention.wo_b_local": [
+              0
+            ]
+          }
+        }
+      ],
+      "events": [
+        {
+          "key": [
+            1802,
+            "RuntimeError",
+            "Ascend DSpark Markov base logits contain NaN."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 4,
+          "stage": "markov",
+          "execution": 1802,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-b67892c5": 6,
+              "batch10-2-96aa4ea9": 6,
+              "batch10-3-b5ceb0ef": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        },
+        {
+          "key": [
+            1803,
+            "ValueError",
+            "Scheduled candidates lack current proposal owners."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 4,
+          "stage": "target_execute",
+          "execution": 1803,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-b67892c5": 6,
+              "batch10-2-96aa4ea9": 6,
+              "batch10-3-b5ceb0ef": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        }
+      ],
+      "route_scope": "capacity catalog, not failure layout",
+      "route": {
+        "layer_name": "model.layers.1.self_attn.attn",
+        "implementation": "AscendDSAImpl",
+        "branch": "decode_swa",
+        "multistream": true,
+        "compress_ratio": 0,
+        "window": 128,
+        "block_size": 32,
+        "kv_shape": [
+          16233,
+          32,
+          1,
+          512
+        ],
+        "slot_shape": [
+          12,
+          2
+        ],
+        "block_table_shape": [
+          2,
+          256
+        ],
+        "mask": {
+          "ori_mask_mode": 4,
+          "left": 127,
+          "right": 0
+        },
+        "operator": "_C_ascend.npu_sparse_attn_sharedkv",
+        "quant_methods": {
+          "wq_a": "AscendW8A8DynamicLinearMethod",
+          "wq_b": "AscendW8A8DynamicLinearMethod",
+          "wkv": "AscendW8A8DynamicLinearMethod",
+          "wo_b": "NoneType"
+        },
+        "wo_b_custom_op": "NoneType",
+        "wo_b_tp_size": 8
+      }
+    },
+    {
+      "rank": 5,
+      "first_nan_sha256": "c4b10e99c2f76e288b8a1b7c9f6f2b43685f22c14413d59b5a09f38f3c12e09e",
+      "rounds": [
+        {
+          "execution": 1800,
+          "proposal_epoch": 1788,
+          "state_row0": {
+            "request_row": 0,
+            "position": 220,
+            "window_start": 93,
+            "window_end": 221,
+            "slot_block": 105,
+            "slot_offset": 28,
+            "expected_block": 105,
+            "expected_offset": 28,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-b5ceb0ef",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1801,
+          "proposal_epoch": 1789,
+          "state_row0": {
+            "request_row": 0,
+            "position": 221,
+            "window_start": 94,
+            "window_end": 222,
+            "slot_block": 105,
+            "slot_offset": 29,
+            "expected_block": 105,
+            "expected_offset": 29,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-b5ceb0ef",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1802,
+          "proposal_epoch": 1790,
+          "state_row0": {
+            "request_row": 0,
+            "position": 222,
+            "window_start": 95,
+            "window_end": 223,
+            "slot_block": 105,
+            "slot_offset": 30,
+            "expected_block": 105,
+            "expected_offset": 30,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-b5ceb0ef",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [
+              0
+            ],
+            "layer.1.residual": [
+              0
+            ],
+            "layer.1.ffn_input": [
+              0
+            ],
+            "layer.1.ffn_output": [
+              0
+            ],
+            "layer.1.output": [
+              0
+            ],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [
+              0
+            ],
+            "layer.1.attention.raw_attention": [
+              0
+            ],
+            "layer.1.attention.inverse_rope": [
+              0
+            ],
+            "layer.1.attention.wo_a": [
+              0
+            ],
+            "layer.1.attention.wo_b_local": [
+              0
+            ]
+          }
+        }
+      ],
+      "events": [
+        {
+          "key": [
+            1802,
+            "RuntimeError",
+            "Ascend DSpark Markov base logits contain NaN."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 5,
+          "stage": "markov",
+          "execution": 1802,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-b67892c5": 6,
+              "batch10-2-96aa4ea9": 6,
+              "batch10-3-b5ceb0ef": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        },
+        {
+          "key": [
+            1803,
+            "ValueError",
+            "Scheduled candidates lack current proposal owners."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 5,
+          "stage": "target_execute",
+          "execution": 1803,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-b67892c5": 6,
+              "batch10-2-96aa4ea9": 6,
+              "batch10-3-b5ceb0ef": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        }
+      ],
+      "route_scope": "capacity catalog, not failure layout",
+      "route": {
+        "layer_name": "model.layers.1.self_attn.attn",
+        "implementation": "AscendDSAImpl",
+        "branch": "decode_swa",
+        "multistream": true,
+        "compress_ratio": 0,
+        "window": 128,
+        "block_size": 32,
+        "kv_shape": [
+          16233,
+          32,
+          1,
+          512
+        ],
+        "slot_shape": [
+          12,
+          2
+        ],
+        "block_table_shape": [
+          2,
+          256
+        ],
+        "mask": {
+          "ori_mask_mode": 4,
+          "left": 127,
+          "right": 0
+        },
+        "operator": "_C_ascend.npu_sparse_attn_sharedkv",
+        "quant_methods": {
+          "wq_a": "AscendW8A8DynamicLinearMethod",
+          "wq_b": "AscendW8A8DynamicLinearMethod",
+          "wkv": "AscendW8A8DynamicLinearMethod",
+          "wo_b": "NoneType"
+        },
+        "wo_b_custom_op": "NoneType",
+        "wo_b_tp_size": 8
+      }
+    },
+    {
+      "rank": 6,
+      "first_nan_sha256": "18438660096f523998e046e07fb51dcd6039f67a7dc5e20d559aeee7c72fe2e9",
+      "rounds": [
+        {
+          "execution": 1800,
+          "proposal_epoch": 1788,
+          "state_row0": {
+            "request_row": 0,
+            "position": 220,
+            "window_start": 93,
+            "window_end": 221,
+            "slot_block": 105,
+            "slot_offset": 28,
+            "expected_block": 105,
+            "expected_offset": 28,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-b5ceb0ef",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1801,
+          "proposal_epoch": 1789,
+          "state_row0": {
+            "request_row": 0,
+            "position": 221,
+            "window_start": 94,
+            "window_end": 222,
+            "slot_block": 105,
+            "slot_offset": 29,
+            "expected_block": 105,
+            "expected_offset": 29,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-b5ceb0ef",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1802,
+          "proposal_epoch": 1790,
+          "state_row0": {
+            "request_row": 0,
+            "position": 222,
+            "window_start": 95,
+            "window_end": 223,
+            "slot_block": 105,
+            "slot_offset": 30,
+            "expected_block": 105,
+            "expected_offset": 30,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-b5ceb0ef",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [
+              0
+            ],
+            "layer.1.residual": [
+              0
+            ],
+            "layer.1.ffn_input": [
+              0
+            ],
+            "layer.1.ffn_output": [
+              0
+            ],
+            "layer.1.output": [
+              0
+            ],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [
+              0
+            ],
+            "layer.1.attention.raw_attention": [
+              0
+            ],
+            "layer.1.attention.inverse_rope": [
+              0
+            ],
+            "layer.1.attention.wo_a": [
+              0
+            ],
+            "layer.1.attention.wo_b_local": [
+              0
+            ]
+          }
+        }
+      ],
+      "events": [
+        {
+          "key": [
+            1802,
+            "RuntimeError",
+            "Ascend DSpark Markov base logits contain NaN."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 6,
+          "stage": "markov",
+          "execution": 1802,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-b67892c5": 6,
+              "batch10-2-96aa4ea9": 6,
+              "batch10-3-b5ceb0ef": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        },
+        {
+          "key": [
+            1803,
+            "ValueError",
+            "Scheduled candidates lack current proposal owners."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 6,
+          "stage": "target_execute",
+          "execution": 1803,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-b67892c5": 6,
+              "batch10-2-96aa4ea9": 6,
+              "batch10-3-b5ceb0ef": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        }
+      ],
+      "route_scope": "capacity catalog, not failure layout",
+      "route": {
+        "layer_name": "model.layers.1.self_attn.attn",
+        "implementation": "AscendDSAImpl",
+        "branch": "decode_swa",
+        "multistream": true,
+        "compress_ratio": 0,
+        "window": 128,
+        "block_size": 32,
+        "kv_shape": [
+          16233,
+          32,
+          1,
+          512
+        ],
+        "slot_shape": [
+          12,
+          2
+        ],
+        "block_table_shape": [
+          2,
+          256
+        ],
+        "mask": {
+          "ori_mask_mode": 4,
+          "left": 127,
+          "right": 0
+        },
+        "operator": "_C_ascend.npu_sparse_attn_sharedkv",
+        "quant_methods": {
+          "wq_a": "AscendW8A8DynamicLinearMethod",
+          "wq_b": "AscendW8A8DynamicLinearMethod",
+          "wkv": "AscendW8A8DynamicLinearMethod",
+          "wo_b": "NoneType"
+        },
+        "wo_b_custom_op": "NoneType",
+        "wo_b_tp_size": 8
+      }
+    },
+    {
+      "rank": 7,
+      "first_nan_sha256": "573b2107c6d7e4cb6c98347dcf528c750b8cd410968543f63d2007741b0f7f27",
+      "rounds": [
+        {
+          "execution": 1800,
+          "proposal_epoch": 1788,
+          "state_row0": {
+            "request_row": 0,
+            "position": 220,
+            "window_start": 93,
+            "window_end": 221,
+            "slot_block": 105,
+            "slot_offset": 28,
+            "expected_block": 105,
+            "expected_offset": 28,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-b5ceb0ef",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1801,
+          "proposal_epoch": 1789,
+          "state_row0": {
+            "request_row": 0,
+            "position": 221,
+            "window_start": 94,
+            "window_end": 222,
+            "slot_block": 105,
+            "slot_offset": 29,
+            "expected_block": 105,
+            "expected_offset": 29,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-b5ceb0ef",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [],
+            "layer.1.residual": [],
+            "layer.1.ffn_input": [],
+            "layer.1.ffn_output": [],
+            "layer.1.output": [],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [],
+            "layer.1.attention.raw_attention": [],
+            "layer.1.attention.inverse_rope": [],
+            "layer.1.attention.wo_a": [],
+            "layer.1.attention.wo_b_local": []
+          }
+        },
+        {
+          "execution": 1802,
+          "proposal_epoch": 1790,
+          "state_row0": {
+            "request_row": 0,
+            "position": 222,
+            "window_start": 95,
+            "window_end": 223,
+            "slot_block": 105,
+            "slot_offset": 30,
+            "expected_block": 105,
+            "expected_offset": 30,
+            "invalid_window_indices": 0,
+            "slot_mismatch": 0,
+            "row": 0,
+            "request_id": "batch10-3-b5ceb0ef",
+            "valid_target_row": true,
+            "position_matches_target": true,
+            "window_range_valid": true
+          },
+          "nan_rows": {
+            "embedding": [],
+            "layer.0.output": [],
+            "layer.1.input": [],
+            "layer.1.attn_input": [],
+            "layer.1.attn_output": [
+              0
+            ],
+            "layer.1.residual": [
+              0
+            ],
+            "layer.1.ffn_input": [
+              0
+            ],
+            "layer.1.ffn_output": [
+              0
+            ],
+            "layer.1.output": [
+              0
+            ],
+            "layer.1.attention.rope_cos": [],
+            "layer.1.attention.rope_sin": [],
+            "layer.1.attention.sink": [],
+            "layer.1.attention.q_normalized": [],
+            "layer.1.attention.q_rope": [],
+            "layer.1.attention.kv_normalized": [],
+            "layer.1.attention.kv_rope": [],
+            "layer.1.attention.kv_window": [
+              0
+            ],
+            "layer.1.attention.raw_attention": [
+              0
+            ],
+            "layer.1.attention.inverse_rope": [
+              0
+            ],
+            "layer.1.attention.wo_a": [
+              0
+            ],
+            "layer.1.attention.wo_b_local": [
+              0
+            ]
+          }
+        }
+      ],
+      "events": [
+        {
+          "key": [
+            1802,
+            "RuntimeError",
+            "Ascend DSpark Markov base logits contain NaN."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 7,
+          "stage": "markov",
+          "execution": 1802,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-b67892c5": 6,
+              "batch10-2-96aa4ea9": 6,
+              "batch10-3-b5ceb0ef": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        },
+        {
+          "key": [
+            1803,
+            "ValueError",
+            "Scheduled candidates lack current proposal owners."
+          ],
+          "point": "ctx128-n4-t12-skewed",
+          "rank": 7,
+          "stage": "target_execute",
+          "execution": 1803,
+          "epochs": {
+            "_proposal_step_epoch": 1790,
+            "_prepared_step_epoch": null,
+            "_context_kv_step_epoch": 1790,
+            "_draft_forward_step_epoch": 1790,
+            "_markov_attempt_step_epoch": 1790,
+            "_markov_step_epoch": null,
+            "_published_proposal_step_epoch": null,
+            "_proposal_consumer_step_epoch": 1790
+          },
+          "owner_epochs": {},
+          "scheduler": {
+            "scheduled": {
+              "batch10-1-b67892c5": 6,
+              "batch10-2-96aa4ea9": 6,
+              "batch10-3-b5ceb0ef": 6
+            },
+            "finished": [],
+            "preempted": []
+          }
+        }
+      ],
+      "route_scope": "capacity catalog, not failure layout",
+      "route": {
+        "layer_name": "model.layers.1.self_attn.attn",
+        "implementation": "AscendDSAImpl",
+        "branch": "decode_swa",
+        "multistream": true,
+        "compress_ratio": 0,
+        "window": 128,
+        "block_size": 32,
+        "kv_shape": [
+          16233,
+          32,
+          1,
+          512
+        ],
+        "slot_shape": [
+          12,
+          2
+        ],
+        "block_table_shape": [
+          2,
+          256
+        ],
+        "mask": {
+          "ori_mask_mode": 4,
+          "left": 127,
+          "right": 0
+        },
+        "operator": "_C_ascend.npu_sparse_attn_sharedkv",
+        "quant_methods": {
+          "wq_a": "AscendW8A8DynamicLinearMethod",
+          "wq_b": "AscendW8A8DynamicLinearMethod",
+          "wkv": "AscendW8A8DynamicLinearMethod",
+          "wo_b": "NoneType"
+        },
+        "wo_b_custom_op": "NoneType",
+        "wo_b_tp_size": 8
+      }
+    }
+  ],
+  "cleanup": {
+    "schema_version": 2,
+    "performance_eligible": false,
+    "started_utc": "2026-09-13T05:41:14.132901+00:00",
+    "timeout_seconds": 12,
+    "finalize_timeout_seconds": 4,
+    "outer_timeout_seconds": 16,
+    "supervisor_failure_grace_seconds": 24,
+    "status": "worker_cleanup_incomplete",
+    "shutdown_completed": true,
+    "engine_returned": true,
+    "thread_completed": true,
+    "timed_out": false,
+    "success": false,
+    "force_events": [],
+    "forced_cleanup": false,
+    "force_observation_scope": "frontend Core process-manager warning on cleanup thread; not descendant logs",
+    "graceful_worker_exit": false,
+    "event_loop": "closed",
+    "error": null,
+    "recording_error": null,
+    "returned_utc": "2026-09-13T05:41:14.336454+00:00",
+    "engine_started_utc": "2026-09-13T05:41:14.133905+00:00",
+    "engine_finished_utc": "2026-09-13T05:41:14.336494+00:00",
+    "engine_elapsed_seconds": 0.20259425975382328,
+    "returned_after_outer_deadline": false,
+    "elapsed_seconds": 0.3031071349978447,
+    "observed_utc": "2026-09-13T05:41:14.436012+00:00",
+    "worker_cleanup": {
+      "performance_eligible": false,
+      "parent_pid": 150404,
+      "point": "ctx128-n4-t12-skewed",
+      "started_utc": "2026-09-13T05:41:14.130858+00:00",
+      "status": "running",
+      "force_events": [],
+      "forced_cleanup": false,
+      "error": null,
+      "recording_error": null
+    }
+  },
+  "cleanup_failure": {
+    "completed_points": 9,
+    "error": "RuntimeError: Profile engine cleanup failed: worker_cleanup_incomplete",
+    "performance_eligible": false,
+    "phase": "cleanup",
+    "points_status": "failed",
+    "prior_error": "RuntimeError: EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause."
+  },
+  "root_cause": "UNKNOWN: window contents nonfinite; producer and logical/physical slot not yet identified"
+}

@@ -116,7 +116,7 @@ class TargetBoundaryFlags:
         if self.attention_flags is not None:
             values += (self.attention_flags, self.attention_receipts)
         if self.attention_probe is not None:
-            values += (self.attention_probe.state,)
+            values += (self.attention_probe.state, *self.attention_probe.kv.tensors)
         return sum(x.numel() * x.element_size() for x in values)
 
 
@@ -175,6 +175,8 @@ class TargetProfileObservation(AuxiliaryProfileObservation):
         self.bank.receipts.fill_(-1)
         if self.bank.attention_receipts is not None:
             self.bank.attention_receipts.fill_(-1)
+        if self.bank.attention_probe is not None:
+            self.bank.attention_probe.kv.receipts.fill_(-1)
         self.bank.epoch_input.fill_(self.execution)
         # These are the actual captured DSA fields; the previous experiment
         # observed `positions`, while DSA decode names it `input_positions`.
@@ -208,6 +210,7 @@ class TargetProfileObservation(AuxiliaryProfileObservation):
         self.integer("target_internal.receipts", receipts)
         if self.bank.attention_probe is not None:
             self.integer("target_internal.attention_state", self.bank.attention_probe.state[: desc.num_tokens])
+            self.bank.attention_probe.kv.packet(self, desc.num_tokens)
 
     def complete_record(self, record, pending):
         device = record["device_integers"]
@@ -223,6 +226,7 @@ class TargetProfileObservation(AuxiliaryProfileObservation):
             fresh = fresh and (
                 len(device.get("target_internal.attention_state", [])) == (capacity or 0) * len(STATE_COLUMNS)
                 and capacity in self.bank.attention_probe.routes
+                and self.bank.attention_probe.kv.fresh(device, capacity or 0, record["execution"])
             )
         if capacity is not None and not fresh:
             self.recording_error = "Target internal flags missing/stale; no complete replay receipt"
@@ -274,8 +278,21 @@ class TargetProfileObservation(AuxiliaryProfileObservation):
                         entry["invalid_window_indices"] == 0 if entry["valid_target_row"] else None
                     )
                     attention_rows.append(entry)
+            kv_detail = probe.kv.decode(device, attention_rows, capacity) if fresh else None
+            if kv_detail is not None:
+                name = kv_detail["binding"]["layer_name"].rsplit(".", 1)[0] + ".swa_cache"
+                config = getattr(self.runner, "kv_cache_config", None)
+                kv_detail["cache_group_catalog"] = [
+                    {"group_id": index, "layer_name": name, "spec_type": type(group.kv_cache_spec).__qualname__}
+                    for index, group in enumerate(getattr(config, "kv_cache_groups", ()))
+                    if name in group.layer_names
+                ]
+                kv_detail["cache_group_status"] = "available" if kv_detail["cache_group_catalog"] else "unavailable"
+                kv_detail["group_scope"] = "CPU config catalog; not a device page ownership proof"
             record["target_internal"]["attention"] = {
                 "route": probe.routes.get(capacity),
+                "route_scope": "capture/eager description keyed by capacity; not live replay layout",
+                "kv": kv_detail,
                 "state_columns": STATE_COLUMNS,
                 "rows": attention_rows,
                 "boundaries": [b for b in boundaries if b["name"] not in self.bank.outer_names],
@@ -307,6 +324,7 @@ class TargetProfileObservation(AuxiliaryProfileObservation):
                 "target_receipts": record["device_integers"].get("target_internal.receipts"),
                 "raw_receipts": record["device_integers"].get("raw_receipts"),
                 "consume_receipts": record["device_integers"].get("consume_receipts"),
+                "kv_receipts": record["device_integers"].get("kv.receipts"),
             }
         )
         status = "failed" if not good else "passed" if len(previous) == VALIDITY_ROUNDS else "pending"
@@ -316,6 +334,7 @@ class TargetProfileObservation(AuxiliaryProfileObservation):
             "rank": self.rank,
             "status": status,
             "required_boundaries": list(self.bank.names),
+            "kv_required": True,
             "rounds": list(previous),
             "error": (self.recording_error or "Incomplete/nonconsecutive FULL receipts") if not good else None,
             "snapshot": self.snapshot(),

@@ -4,6 +4,8 @@
 
 import torch
 
+from vllm_ascend.diagnostics.dspark_profile_kv import KVProbe
+
 ATTENTION_STAGES = (
     "rope_cos",
     "rope_sin",
@@ -38,6 +40,7 @@ class AttentionProbe:
         self.bank = bank
         self.prefix = f"layer.{layer}.attention."
         self.routes = {}
+        self.kv = KVProbe(bank, MAX_WINDOW)
         self.state = torch.zeros((bank.max_tokens, len(STATE_COLUMNS)), dtype=torch.int64, device=bank.flags.device)
 
     def write(self, stage, value):
@@ -70,6 +73,7 @@ class AttentionProbe:
             "wo_b_custom_op": type(getattr(impl.wo_b, "custom_op", None)).__qualname__,
             "wo_b_tp_size": impl.wo_b.tp_size,
         }
+        self.kv.bind(layer_name, cache, metadata, impl.window_size)
         self.write("rope_cos", metadata.cos[layer_name])
         self.write("rope_sin", metadata.sin[layer_name])
         self.write("sink", impl.attn_sink.reshape(1, -1).expand(hidden.shape[0], -1))
@@ -103,6 +107,7 @@ class AttentionProbe:
         # contain NaN, and padding has no request identity.
         values = torch.where(needed[:, :, None, None], values, 0)
         self.write("kv_window", values.flatten(1))
+        self.kv.observe_window(values, pages, needed)
         slots = metadata.slot_mapping[:n].to(torch.int64)
         expected = torch.stack((pages[:, -1], position.remainder(cache.shape[1])), 1)
         mismatch = valid & (slots != expected).any(1)

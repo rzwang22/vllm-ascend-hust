@@ -83,6 +83,12 @@ def test_real_dispatch_aot_copyback_and_repeated_replay(tmp_path, monkeypatch, s
     def leaf(layer, x, caches, metadata, gather, output):
         calls.append(1)
         assert caches[1] is cache and metadata[0] is meta
+        probe.kv.bind("selected.attn", cache, meta, 4)
+        source = x[:, None, :]
+        probe.kv.scatter(cache, source, meta.slot_mapping, 0)
+        indices = meta.slot_mapping.to(torch.int64)
+        cache.index_put_((indices[:, 0], indices[:, 1]), source)
+        probe.kv.scatter(cache, source, meta.slot_mapping, 1)
         for stage in attention.ATTENTION_STAGES:
             if stage != "kv_window":
                 probe.write(stage, x)
@@ -186,12 +192,20 @@ def test_real_dispatch_aot_copyback_and_repeated_replay(tmp_path, monkeypatch, s
         count = len(calls)
         pointers = [
             t.data_ptr()
-            for t in (bank.flags, bank.attention_flags, bank.receipts, bank.attention_receipts, bank.epoch_input)
+            for t in (
+                bank.flags,
+                bank.attention_flags,
+                bank.receipts,
+                bank.attention_receipts,
+                bank.epoch_input,
+                *probe.kv.tensors,
+            )
         ]
         evidence = []
         for epoch in (11, 12, 13):
             bank.receipts.fill_(-1)
             bank.attention_receipts.fill_(-1)
+            probe.kv.receipts.fill_(-1)
             bank.epoch_input.fill_(epoch)
             meta.seq_lens.add_(6)
             if epoch == 13:
@@ -217,6 +231,7 @@ def test_real_dispatch_aot_copyback_and_repeated_replay(tmp_path, monkeypatch, s
                     "attention_receipts": bank.attention_receipts.cpu().flatten().tolist(),
                 }
             )
+            assert probe.kv.receipts.cpu().flatten().tolist() == [epoch] * 4
             assert bank.receipts[:9].cpu().flatten().tolist() == [epoch] * 9
             assert bank.attention_receipts.cpu().flatten().tolist() == ([-1] * 12 if shared else [epoch] * 12)
             assert probe.state[0, 1].cpu().item() == 12 + 6 * (epoch - 10) - 6
@@ -224,7 +239,14 @@ def test_real_dispatch_aot_copyback_and_repeated_replay(tmp_path, monkeypatch, s
                 assert bool(bank.attention_flags[0, 0, 0].cpu()) == (epoch == 13)
             assert pointers == [
                 t.data_ptr()
-                for t in (bank.flags, bank.attention_flags, bank.receipts, bank.attention_receipts, bank.epoch_input)
+                for t in (
+                    bank.flags,
+                    bank.attention_flags,
+                    bank.receipts,
+                    bank.attention_receipts,
+                    bank.epoch_input,
+                    *probe.kv.tensors,
+                )
             ]
         if device == "npu":
             assert len(calls) == count

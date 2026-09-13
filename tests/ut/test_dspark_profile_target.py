@@ -21,6 +21,11 @@ from tools.dspark import startup_cost_profile as profile
 
 
 def load_target(monkeypatch):
+    kv_name = "vllm_ascend.diagnostics.dspark_profile_kv"
+    kv_spec = importlib.util.spec_from_file_location(kv_name, ROOT / "vllm_ascend/diagnostics/dspark_profile_kv.py")
+    kv_module = importlib.util.module_from_spec(kv_spec)
+    monkeypatch.setitem(sys.modules, kv_name, kv_module)
+    kv_spec.loader.exec_module(kv_module)
     name = "vllm_ascend.diagnostics.dspark_profile_attention"
     attention_spec = importlib.util.spec_from_file_location(
         name, ROOT / "vllm_ascend/diagnostics/dspark_profile_attention.py"

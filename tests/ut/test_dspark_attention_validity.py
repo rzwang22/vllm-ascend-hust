@@ -146,3 +146,15 @@ def test_guard_detects_invalid_packet_without_rpc_or_output(tmp_path, monkeypatc
 
     asyncio.run(run())
     assert cancelled == [True]
+
+
+def test_required_kv_receipts_cannot_be_omitted_or_forged_finite(tmp_path):
+    data = publish(tmp_path, 0, kv_required=True)
+    with pytest.raises(RuntimeError, match="stale/missing"):
+        AttentionValidity(tmp_path, 1).check("first")
+    for row in data["rounds"]:
+        row["kv_receipts"] = [row["execution"]] * 4
+    publish(tmp_path, **data)
+    gate = AttentionValidity(tmp_path, 1)
+    gate.check("first")
+    assert gate.passed
