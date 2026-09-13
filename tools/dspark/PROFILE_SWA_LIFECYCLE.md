@@ -1,5 +1,8 @@
 # SWA 历史页提前回收：09bpL1Zp 审计与修正
 
+后续状态：sGR4YXDq 归档的局部 NPU 生命周期验证已通过。无需重跑本页末尾的局部命令；
+完整模型下一步见 [修复验收入口](PROFILE_SWA_MODEL_ACCEPTANCE.md)。下文保留修复提交时的审计与验证范围。
+
 本轮包含 **Core 生产修复** 和独立的 **Plugin 采集边界修正**。
 真实 NPU／完整模型修复验收仍为 **PENDING**，worker 自然退出未解决。
 这份归档四请求均生成 512 tokens，没有记录到 NaN；最终失败来自诊断 coverage，随后强制清理。

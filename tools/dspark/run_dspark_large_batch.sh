@@ -18,6 +18,15 @@ main() {
     local sha=$1 manifest=$2
     shift 2
     local plugin=/workspace/vllm-ascend-hust core=/workspace/vllm-hust
+    local core_remote=origin acceptance_archive='' forwarded=()
+    while test "$#" -gt 0; do
+        case "$1" in
+            --core-remote) test "$#" -ge 2 || return 1; core_remote=$2; shift 2 ;;
+            --swa-acceptance-archive) test "$#" -ge 2 || return 1; acceptance_archive=$2; shift 2 ;;
+            *) forwarded+=("$1"); shift ;;
+        esac
+    done
+    set -- "${forwarded[@]}"
     local model=/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8 previous='' argument experiment='' writer=false
     for argument in "$@"; do
         if test "$previous" = --model; then model=$argument; fi
@@ -30,9 +39,12 @@ main() {
     mkdir -p /workspace/dspark-results || return 1
     CONF_OUT=$(mktemp -d /workspace/dspark-results/dspark-large-batch.XXXXXXXX) || return 1
     printf 'SERVER_RESULT_DIR=%s\n' "$CONF_OUT"
+    cd "$plugin" || return 1
     [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || return 1
     test "$(git -C "$plugin" rev-parse HEAD)" = "$sha" || return 1
-    test "$(git -C "$core" rev-parse HEAD)" = 897306c43bf800e2480cb5c0f3e2da408d85a2fd || return 1
+    logged core-source python -m tools.dspark.swa_acceptance core-source \
+        "$core" "$core_remote" "$CONF_OUT/core-source.json" || return "$?"
+    test "$(git -C "$core" rev-parse HEAD)" = 71d2c1c436eba894a8e9eeb2c5af17e05cb42970 || return 1
     test "$(git -C "$plugin" branch --show-current)" = feat/dspark || return 1
     test -z "$(git -C "$plugin" status --porcelain)" || return 1
     test -z "$(git -C "$core" status --porcelain)" || return 1
@@ -67,6 +79,15 @@ print('Writer probe: real opaque NPU replay and installed Core forwarding passed
 PYTEST
         test "$?" -eq 0 || return 1
     fi
+    if test -n "$acceptance_archive"; then
+        test "$experiment" = target-boundaries && test "$writer" = false || return 1
+        [[ " $* " != *" --profile-operator-capture "* ]] || return 1
+        logged local-validation python -m tools.dspark.swa_acceptance audit-local \
+            "$acceptance_archive" "$CONF_OUT/local-validation.json" || return "$?"
+        # The archived 22/3/23 tests already passed; only validate this new host entry.
+        logged acceptance-entry python -m pytest --noconftest -q -ra \
+            tests/ut/test_dspark_swa_acceptance.py --basetemp "$CONF_OUT/entry-tests" --junitxml "$CONF_OUT/acceptance-entry.xml" || return "$?"
+    else
     logged focused python -m pytest -q -ra \
         tests/ut/test_dspark_repeated_inputs.py tests/ut/test_dspark_startup_cost_profile.py \
         tests/ut/test_dspark_profile_request_ids.py tests/ut/test_dspark_profile_context.py \
@@ -88,9 +109,18 @@ PYTEST
         tests/ut/test_dspark_graph_rpc.py tests/ut/test_dspark_graph_replay.py \
         tests/ut/test_dspark_acceptance_benchmark.py tests/ut/test_dspark_performance_delivery.py \
         tests/ut/spec_decode/test_dspark_v2_*.py || return "$?"
+    fi
     if test "$experiment" = target-boundaries && test -f "$CONF_OUT/STOP"; then return 130; fi
     logged generation python tools/dspark/run_large_batch.py \
         --plugin-sha "$sha" --manifest "$manifest" --output-dir "$CONF_OUT/runs" "$@"
+    local generation_rc=$? report_rc=0
+    if test -n "$acceptance_archive"; then
+        logged acceptance-report python -m tools.dspark.swa_acceptance report \
+            "$CONF_OUT/runs/b64" "$generation_rc" "$CONF_OUT/model-acceptance.json"
+        report_rc=$?
+    fi
+    if test "$generation_rc" -ne 0; then return "$generation_rc"; fi
+    return "$report_rc"
 }
 
 main "$@"

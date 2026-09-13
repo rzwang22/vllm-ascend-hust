@@ -1,0 +1,60 @@
+{
+  "scope": "host entry, archive audit and independent model/cleanup reporting; no model execution locally",
+  "core": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+  "baseline_plugin": "116c26ccaca5acbf4ea9c4d6f0d4be462c0a5513",
+  "local": {
+    "python": "3.12.13",
+    "torch": "2.10.0",
+    "platform": "macOS arm64",
+    "torch_npu": "unavailable"
+  },
+  "related_tests": {
+    "passed": 241,
+    "skipped": 5,
+    "failed": 0,
+    "new_entry_tests": 16,
+    "conftest": "--noconftest",
+    "skips": "four tests need installed vLLM/Ascend; one needs real NPU",
+    "files": [
+      "test_dspark_swa_acceptance.py",
+      "test_dspark_startup_cost_profile.py",
+      "test_dspark_profile_failure.py",
+      "test_dspark_attention_validity.py",
+      "test_dspark_confidence_verification.py",
+      "test_dspark_performance_delivery.py",
+      "test_dspark_profile_target.py",
+      "test_dspark_write_timeline.py"
+    ]
+  },
+  "changed_file_manual_hooks": "all applicable hooks passed, including shellcheck/markdownlint",
+  "local_lifecycle_server_validation": "PASSED: independently verified archive 22/3/23, not rerun",
+  "full_model_NaN_acceptance": "PENDING",
+  "full_model_worker_natural_exit": "PENDING",
+  "performance_eligible": false,
+  "repository_format_ci": {
+    "returncode": 1,
+    "output_bytes": 1458405674,
+    "hooks": [
+      "ruff check..................................................................Failed",
+      "ruff format.................................................................Failed",
+      "codespell...................................................................Failed",
+      "typos.......................................................................Failed",
+      "clang-format................................................................Passed",
+      "markdownlint................................................................Failed",
+      "Lint GitHub Actions workflow files..........................................Failed",
+      "Lint shell scripts..........................................................Failed",
+      "Lint PNG exports from excalidraw............................................Passed",
+      "Check for spaces in all filenames...........................................Passed",
+      "Enforce __init__.py in Python packages......................................Passed",
+      "Forbid init_logger(__name__) in vllm_ascend modules.........................Passed",
+      "Check for forbidden imports.................................................Failed",
+      "Check for boolean ops in with-statements....................................Passed",
+      "Check that new functions over 100 lines have comments.......................Passed",
+      "Check symbolic shapes in meta kernels.......................................Passed",
+      "Suggestion..................................................................Passed"
+    ],
+    "auto_modified_count": 78,
+    "auto_modified_task_files": []
+  },
+  "repository_format_note": "Required bash format.sh ci ran in an isolated worktree; existing failures outside changed files persist; no task file auto-modified."
+}

@@ -21,7 +21,7 @@ from tools.dspark.performance_code_eval import evaluate
 from tools.dspark.performance_report import summarize_suite, validate_stream_result, write_reports
 from tools.dspark.prepare_performance_data import copy_manifest_assets, input_population, read_manifest
 
-CORE_SHA = "897306c43bf800e2480cb5c0f3e2da408d85a2fd"
+CORE_SHA = "71d2c1c436eba894a8e9eeb2c5af17e05cb42970"
 MODEL_REVISION = "9e8679a9db7eec11efed9925f7efb96549077545"
 MODES = ("target_graph", "dspark_graph", "target_eager", "dspark_eager", "dspark_confidence_graph")
 
