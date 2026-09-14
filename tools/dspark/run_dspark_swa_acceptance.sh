@@ -2,12 +2,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # One model initialization, original B64 ten points; strict options in child Bash.
 set -euo pipefail
-test "$#" -ge 3 && test "$#" -le 4 || { echo 'Usage: script PLUGIN_SHA MANIFEST CORE_REMOTE [--exit-observation]' >&2; exit 1; }
+test "$#" -ge 3 && test "$#" -le 4 || { echo 'Usage: script PLUGIN_SHA MANIFEST CORE_REMOTE [--exit-observation|--exit-observation-no-debugger]' >&2; exit 1; }
 sha=$1 manifest=$2 core_remote=$3
 extra=(--profile-worker-exit)
 if test "$#" -eq 4; then
-    test "$4" = --exit-observation
-    extra+=(--profile-exit-observation)
+    case "$4" in
+        --exit-observation) extra+=(--profile-exit-observation) ;;
+        --exit-observation-no-debugger) extra+=(--profile-exit-observation --profile-exit-no-debugger) ;;
+        *) exit 1 ;;
+    esac
 fi
 bash /workspace/vllm-ascend-hust/tools/dspark/run_dspark_large_batch.sh "$sha" "$manifest" \
     --core-remote "$core_remote" \

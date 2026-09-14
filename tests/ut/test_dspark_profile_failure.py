@@ -124,6 +124,13 @@ def test_frozen_shutdown_near_inner_deadline_has_finalization_margin(tmp_path, f
 
 
 def streaming_facade(engine, directory):
+    # Model the frozen AsyncLLM idle-state interface, including initialization
+    # cleanup before the background handler was started.
+    engine.output_processor = NS(get_num_unfinished_requests=lambda: 0)
+    engine.output_handler = None
+    engine.errored = False
+    if not hasattr(engine, "engine_core"):
+        engine.engine_core = NS(resources=NS(output_queue_task=None, engine_dead=False))
     facade = stream.StreamingEngine.__new__(stream.StreamingEngine)
     facade.loop = asyncio.new_event_loop()
     facade.engine = engine
@@ -192,7 +199,7 @@ def test_actual_async_llm_shutdown_callbacks_drain_before_loop_close(tmp_path, f
         time.sleep(timeout + 0.015)
         facade.loop.call_soon_threadsafe(callbacks.append, "socket cleanup")
 
-    engine.engine_core = NS(shutdown=core_shutdown)
+    engine.engine_core = NS(shutdown=core_shutdown, resources=NS(output_queue_task=None, engine_dead=False))
 
     async def handler():
         try:
@@ -204,7 +211,7 @@ def test_actual_async_llm_shutdown_callbacks_drain_before_loop_close(tmp_path, f
     facade.loop.run_until_complete(asyncio.sleep(0))
     facade.shutdown()
     assert facade.loop.is_closed() and facade.cleanup_result["success"]
-    assert callbacks == ["socket cleanup", "output handler cancelled"]
+    assert callbacks == ["output handler cancelled", "socket cleanup"]
     assert json.loads((tmp_path / "cleanup.json").read_text())["event_loop"] == "closed"
 
 

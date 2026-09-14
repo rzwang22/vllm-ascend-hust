@@ -160,7 +160,7 @@ def test_executor_delegates_core_termination_after_only_opt_in_observation(monke
         parent, "_ensure_worker_termination", staticmethod(lambda procs: calls.append("core")), raising=False
     )
     fake = ModuleType("vllm_ascend.diagnostics.dspark_exit_observation")
-    fake.observe_workers = lambda handles, directory: calls.append("observe")
+    fake.observe_workers = lambda handles, directory, **kwargs: calls.append("observe")
     monkeypatch.setitem(sys.modules, fake.__name__, fake)
     vllm = ModuleType("vllm")
     vllm.envs = NS(VLLM_WORKER_SHUTDOWN_TIMEOUT_SECONDS=5)

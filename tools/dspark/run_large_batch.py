@@ -93,6 +93,7 @@ def command(args, batch, root):
             ),
             *(["--profile-worker-exit"] if getattr(args, "profile_worker_exit", False) else []),
             *(["--profile-exit-observation"] if getattr(args, "profile_exit_observation", False) else []),
+            *(["--profile-exit-no-debugger"] if getattr(args, "profile_exit_no_debugger", False) else []),
             *(["--profile-target-attention"] if getattr(args, "profile_target_attention", False) else []),
             *(["--profile-operator-capture"] if getattr(args, "profile_operator_capture", False) else []),
             *(["--profile-write-timeline"] if getattr(args, "profile_write_timeline", False) else []),
@@ -168,7 +169,7 @@ def run(args):
     statuses = []
     rc = 0
     for batch in args.batches:
-        row = {"batch": batch, "status": "failed", "rc": None}
+        row = {"batch": batch, "status": "failed", "rc": None, "log_scan_rc": None}
         try:
             cmd = command(args, batch, args.output_dir / f"b{batch}")
             row["command"] = cmd
@@ -206,7 +207,12 @@ def run(args):
             row["rc"] = suite.logged(cmd, args.output_dir / f"b{batch}.log")
             if row["rc"]:
                 raise RuntimeError("Child failed; stopping subsequent concurrency stages")
-            scan(args.output_dir / f"b{batch}.log")
+            try:
+                scan(args.output_dir / f"b{batch}.log")
+            except Exception as scan_error:
+                row.update(log_scan_rc=1, log_scan_error=f"{type(scan_error).__name__}: {scan_error}")
+                raise
+            row["log_scan_rc"] = 0
             row["status"] = (
                 "diagnostic_completed"
                 if (getattr(args, "profile_nan_diagnostic", False) or getattr(args, "profile_experiment", None))
@@ -313,7 +319,12 @@ def main(argv=None):
     parser.add_argument(
         "--profile-worker-exit", action="store_true", help="Opt-in exit-only steps and pre-escalation stacks"
     )
+    parser.add_argument(
+        "--profile-exit-no-debugger", action="store_true", help="Poll only; never run gdb/ptrace or attach preflight"
+    )
     args = parser.parse_args(argv)
+    if args.profile_exit_no_debugger and not args.profile_exit_observation:
+        parser.error("--profile-exit-no-debugger requires --profile-exit-observation")
     if args.profile_exit_observation and not args.profile_worker_exit:
         parser.error("--profile-exit-observation requires --profile-worker-exit")
     if args.profile_worker_exit and args.profile_experiment != "target-boundaries":

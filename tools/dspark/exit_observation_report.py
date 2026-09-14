@@ -29,11 +29,31 @@ def report(root):
         else "FORCED_OR_INCOMPLETE"
     )
     observed = native.get("status") == "returned" and not worker.get("exit_observation_error")
+    no_debugger = native.get("debugger_enabled") is False
+    control_valid = None
+    if read(root / "runs/b64/plan.json").get("exit_no_debugger"):
+        disabled = read(root / "native-preflight-disabled.json")
+        control_valid = bool(
+            observed
+            and no_debugger
+            and native.get("attachment_count") == 0
+            and not samples
+            and native.get("native_sampling") == "disabled_by_configuration"
+            and disabled.get("debugger_enabled") is False
+            and disabled.get("attachment_count") == 0
+            and disabled.get("attach_preflight") == "not_run_by_configuration"
+            and not (root / "native-preflight/preflight.json").exists()
+        )
+        observed = observed and control_valid
+    if no_debugger and (samples or native.get("attachment_count") != 0):
+        observed = False  # contradictory receipts must not look like a clean control
     if natural and not observed:
         state = "NATURAL_EXIT_OBSERVATION_UNAVAILABLE"
     coverage = "UNAVAILABLE"
     if observed:
-        if natural and not samples:
+        if no_debugger:
+            coverage = "DISABLED_BY_CONFIGURATION"
+        elif natural and not samples:
             coverage = "NOT_NEEDED_EARLY_EXIT"
         elif samples and all(s["status"] == "captured" and s["detached"] for s in samples):
             coverage = "CAPTURED"
@@ -98,6 +118,16 @@ def report(root):
         "finalization": finalization,
         "frontend_cleanup": model.get("cleanup"),
         "native_coverage": coverage,
+        "debugger_enabled": native.get("debugger_enabled"),
+        "attachment_count": native.get("attachment_count"),
+        "no_debugger_control_valid": control_valid,
+        "output_handler_shutdown": read(root / "runs/b64/output-handler-shutdown.json"),
+        "returncodes": {
+            "supervisor": read(root / "runs/b64-supervisor.json").get("raw_returncode"),
+            "child_and_log_scan_stages": read(root / "runs/stages.json"),
+            "pipestatus_at_report_time": {p.name: p.read_text().strip() for p in sorted(root.glob("*.pipestatus"))},
+            "note": "Report/export PIPESTATUS published by enclosing shell after this report; see archived sidecars",
+        },
         "limits": "Exit timestamps are parent polling upper bounds. Debugger pause affects elapsed time. "
         "Repeated native frames alone do not prove deadlock; slow progress may exceed this window.",
         "root_cause": "PENDING_REVIEW",
@@ -111,6 +141,8 @@ def main():
     result = report(args.root)
     (args.root / "exit-observation-report.json").write_text(json.dumps(result, indent=2) + "\n")
     print(result["status"], result["native_coverage"], "formal acceptance NOT_EVALUATED")
+    if result["no_debugger_control_valid"] is False:
+        raise SystemExit(1)  # Missing/contradictory control receipts cannot complete successfully.
 
 
 if __name__ == "__main__":

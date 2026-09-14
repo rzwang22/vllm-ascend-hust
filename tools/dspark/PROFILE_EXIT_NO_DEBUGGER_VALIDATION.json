@@ -1,0 +1,90 @@
+{
+  "baseline_plugin": "7c33932af172ecd7618234b095e3fc4edf8d7036",
+  "core_unchanged": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+  "scope": "Profile frontend output-task lifecycle fix and same-budget no-debugger control; not a production worker-budget change",
+  "environment": {
+    "python": "3.12.13 (main, May 10 2026, 19:20:41) [Clang 22.1.3 ]",
+    "platform": "macOS-26.4-arm64-arm-64bit",
+    "torch": "2.10.0",
+    "torch_npu": "NOT_INSTALLED"
+  },
+  "tests": [
+    {
+      "scope": "Changed frontend, output lifetime, shell/config and failure regressions",
+      "passed": 134,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "by_class": {
+        "tests.ut.test_dspark_exit_no_debugger": 24,
+        "tests.ut.test_dspark_profile_failure": 34,
+        "tests.ut.test_dspark_swa_acceptance": 22,
+        "tests.ut.test_dspark_startup_cost_profile": 18,
+        "tests.ut.test_dspark_performance_delivery": 36
+      }
+    },
+    {
+      "scope": "Selected existing observation/delegation/budget compatibility",
+      "passed": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "by_class": {
+        "tests.ut.test_dspark_exit_observation": 11
+      }
+    },
+    {
+      "scope": "Final server host test file after adding control-receipt consistency gate; overlaps 24 earlier cases",
+      "passed": 26,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "tests_meaning": "CPU/mock and actual frozen Core method bodies with substituted CPU transport, plus shell subprocesses; --noconftest. No complete installed AsyncLLM/NPU model or ptrace run.",
+  "checks": {
+    "changed_files": "All applicable manual pre-commit hooks passed; final report/validation update rechecked separately",
+    "ruff_check": 0,
+    "ruff_format": 0,
+    "bash_syntax": 0,
+    "git_diff_check": 0,
+    "full_format": {
+      "command": "bash format.sh ci",
+      "worktree": "Isolated baseline plus staged patch; removed after check",
+      "returncode": 1,
+      "hooks": [
+        "ruff check..................................................................Failed",
+        "ruff format.................................................................Failed",
+        "codespell...................................................................Failed",
+        "typos.......................................................................Failed",
+        "clang-format................................................................Passed",
+        "markdownlint................................................................Failed",
+        "Lint GitHub Actions workflow files..........................................Failed",
+        "Lint shell scripts..........................................................Failed",
+        "Lint PNG exports from excalidraw............................................Passed",
+        "Check for spaces in all filenames...........................................Passed",
+        "Enforce __init__.py in Python packages......................................Passed",
+        "Forbid init_logger(__name__) in vllm_ascend modules.........................Passed",
+        "Check for forbidden imports.................................................Failed",
+        "Check for boolean ops in with-statements....................................Passed",
+        "Check that new functions over 100 lines have comments.......................Passed",
+        "Check symbolic shapes in meta kernels.......................................Passed",
+        "Suggestion..................................................................Passed"
+      ],
+      "auto_modified_count": 78,
+      "auto_modified_task_files": [],
+      "meaning": "Unrelated/pre-existing repository-wide errors; no full CI pass claimed; unrelated formatting discarded."
+    }
+  },
+  "server_test_file": "tests/ut/test_dspark_exit_no_debugger.py",
+  "unexecuted": [
+    "NPU no-debugger original ten-point extended-exit control",
+    "Original-budget production worker natural-exit acceptance"
+  ],
+  "unchanged_validation_not_repeated": [
+    "22/3/23 lifecycle device validations",
+    "Real gdb/ptrace preflight; explicitly disabled for next control",
+    "Single-operator causal controls and model numeric probes"
+  ],
+  "unique_cpu_test_cases": 147
+}

@@ -12,8 +12,12 @@ logged() {
     return "${codes[1]}"
 }
 main() {
-    test "$#" -eq 3 || return 1
-    local sha=$1 manifest=$2 remote=$3
+    test "$#" -ge 3 && test "$#" -le 4 || return 1
+    local sha=$1 manifest=$2 remote=$3 mode=--exit-observation
+    if test "$#" -eq 4; then
+        test "$4" = --no-debugger || return 1
+        mode=--exit-observation-no-debugger
+    fi
     [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || return 1
     mkdir -p /workspace/dspark-results || return 1
     out=$(mktemp -d /workspace/dspark-results/dspark-exit-observation.XXXXXXXX) || return 1
@@ -23,7 +27,7 @@ main() {
     logged fetch git fetch origin feat/dspark || return "$?"
     logged checkout git merge --ff-only "$sha" || return "$?"
     test "$(git rev-parse HEAD)" = "$sha" || return 1
-    logged driver bash tools/dspark/run_dspark_swa_acceptance.sh "$sha" "$manifest" "$remote" --exit-observation
+    logged driver bash tools/dspark/run_dspark_swa_acceptance.sh "$sha" "$manifest" "$remote" "$mode"
 }
 main "$@"
 rc=$?

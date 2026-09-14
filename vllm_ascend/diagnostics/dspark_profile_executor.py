@@ -53,6 +53,7 @@ class ProfileMultiprocExecutor(MultiprocExecutor):
         self._profile_cleanup_observed = False
         self._profile_worker_exit = vllm_config.additional_config.get("dspark_profile_worker_exit", False)
         self._profile_exit_observation = vllm_config.additional_config.get("dspark_profile_exit_observation", False)
+        self._profile_exit_debugger = vllm_config.additional_config.get("dspark_profile_exit_debugger", True)
         if self._profile_exit_observation and not self._profile_worker_exit:
             raise ValueError("Extended exit observation requires the profile exit worker")
         if self._profile_exit_observation:
@@ -67,7 +68,11 @@ class ProfileMultiprocExecutor(MultiprocExecutor):
             try:
                 from vllm_ascend.diagnostics.dspark_exit_observation import observe_workers
 
-                observe_workers(self.workers, self._profile_directory / "worker-exit" / "native")
+                observe_workers(
+                    self.workers,
+                    self._profile_directory / "worker-exit" / "native",
+                    debugger_enabled=getattr(self, "_profile_exit_debugger", True),
+                )
             except Exception as error:
                 # A debugger/receipt failure must not prevent original Core
                 # escalation and queue cleanup. The cleanup receipt still fails.

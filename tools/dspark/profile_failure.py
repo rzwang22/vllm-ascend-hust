@@ -125,7 +125,7 @@ class ProfileFailureGuard:
             result["success"] = False
             self.remember(error)
 
-    async def shutdown(self):
+    async def shutdown(self, *, frontend_started=None):
         # Keep process supervision/data tools importable without installed
         # vLLM. Only the engine-owning profile frontend needs the plugin here.
         from vllm_ascend.diagnostics.dspark_cleanup import PROCESS_FORCE_MESSAGES, ShutdownForceObserver
@@ -133,14 +133,16 @@ class ProfileFailureGuard:
         if self.cleanup_result is not None:
             return self.cleanup_result  # do not start a second destructor thread
         self.phase = "cleanup"
-        started = time.monotonic()
+        now = time.monotonic()
+        started, started_utc = frontend_started or (now, datetime.now(timezone.utc).isoformat())
         engine_budget = EXIT_OBSERVATION_ENGINE_SECONDS if self.exit_observation else CLEANUP_TIMEOUT_SECONDS
         outer_budget = engine_budget + CLEANUP_FINALIZE_SECONDS
         deadline = started + outer_budget
         state = {
             "schema_version": 2,
             "performance_eligible": False,
-            "started_utc": datetime.now(timezone.utc).isoformat(),
+            "started_utc": started_utc,
+            "pre_shutdown_elapsed_seconds": now - started,
             "timeout_seconds": engine_budget,
             "exit_observation": self.exit_observation,
             "finalize_timeout_seconds": CLEANUP_FINALIZE_SECONDS,

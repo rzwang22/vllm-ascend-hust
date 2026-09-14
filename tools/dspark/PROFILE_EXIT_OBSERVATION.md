@@ -1,5 +1,8 @@
 # Worker 自然退出：有界原生观察对照
 
+后续be36p2mQ审计、前端输出任务关闭修正及唯一无gdb对照见
+[PROFILE_EXIT_NO_DEBUGGER.md](PROFILE_EXIT_NO_DEBUGGER.md)。本页保留先前附加诊断的预算与历史说明。
+
 ## l4CYeLJv 已核验结果
 
 实际读取 `dspark-large-batch.l4CYeLJv-evidence.tar.gz`，SHA256：

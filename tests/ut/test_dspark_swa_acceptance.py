@@ -189,11 +189,21 @@ def test_wrong_archive_hash_fails_before_loading(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "generation_rc,report_rc,observation_rc",
-    [(0, 0, None), (0, 1, None), (7, 1, None), (7, 1, 9), (0, 1, 9), (0, 0, 9), (0, 0, 0)],
+    "generation_rc,report_rc,observation_rc,no_debugger",
+    [
+        (0, 0, None, False),
+        (0, 1, None, False),
+        (7, 1, None, False),
+        (7, 1, 9, False),
+        (0, 1, 9, False),
+        (0, 0, 9, False),
+        (0, 0, 0, False),
+        (0, 0, 0, True),
+        (7, 1, 9, True),
+    ],
 )
 def test_actual_large_shell_filters_remote_and_preserves_generation_failure(
-    tmp_path, generation_rc, report_rc, observation_rc
+    tmp_path, generation_rc, report_rc, observation_rc, no_debugger
 ):
     workspace = tmp_path / "workspace"
     plugin = workspace / "vllm-ascend-hust"
@@ -243,6 +253,7 @@ def test_actual_large_shell_filters_remote_and_preserves_generation_failure(
             "--batches",
             "64",
             *(["--profile-exit-observation"] if observation_rc is not None else []),
+            *(["--profile-exit-no-debugger"] if no_debugger else []),
         ],
         env=env,
         capture_output=True,
@@ -257,7 +268,10 @@ def test_actual_large_shell_filters_remote_and_preserves_generation_failure(
     assert not any("test_dspark_operator_capture.py" in c or "test_dspark_swa_lifecycle.py" in c for c in commands)
     assert any(f"b64 {generation_rc}" in c for c in commands if "swa_acceptance report" in c)
     if observation_rc is not None:
-        assert any("exit_native_preflight" in c for c in commands)
+        assert any("exit_native_preflight" in c for c in commands) is (not no_debugger)
+        if no_debugger:
+            assert any("native-preflight-disabled.json" in c for c in commands)
+            assert any("test_dspark_exit_no_debugger.py" in c for c in commands)
         assert any("exit_observation_report" in c for c in commands)
     result = next((workspace / "dspark-results").glob("dspark-large-batch.*-evidence.tar.gz"))
     assert result.is_file()

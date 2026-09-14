@@ -12,11 +12,12 @@ from __future__ import annotations
 import asyncio
 import copy
 import time
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from tools.dspark import benchmark_dspark_acceptance as benchmark
 from tools.dspark.profile_attention_validity import AttentionValidity
-from tools.dspark.profile_failure import CANCEL_TIMEOUT_SECONDS, RPC_TIMEOUT_SECONDS, ProfileFailureGuard
+from tools.dspark.profile_failure import CANCEL_TIMEOUT_SECONDS, RPC_TIMEOUT_SECONDS, ProfileFailureGuard, write_json
 from tools.dspark.profile_request_ids import RequestIdObserver
 
 
@@ -364,12 +365,103 @@ class StreamingEngine:
             for prompt, record in zip(prompts, self.last_batch["requests"])
         ]
 
+    async def _stop_profile_output(self):
+        """Stop the idle AsyncLLM consumer on its loop, before Core closes its producer.
+
+        Unfinished or unavailable request state is an abort/error, never a
+        successful drain. Leave that consumer for the original abort cleanup.
+        Frozen AsyncLLM catches output errors internally, so a task that already
+        returned (even without a raised exception) is not proof of healthy exit.
+        """
+        guard = self.profile_guard
+        started = time.monotonic()
+        result = {
+            "started_utc": datetime.now(timezone.utc).isoformat(),
+            "performance_eligible": False,
+            "timeout_seconds": CANCEL_TIMEOUT_SECONDS,
+            "success": False,
+            "status": "checking",
+            "prior_error": guard.first,
+            "error": None,
+        }
+        try:
+            result["unfinished_requests"] = self.engine.output_processor.get_num_unfinished_requests()
+            result["engine_errored_before_shutdown"] = self.engine.errored
+            batch = getattr(self, "last_batch", None)
+            result["last_batch_complete"] = batch is None or (
+                not batch.get("error")
+                and bool(batch.get("requests"))
+                and all(
+                    r is not None
+                    and r.get("completed_monotonic") is not None
+                    and not r.get("error")
+                    and r.get("finish_reason") in ("stop", "length")
+                    for r in batch["requests"]
+                )
+            )
+            task = self.engine.output_handler
+            if task is not None and task.done():
+                if not task.cancelled():
+                    task.result()  # collect a pre-existing task exception even if EngineCore is dead
+                raise RuntimeError("Output handler stopped before the intentional drain")
+            producer = self.engine.engine_core.resources.output_queue_task
+            if producer is not None and producer.done():
+                if not producer.cancelled():
+                    producer.result()
+                # The frozen socket task catches transport exceptions, queues
+                # them for the consumer, then returns. Do not cancel that
+                # consumer and hide an error it has not read yet.
+                raise RuntimeError("Core output socket task stopped before the intentional drain")
+            if result["unfinished_requests"] != 0 or not result["last_batch_complete"] or guard.pending is not None:
+                raise RuntimeError("Requests/operation still pending at profile shutdown; refusing normal output drain")
+            if result["engine_errored_before_shutdown"]:
+                raise RuntimeError("AsyncLLM was already errored before profile output drain")
+            if task is None:
+                result["status"] = "not_started"
+            else:
+                if task.get_loop() is not asyncio.get_running_loop():
+                    raise RuntimeError("Output handler belongs to a different event loop")
+                result["status"] = "cancelling"
+                task.cancel()
+                done, _ = await asyncio.wait({task}, timeout=CANCEL_TIMEOUT_SECONDS)
+                if not done:
+                    raise TimeoutError("Output handler cancellation exceeded its drain budget")
+                result["cancelled"] = task.cancelled()
+                if not task.cancelled():
+                    task.result()  # do not hide errors raised while cancelling
+                if self.engine.engine_core.resources.engine_dead or (producer is not None and producer.done()):
+                    if producer is not None and producer.done() and not producer.cancelled():
+                        producer.result()
+                    raise RuntimeError("Core output producer failed during the intentional drain")
+                result["status"] = "drained"
+            result["success"] = guard.first is None
+        except Exception as error:
+            result.update(status="failed", error=f"{type(error).__name__}: {error}")
+            guard.remember(error)
+        finally:
+            result["finished_utc"] = datetime.now(timezone.utc).isoformat()
+            result["elapsed_seconds"] = time.monotonic() - started
+            try:
+                write_json(guard.directory / "output-handler-shutdown.json", result)
+            except OSError as error:
+                result.update(success=False, recording_error=f"{type(error).__name__}: {error}")
+                guard.remember(error)
+        return result
+
     def shutdown(self):
         async def close():
             if self.profile_guard is None:
                 self.engine.shutdown()
             else:
-                self.cleanup_result = await self.profile_guard.shutdown()
+                self.profile_guard.phase = "cleanup"
+                frontend_started = (time.monotonic(), datetime.now(timezone.utc).isoformat())
+                output_drain = await self._stop_profile_output()
+                self.cleanup_result = await self.profile_guard.shutdown(frontend_started=frontend_started)
+                self.cleanup_result["output_handler_shutdown"] = output_drain
+                if not output_drain["success"]:
+                    self.cleanup_result.update(success=False, frontend_error="Output handler drain failed; see receipt")
+                    if self.cleanup_result["status"] == "returned":
+                        self.cleanup_result["status"] = "output_handler_failed"
                 if not self.cleanup_result["thread_completed"]:
                     return  # the supervisor owns the stuck thread/process bound
                 # Frozen Core schedules socket/task cleanup with
@@ -382,7 +474,14 @@ class StreamingEngine:
                 if self.profile_guard is None:
                     await asyncio.gather(*pending, return_exceptions=True)
                 else:
-                    _, remaining = await asyncio.wait(pending, timeout=CANCEL_TIMEOUT_SECONDS)
+                    done, remaining = await asyncio.wait(pending, timeout=CANCEL_TIMEOUT_SECONDS)
+                    for task in done:
+                        if not task.cancelled():
+                            try:
+                                task.result()
+                            except Exception as error:
+                                self.cleanup_result.update(success=False, loop_error=f"{type(error).__name__}: {error}")
+                                self.profile_guard.remember(error)
                     self.cleanup_result["pending_loop_tasks"] = len(remaining)
                     if remaining:
                         self.cleanup_result["success"] = False

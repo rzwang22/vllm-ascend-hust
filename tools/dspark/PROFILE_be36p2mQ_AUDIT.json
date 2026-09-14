@@ -1,0 +1,785 @@
+{
+  "archive_sha256": {
+    "outer": "6dbf6c48e3a0e07e983598d6abea7b2eb9cf571d2634d3de3c556d1a0385ec36",
+    "model": "61cbfc3cdaab3d769994541daea3cb8a0739a1f1dc382bdc0374f5a5b8f7c3bf"
+  },
+  "outer_nested_model_matches": true,
+  "plugin": "7c33932af172ecd7618234b095e3fc4edf8d7036",
+  "core_source": {
+    "expected_head": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+    "selected_remote": "rzwang",
+    "status": "verified",
+    "head_before": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+    "remote_url": "https://github.com/rzwang22/vllm-hust.git",
+    "origin_url_before": "https://github.com/vLLM-HUST/vllm-hust.git",
+    "fetched_head": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+    "actual_head": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970"
+  },
+  "host_cases": 29,
+  "native_preflight": "passed",
+  "runtime": {
+    "python": "3.12.13 (main, Jul  7 2026, 18:34:05) [GCC 12.3.1 (openEuler 12.3.1-105.oe2403sp3)]",
+    "torch": "2.10.0+cpu",
+    "torch_npu": "2.10.0.post2"
+  },
+  "recomputed_model_report_matches_original": true,
+  "model_report": {
+    "performance_eligible": false,
+    "raw_generation_rc": 1,
+    "points": [
+      {
+        "point": "ctx128-n1-t6-balanced",
+        "generation_complete": true,
+        "tokens": [
+          512
+        ],
+        "numeric": "no_nan_observed_at_enabled_boundaries",
+        "graph": "VALIDATED_FULL_SAMPLES"
+      },
+      {
+        "point": "ctx128-n1-t6-skewed",
+        "generation_complete": true,
+        "tokens": [
+          512
+        ],
+        "numeric": "no_nan_observed_at_enabled_boundaries",
+        "graph": "VALIDATED_FULL_SAMPLES"
+      },
+      {
+        "point": "ctx128-n2-t6-balanced",
+        "generation_complete": true,
+        "tokens": [
+          512,
+          512
+        ],
+        "numeric": "no_nan_observed_at_enabled_boundaries",
+        "graph": "VALIDATED_FULL_SAMPLES"
+      },
+      {
+        "point": "ctx128-n2-t6-skewed",
+        "generation_complete": true,
+        "tokens": [
+          512,
+          512
+        ],
+        "numeric": "no_nan_observed_at_enabled_boundaries",
+        "graph": "VALIDATED_FULL_SAMPLES"
+      },
+      {
+        "point": "ctx128-n2-t12-balanced",
+        "generation_complete": true,
+        "tokens": [
+          512,
+          512
+        ],
+        "numeric": "no_nan_observed_at_enabled_boundaries",
+        "graph": "VALIDATED_FULL_SAMPLES"
+      },
+      {
+        "point": "ctx128-n2-t12-skewed",
+        "generation_complete": true,
+        "tokens": [
+          512,
+          512
+        ],
+        "numeric": "no_nan_observed_at_enabled_boundaries",
+        "graph": "VALIDATED_FULL_SAMPLES"
+      },
+      {
+        "point": "ctx128-n4-t6-balanced",
+        "generation_complete": true,
+        "tokens": [
+          512,
+          512,
+          512,
+          512
+        ],
+        "numeric": "no_nan_observed_at_enabled_boundaries",
+        "graph": "VALIDATED_FULL_SAMPLES"
+      },
+      {
+        "point": "ctx128-n4-t6-skewed",
+        "generation_complete": true,
+        "tokens": [
+          512,
+          512,
+          512,
+          512
+        ],
+        "numeric": "no_nan_observed_at_enabled_boundaries",
+        "graph": "VALIDATED_FULL_SAMPLES"
+      },
+      {
+        "point": "ctx128-n4-t12-balanced",
+        "generation_complete": true,
+        "tokens": [
+          512,
+          512,
+          512,
+          512
+        ],
+        "numeric": "no_nan_observed_at_enabled_boundaries",
+        "graph": "VALIDATED_FULL_SAMPLES"
+      },
+      {
+        "point": "ctx128-n4-t12-skewed",
+        "generation_complete": true,
+        "tokens": [
+          512,
+          512,
+          512,
+          512
+        ],
+        "numeric": "no_nan_observed_at_enabled_boundaries",
+        "graph": "VALIDATED_FULL_SAMPLES"
+      }
+    ],
+    "ten_points_generation_complete": true,
+    "point_acceptance_status": "completed",
+    "numerical_and_FULL_acceptance": "PASSED_THIS_RUN",
+    "first_point_FULL_receipts_valid": true,
+    "markov_NaN_in_log": false,
+    "owner_error_in_log": false,
+    "primary_failure": {},
+    "cleanup": {
+      "schema_version": 2,
+      "performance_eligible": false,
+      "started_utc": "2026-09-14T05:02:37.836511+00:00",
+      "timeout_seconds": 36,
+      "exit_observation": true,
+      "finalize_timeout_seconds": 4,
+      "outer_timeout_seconds": 40,
+      "supervisor_failure_grace_seconds": 48,
+      "status": "returned",
+      "shutdown_completed": true,
+      "engine_returned": true,
+      "thread_completed": true,
+      "timed_out": false,
+      "success": true,
+      "force_events": [],
+      "forced_cleanup": false,
+      "force_observation_scope": "frontend Core process-manager warning on cleanup thread; not descendant logs",
+      "graceful_worker_exit": true,
+      "event_loop": "closed",
+      "error": null,
+      "recording_error": null,
+      "returned_utc": "2026-09-14T05:03:01.309224+00:00",
+      "engine_started_utc": "2026-09-14T05:02:37.837337+00:00",
+      "engine_finished_utc": "2026-09-14T05:03:01.309259+00:00",
+      "engine_elapsed_seconds": 23.47192240972072,
+      "returned_after_outer_deadline": false,
+      "elapsed_seconds": 23.552212251350284,
+      "observed_utc": "2026-09-14T05:03:01.388719+00:00",
+      "worker_cleanup": {
+        "performance_eligible": false,
+        "exit_observation": true,
+        "parent_pid": 230021,
+        "point": "ctx128-n4-t12-skewed",
+        "started_utc": "2026-09-14T05:02:37.842006+00:00",
+        "status": "returned",
+        "force_events": [],
+        "forced_cleanup": false,
+        "error": null,
+        "recording_error": null,
+        "reap": {
+          "budget_seconds": 1.0,
+          "elapsed_seconds": 0.00017414521425962448,
+          "workers": [
+            {
+              "rank": 0,
+              "pid": 230081,
+              "join_started_utc": "2026-09-14T05:02:58.558058+00:00",
+              "exitcode_before_join": 0,
+              "raw_exitcode": 0,
+              "status": "reaped",
+              "join_finished_utc": "2026-09-14T05:02:58.558109+00:00"
+            },
+            {
+              "rank": 1,
+              "pid": 230133,
+              "join_started_utc": "2026-09-14T05:02:58.558121+00:00",
+              "exitcode_before_join": 0,
+              "raw_exitcode": 0,
+              "status": "reaped",
+              "join_finished_utc": "2026-09-14T05:02:58.558138+00:00"
+            },
+            {
+              "rank": 2,
+              "pid": 230217,
+              "join_started_utc": "2026-09-14T05:02:58.558145+00:00",
+              "exitcode_before_join": 0,
+              "raw_exitcode": 0,
+              "status": "reaped",
+              "join_finished_utc": "2026-09-14T05:02:58.558154+00:00"
+            },
+            {
+              "rank": 3,
+              "pid": 230303,
+              "join_started_utc": "2026-09-14T05:02:58.558160+00:00",
+              "exitcode_before_join": 0,
+              "raw_exitcode": 0,
+              "status": "reaped",
+              "join_finished_utc": "2026-09-14T05:02:58.558168+00:00"
+            },
+            {
+              "rank": 4,
+              "pid": 230384,
+              "join_started_utc": "2026-09-14T05:02:58.558173+00:00",
+              "exitcode_before_join": 0,
+              "raw_exitcode": 0,
+              "status": "reaped",
+              "join_finished_utc": "2026-09-14T05:02:58.558180+00:00"
+            },
+            {
+              "rank": 5,
+              "pid": 230460,
+              "join_started_utc": "2026-09-14T05:02:58.558185+00:00",
+              "exitcode_before_join": 0,
+              "raw_exitcode": 0,
+              "status": "reaped",
+              "join_finished_utc": "2026-09-14T05:02:58.558193+00:00"
+            },
+            {
+              "rank": 6,
+              "pid": 230541,
+              "join_started_utc": "2026-09-14T05:02:58.558198+00:00",
+              "exitcode_before_join": 0,
+              "raw_exitcode": 0,
+              "status": "reaped",
+              "join_finished_utc": "2026-09-14T05:02:58.558207+00:00"
+            },
+            {
+              "rank": 7,
+              "pid": 230618,
+              "join_started_utc": "2026-09-14T05:02:58.558212+00:00",
+              "exitcode_before_join": 0,
+              "raw_exitcode": 0,
+              "status": "reaped",
+              "join_finished_utc": "2026-09-14T05:02:58.558219+00:00"
+            }
+          ]
+        },
+        "elapsed_seconds": 20.718441012315452,
+        "finished_utc": "2026-09-14T05:02:58.558237+00:00",
+        "workers": [
+          {
+            "pid": 230081,
+            "rank": 0,
+            "name": "VllmWorker-0",
+            "raw_exitcode": 0,
+            "status_observed_utc": "2026-09-14T05:02:58.558250+00:00",
+            "signal": null,
+            "signal_name": null,
+            "exit_status": "available"
+          },
+          {
+            "pid": 230133,
+            "rank": 1,
+            "name": "VllmWorker-1",
+            "raw_exitcode": 0,
+            "status_observed_utc": "2026-09-14T05:02:58.558262+00:00",
+            "signal": null,
+            "signal_name": null,
+            "exit_status": "available"
+          },
+          {
+            "pid": 230217,
+            "rank": 2,
+            "name": "VllmWorker-2",
+            "raw_exitcode": 0,
+            "status_observed_utc": "2026-09-14T05:02:58.558270+00:00",
+            "signal": null,
+            "signal_name": null,
+            "exit_status": "available"
+          },
+          {
+            "pid": 230303,
+            "rank": 3,
+            "name": "VllmWorker-3",
+            "raw_exitcode": 0,
+            "status_observed_utc": "2026-09-14T05:02:58.558275+00:00",
+            "signal": null,
+            "signal_name": null,
+            "exit_status": "available"
+          },
+          {
+            "pid": 230384,
+            "rank": 4,
+            "name": "VllmWorker-4",
+            "raw_exitcode": 0,
+            "status_observed_utc": "2026-09-14T05:02:58.558281+00:00",
+            "signal": null,
+            "signal_name": null,
+            "exit_status": "available"
+          },
+          {
+            "pid": 230460,
+            "rank": 5,
+            "name": "VllmWorker-5",
+            "raw_exitcode": 0,
+            "status_observed_utc": "2026-09-14T05:02:58.558286+00:00",
+            "signal": null,
+            "signal_name": null,
+            "exit_status": "available"
+          },
+          {
+            "pid": 230541,
+            "rank": 6,
+            "name": "VllmWorker-6",
+            "raw_exitcode": 0,
+            "status_observed_utc": "2026-09-14T05:02:58.558292+00:00",
+            "signal": null,
+            "signal_name": null,
+            "exit_status": "available"
+          },
+          {
+            "pid": 230618,
+            "rank": 7,
+            "name": "VllmWorker-7",
+            "raw_exitcode": 0,
+            "status_observed_utc": "2026-09-14T05:02:58.558297+00:00",
+            "signal": null,
+            "signal_name": null,
+            "exit_status": "available"
+          }
+        ]
+      }
+    },
+    "cleanup_failure": {},
+    "worker_force_events": [],
+    "workers": [
+      {
+        "rank": 0,
+        "pid": 230081,
+        "name": "VllmWorker-0",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-14T05:02:58.558250+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "rank": 1,
+        "pid": 230133,
+        "name": "VllmWorker-1",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-14T05:02:58.558262+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "rank": 2,
+        "pid": 230217,
+        "name": "VllmWorker-2",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-14T05:02:58.558270+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "rank": 3,
+        "pid": 230303,
+        "name": "VllmWorker-3",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-14T05:02:58.558275+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "rank": 4,
+        "pid": 230384,
+        "name": "VllmWorker-4",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-14T05:02:58.558281+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "rank": 5,
+        "pid": 230460,
+        "name": "VllmWorker-5",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-14T05:02:58.558286+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "rank": 6,
+        "pid": 230541,
+        "name": "VllmWorker-6",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-14T05:02:58.558292+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "rank": 7,
+        "pid": 230618,
+        "name": "VllmWorker-7",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-14T05:02:58.558297+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      }
+    ],
+    "worker_natural_exit": true,
+    "overall_pass": false,
+    "exit_observation": true,
+    "original_budget_acceptance": "NOT_EVALUATED_BY_THIS_DIAGNOSTIC",
+    "natural_exit_with_extended_budget": true,
+    "evidence_errors": []
+  },
+  "worker_elapsed_seconds": 20.718441012315452,
+  "frontend_elapsed_seconds": 23.552212251350284,
+  "workers": [
+    {
+      "pid": 230081,
+      "rank": 0,
+      "name": "VllmWorker-0",
+      "raw_exitcode": 0,
+      "status_observed_utc": "2026-09-14T05:02:58.558250+00:00",
+      "signal": null,
+      "signal_name": null,
+      "exit_status": "available"
+    },
+    {
+      "pid": 230133,
+      "rank": 1,
+      "name": "VllmWorker-1",
+      "raw_exitcode": 0,
+      "status_observed_utc": "2026-09-14T05:02:58.558262+00:00",
+      "signal": null,
+      "signal_name": null,
+      "exit_status": "available"
+    },
+    {
+      "pid": 230217,
+      "rank": 2,
+      "name": "VllmWorker-2",
+      "raw_exitcode": 0,
+      "status_observed_utc": "2026-09-14T05:02:58.558270+00:00",
+      "signal": null,
+      "signal_name": null,
+      "exit_status": "available"
+    },
+    {
+      "pid": 230303,
+      "rank": 3,
+      "name": "VllmWorker-3",
+      "raw_exitcode": 0,
+      "status_observed_utc": "2026-09-14T05:02:58.558275+00:00",
+      "signal": null,
+      "signal_name": null,
+      "exit_status": "available"
+    },
+    {
+      "pid": 230384,
+      "rank": 4,
+      "name": "VllmWorker-4",
+      "raw_exitcode": 0,
+      "status_observed_utc": "2026-09-14T05:02:58.558281+00:00",
+      "signal": null,
+      "signal_name": null,
+      "exit_status": "available"
+    },
+    {
+      "pid": 230460,
+      "rank": 5,
+      "name": "VllmWorker-5",
+      "raw_exitcode": 0,
+      "status_observed_utc": "2026-09-14T05:02:58.558286+00:00",
+      "signal": null,
+      "signal_name": null,
+      "exit_status": "available"
+    },
+    {
+      "pid": 230541,
+      "rank": 6,
+      "name": "VllmWorker-6",
+      "raw_exitcode": 0,
+      "status_observed_utc": "2026-09-14T05:02:58.558292+00:00",
+      "signal": null,
+      "signal_name": null,
+      "exit_status": "available"
+    },
+    {
+      "pid": 230618,
+      "rank": 7,
+      "name": "VllmWorker-7",
+      "raw_exitcode": 0,
+      "status_observed_utc": "2026-09-14T05:02:58.558297+00:00",
+      "signal": null,
+      "signal_name": null,
+      "exit_status": "available"
+    }
+  ],
+  "reap": {
+    "budget_seconds": 1.0,
+    "elapsed_seconds": 0.00017414521425962448,
+    "workers": [
+      {
+        "rank": 0,
+        "pid": 230081,
+        "join_started_utc": "2026-09-14T05:02:58.558058+00:00",
+        "exitcode_before_join": 0,
+        "raw_exitcode": 0,
+        "status": "reaped",
+        "join_finished_utc": "2026-09-14T05:02:58.558109+00:00"
+      },
+      {
+        "rank": 1,
+        "pid": 230133,
+        "join_started_utc": "2026-09-14T05:02:58.558121+00:00",
+        "exitcode_before_join": 0,
+        "raw_exitcode": 0,
+        "status": "reaped",
+        "join_finished_utc": "2026-09-14T05:02:58.558138+00:00"
+      },
+      {
+        "rank": 2,
+        "pid": 230217,
+        "join_started_utc": "2026-09-14T05:02:58.558145+00:00",
+        "exitcode_before_join": 0,
+        "raw_exitcode": 0,
+        "status": "reaped",
+        "join_finished_utc": "2026-09-14T05:02:58.558154+00:00"
+      },
+      {
+        "rank": 3,
+        "pid": 230303,
+        "join_started_utc": "2026-09-14T05:02:58.558160+00:00",
+        "exitcode_before_join": 0,
+        "raw_exitcode": 0,
+        "status": "reaped",
+        "join_finished_utc": "2026-09-14T05:02:58.558168+00:00"
+      },
+      {
+        "rank": 4,
+        "pid": 230384,
+        "join_started_utc": "2026-09-14T05:02:58.558173+00:00",
+        "exitcode_before_join": 0,
+        "raw_exitcode": 0,
+        "status": "reaped",
+        "join_finished_utc": "2026-09-14T05:02:58.558180+00:00"
+      },
+      {
+        "rank": 5,
+        "pid": 230460,
+        "join_started_utc": "2026-09-14T05:02:58.558185+00:00",
+        "exitcode_before_join": 0,
+        "raw_exitcode": 0,
+        "status": "reaped",
+        "join_finished_utc": "2026-09-14T05:02:58.558193+00:00"
+      },
+      {
+        "rank": 6,
+        "pid": 230541,
+        "join_started_utc": "2026-09-14T05:02:58.558198+00:00",
+        "exitcode_before_join": 0,
+        "raw_exitcode": 0,
+        "status": "reaped",
+        "join_finished_utc": "2026-09-14T05:02:58.558207+00:00"
+      },
+      {
+        "rank": 7,
+        "pid": 230618,
+        "join_started_utc": "2026-09-14T05:02:58.558212+00:00",
+        "exitcode_before_join": 0,
+        "raw_exitcode": 0,
+        "status": "reaped",
+        "join_finished_utc": "2026-09-14T05:02:58.558219+00:00"
+      }
+    ]
+  },
+  "worker_force_events": [],
+  "cleanup_success": true,
+  "cleanup_timed_out": false,
+  "cleanup_forced": false,
+  "supervisor": {
+    "raw_returncode": 0,
+    "signals_sent": [],
+    "first_failure": null
+  },
+  "old_scan_failure": {
+    "rc": 0,
+    "status": "failed",
+    "error": "AssertionError: Runtime errors found; diagnostic evidence is retained, not a successful graph run."
+  },
+  "pipestatus": {
+    "exit-observation-report.pipestatus": "0 0",
+    "native-preflight.pipestatus": "0 0",
+    "acceptance-report.pipestatus": "1 0",
+    "core-source.pipestatus": "0 0",
+    "frozen-inputs.pipestatus": "0 0",
+    "source.pipestatus": "0 0",
+    "exit-observation-test-check.pipestatus": "0 0",
+    "checkpoint.pipestatus": "0 0",
+    "local-validation.pipestatus": "0 0",
+    "generation.pipestatus": "1 0",
+    "exit-observation-tests.pipestatus": "0 0"
+  },
+  "model_pipestatus": "0 0",
+  "outer_pipestatus": {
+    "fetch.pipestatus": "0 0",
+    "checkout.pipestatus": "0 0",
+    "driver.pipestatus": "1 0"
+  },
+  "outer_status": "MAIN_RC=1\nDIAGNOSTIC_ONLY=true\nFORMAL_ACCEPTANCE=NOT_EVALUATED\nEXPORT_RC=0\n",
+  "residual_tail": [
+    "RESIDUAL_PROCESSES []"
+  ],
+  "diagnostic_status": "NATURAL_EXIT_DEBUGGER_AFFECTED",
+  "native_coverage": "UNAVAILABLE",
+  "native_samples": [
+    {
+      "pid": 230081,
+      "label": "round-0-rank-0",
+      "started_utc": "2026-09-14T05:02:45.871867+00:00",
+      "status": "unavailable",
+      "timeout_seconds": 4.0,
+      "performance_eligible": false,
+      "debugger_may_pause_tracee": true,
+      "before": {
+        "pid": 230081,
+        "state": "R (running)",
+        "tracer_pid": 0,
+        "start_ticks": "456219115"
+      },
+      "maps_truncated": false,
+      "command": [
+        "/usr/bin/gdb",
+        "-nx",
+        "-nh",
+        "-batch",
+        "-ex",
+        "set pagination off",
+        "-ex",
+        "set confirm off",
+        "-ex",
+        "set auto-load off",
+        "-ex",
+        "set debuginfod enabled off",
+        "-ex",
+        "attach 230081",
+        "-ex",
+        "thread apply all bt 16",
+        "-ex",
+        "detach",
+        "-ex",
+        "quit"
+      ],
+      "debugger_pid": 236052,
+      "attached_observed": true,
+      "timed_out": true,
+      "debugger_kill": {
+        "signal": "SIGKILL",
+        "utc": "2026-09-14T05:02:49.885103+00:00",
+        "pid": 236052
+      },
+      "debugger_returncode": -9,
+      "after": {
+        "pid": 230081,
+        "state": "R (running)",
+        "tracer_pid": 0,
+        "start_ticks": "456219115"
+      },
+      "detached": true,
+      "finished_utc": "2026-09-14T05:02:50.103021+00:00",
+      "elapsed_seconds": 4.231177068315446,
+      "pause_upper_bound_seconds": 4.231177068315446,
+      "rank": 0
+    },
+    {
+      "pid": 230081,
+      "label": "round-1-rank-0",
+      "started_utc": "2026-09-14T05:02:51.866876+00:00",
+      "status": "unavailable",
+      "timeout_seconds": 4.0,
+      "performance_eligible": false,
+      "debugger_may_pause_tracee": true,
+      "before": {
+        "pid": 230081,
+        "state": "R (running)",
+        "tracer_pid": 0,
+        "start_ticks": "456219115"
+      },
+      "maps_truncated": false,
+      "command": [
+        "/usr/bin/gdb",
+        "-nx",
+        "-nh",
+        "-batch",
+        "-ex",
+        "set pagination off",
+        "-ex",
+        "set confirm off",
+        "-ex",
+        "set auto-load off",
+        "-ex",
+        "set debuginfod enabled off",
+        "-ex",
+        "attach 230081",
+        "-ex",
+        "thread apply all bt 16",
+        "-ex",
+        "detach",
+        "-ex",
+        "quit"
+      ],
+      "debugger_pid": 236264,
+      "attached_observed": true,
+      "timed_out": true,
+      "debugger_kill": {
+        "signal": "SIGKILL",
+        "utc": "2026-09-14T05:02:55.875614+00:00",
+        "pid": 236264
+      },
+      "debugger_returncode": -9,
+      "after": {
+        "pid": 230081,
+        "state": "R (running)",
+        "tracer_pid": 0,
+        "start_ticks": "456219115"
+      },
+      "detached": true,
+      "finished_utc": "2026-09-14T05:02:56.091752+00:00",
+      "elapsed_seconds": 4.224877676926553,
+      "pause_upper_bound_seconds": 4.224877676926553,
+      "rank": 0
+    }
+  ],
+  "stack_files": [
+    {
+      "file": "runs/b64/worker-exit/native/round-0-rank-0.stack.txt",
+      "bytes": 3952,
+      "has_backtrace_frames": false
+    },
+    {
+      "file": "runs/b64/worker-exit/native/round-1-rank-0.stack.txt",
+      "bytes": 3357,
+      "has_backtrace_frames": false
+    }
+  ],
+  "error_anchor": {
+    "file": "runs/b64.log",
+    "first_line": 778,
+    "lines": [
+      "ERROR 09-14 05:03:01 [async_llm.py:707] AsyncLLM output_handler failed.",
+      "ERROR 09-14 05:03:01 [async_llm.py:707] Traceback (most recent call last):",
+      "ERROR 09-14 05:03:01 [async_llm.py:707]   File \"/workspace/vllm-hust/vllm/v1/engine/async_llm.py\", line 663, in output_handler",
+      "ERROR 09-14 05:03:01 [async_llm.py:707]     outputs = await engine_core.get_output_async()",
+      "ERROR 09-14 05:03:01 [async_llm.py:707]               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+      "ERROR 09-14 05:03:01 [async_llm.py:707]   File \"/workspace/vllm-hust/vllm/v1/engine/core_client.py\", line 1065, in get_output_async",
+      "ERROR 09-14 05:03:01 [async_llm.py:707]     raise self._format_exception(outputs) from None",
+      "ERROR 09-14 05:03:01 [async_llm.py:707] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause."
+    ]
+  },
+  "interpretation": "Historical child and supervisor 0; scan/generation/report 1 retained. No retrospective overall pass. Debugger pauses prevent use as production timing evidence."
+}

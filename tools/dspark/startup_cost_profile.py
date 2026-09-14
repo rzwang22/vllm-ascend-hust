@@ -446,7 +446,10 @@ def profile_engine_kwargs(
     attention=False,
     operator_capture=None,
     exit_observation=False,
+    exit_no_debugger=False,
 ):
+    if exit_no_debugger and not exit_observation:
+        raise ValueError("No-debugger exit mode requires exit observation")
     if exit_observation and not worker_exit:
         raise ValueError("Extended exit observation requires --profile-worker-exit")
     if operator_capture is not None and not attention:
@@ -512,6 +515,7 @@ def profile_engine_kwargs(
         kwargs["additional_config"]["dspark_profile_worker_exit"] = True
     if exit_observation:
         kwargs["additional_config"]["dspark_profile_exit_observation"] = True
+        kwargs["additional_config"]["dspark_profile_exit_debugger"] = not exit_no_debugger
     return kwargs
 
 
@@ -574,6 +578,7 @@ def run(args):
             "points": points,
             "performance_eligible": False,
             "exit_observation": getattr(args, "profile_exit_observation", False),
+            "exit_no_debugger": getattr(args, "profile_exit_no_debugger", False),
         },
     )
     argv = plan["runs"][0]["command"][2:]
@@ -609,6 +614,7 @@ def run(args):
                     else None
                 ),
                 exit_observation=getattr(args, "profile_exit_observation", False),
+                exit_no_debugger=getattr(args, "profile_exit_no_debugger", False),
             ),
             parsed,
         )

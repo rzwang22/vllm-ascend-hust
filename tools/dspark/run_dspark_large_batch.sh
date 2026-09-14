@@ -27,7 +27,7 @@ main() {
         esac
     done
     set -- "${forwarded[@]}"
-    local model=/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8 previous='' argument experiment='' writer=false exit_observation=false
+    local model=/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8 previous='' argument experiment='' writer=false exit_observation=false no_debugger=false
     for argument in "$@"; do
         if test "$previous" = --model; then model=$argument; fi
         if test "$previous" = --profile-experiment; then experiment=$argument; fi
@@ -35,6 +35,7 @@ main() {
         case "$argument" in --profile-experiment=*) experiment=${argument#--profile-experiment=} ;; esac
         if test "$argument" = --profile-write-timeline; then writer=true; fi
         if test "$argument" = --profile-exit-observation; then exit_observation=true; fi
+        if test "$argument" = --profile-exit-no-debugger; then no_debugger=true; fi
         previous=$argument
     done
     mkdir -p /workspace/dspark-results || return 1
@@ -86,8 +87,10 @@ PYTEST
         logged local-validation python -m tools.dspark.swa_acceptance audit-local \
             "$acceptance_archive" "$CONF_OUT/local-validation.json" || return "$?"
         if test "$exit_observation" = true; then
+            local exit_tests=tests/ut/test_dspark_exit_observation.py
+            if test "$no_debugger" = true; then exit_tests=tests/ut/test_dspark_exit_no_debugger.py; fi
             logged exit-observation-tests python -m pytest --noconftest -q -ra \
-                tests/ut/test_dspark_exit_observation.py \
+                "$exit_tests" \
                 --basetemp "$CONF_OUT/exit-tests" --junitxml "$CONF_OUT/exit-observation.xml" || return "$?"
             logged exit-observation-test-check python - "$CONF_OUT/exit-observation.xml" <<'PYTEST'
 import sys
@@ -97,8 +100,21 @@ assert cases and not any(c.find(k) is not None for c in cases for k in ('failure
 print(f'Exit observation host tests: {len(cases)} passed; zero failures/skips')
 PYTEST
             test "$?" -eq 0 || return 1
+            if test "$no_debugger" = true; then
+                logged native-disabled python - "$CONF_OUT/native-preflight-disabled.json" <<'PYNOATTACH'
+import json
+import sys
+from vllm import envs
+assert envs.VLLM_WORKER_SHUTDOWN_TIMEOUT_SECONDS == 5
+with open(sys.argv[1], 'w') as out:
+    json.dump(dict(debugger_enabled=False, attachment_count=0, native_sampling='disabled_by_configuration',
+                   attach_preflight='not_run_by_configuration', performance_eligible=False), out)
+PYNOATTACH
+                test "$?" -eq 0 || return 1
+            else
             logged native-preflight timeout --signal=TERM --kill-after=2s 30s python -m tools.dspark.exit_native_preflight \
                 "$CONF_OUT/native-preflight" || return "$?"
+            fi
         else
         # The archived 22/3/23 tests already passed; validate entry and host teardown.
         logged acceptance-entry python -m pytest --noconftest -q -ra \

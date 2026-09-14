@@ -253,7 +253,7 @@ def preflight(directory, *, import_runtime=False):
     return result
 
 
-def observe_workers(handles, directory):
+def observe_workers(handles, directory, *, debugger_enabled=True):
     """Shared 20s pre-wait, then delegate unchanged Core 5s/4s escalation."""
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
@@ -274,8 +274,11 @@ def observe_workers(handles, directory):
         "exits": {},
         "last_alive": {},
         "native_samples": [],
+        "debugger_enabled": debugger_enabled,
+        "attachment_count": 0,
+        "native_sampling": "enabled" if debugger_enabled else "disabled_by_configuration",
         "stack_plan": {
-            "at_seconds": STACK_AT_SECONDS,
+            "at_seconds": STACK_AT_SECONDS if debugger_enabled else (),
             "max_ranks_per_round": MAX_RANKS,
             "timeout_seconds": STACK_TIMEOUT_SECONDS,
             "detach_seconds": DETACH_SECONDS,
@@ -303,7 +306,7 @@ def observe_workers(handles, directory):
             if not alive:
                 break
             elapsed = time.monotonic() - started
-            if next_sample < len(STACK_AT_SECONDS) and elapsed >= STACK_AT_SECONDS[next_sample]:
+            if debugger_enabled and next_sample < len(STACK_AT_SECONDS) and elapsed >= STACK_AT_SECONDS[next_sample]:
                 for handle in sorted(alive, key=lambda h: h.rank)[:MAX_RANKS]:
                     if handle.proc.exitcode is not None:
                         continue
@@ -316,6 +319,9 @@ def observe_workers(handles, directory):
                     )
                     sample["rank"] = handle.rank
                     data["native_samples"].append(sample)
+                    data["attachment_count"] += int(
+                        sample.get("attached_observed", False) or sample["status"] == "captured"
+                    )
                     save(directory / "observation.json", data)
                 next_sample += 1
             time.sleep(POLL_SECONDS)
@@ -326,6 +332,10 @@ def observe_workers(handles, directory):
     finally:
         data["finished_utc"] = utc()
         data["elapsed_seconds"] = time.monotonic() - started
-        data["interpretation"] = "Debugger pauses are included; compare stages, not pure shutdown performance"
+        data["interpretation"] = (
+            "Debugger pauses are included; compare stages, not pure shutdown performance"
+            if debugger_enabled
+            else "No debugger/ptrace; parent polling/reap timestamps are upper bounds, not kernel exit instants"
+        )
         save(directory / "observation.json", data)
     return data
