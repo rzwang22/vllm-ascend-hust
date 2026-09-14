@@ -34,6 +34,7 @@ def process_status(handle):
         "rank": handle.rank,
         "name": proc.name,
         "raw_exitcode": code,
+        "status_observed_utc": datetime.now(timezone.utc).isoformat(),
         "signal": sig,
         "signal_name": name,
         "exit_status": "available" if code is not None else "unavailable: not reaped/exited",
@@ -51,7 +52,30 @@ class ProfileMultiprocExecutor(MultiprocExecutor):
         self._profile_operation = None
         self._profile_cleanup_observed = False
         self._profile_worker_exit = vllm_config.additional_config.get("dspark_profile_worker_exit", False)
+        self._profile_exit_observation = vllm_config.additional_config.get("dspark_profile_exit_observation", False)
+        if self._profile_exit_observation and not self._profile_worker_exit:
+            raise ValueError("Extended exit observation requires the profile exit worker")
+        if self._profile_exit_observation:
+            from vllm import envs
+
+            if envs.VLLM_WORKER_SHUTDOWN_TIMEOUT_SECONDS != 5:
+                raise ValueError("Exit observation requires the recorded original worker grace of 5 seconds")
         super().__init__(vllm_config, monitor_workers=monitor_workers)
+
+    def _ensure_worker_termination(self, procs):
+        if getattr(self, "_profile_exit_observation", False):
+            try:
+                from vllm_ascend.diagnostics.dspark_exit_observation import observe_workers
+
+                observe_workers(self.workers, self._profile_directory / "worker-exit" / "native")
+            except Exception as error:
+                # A debugger/receipt failure must not prevent original Core
+                # escalation and queue cleanup. The cleanup receipt still fails.
+                self._profile_native_error = f"{type(error).__name__}: {error}"
+                print(f"PROFILE_NATIVE_EXIT_UNAVAILABLE: {self._profile_native_error}", flush=True)
+        # Death writers have already closed. Preserve Core TERM/KILL and queue
+        # teardown after the additional bounded diagnostic-only pre-wait.
+        return super()._ensure_worker_termination(procs)
 
     def collective_rpc(
         self,
@@ -140,6 +164,7 @@ class ProfileMultiprocExecutor(MultiprocExecutor):
                 print(f"PROFILE_EXIT_WATCH_UNAVAILABLE: {type(error).__name__}: {error}", flush=True)
         state = {
             "performance_eligible": False,
+            "exit_observation": getattr(self, "_profile_exit_observation", False),
             "parent_pid": os.getpid(),
             "point": self._profile_point,
             "started_utc": datetime.now(timezone.utc).isoformat(),
@@ -183,9 +208,13 @@ class ProfileMultiprocExecutor(MultiprocExecutor):
             if watch is not None:
                 watch.close()
             logger.removeHandler(observer)
+            if getattr(self, "_profile_native_error", None):
+                state["exit_observation_error"] = self._profile_native_error
+                state["recording_error"] = state["recording_error"] or self._profile_native_error
             # Core's escalation returns immediately after kill(). Reap owned
             # handles before publishing status, within the existing frontend
-            # budget (5s grace + 4s TERM + <=1s join, frontend 12s).
+            # budget (5s grace + 4s TERM + <=1s join, frontend 12s;
+            # opt-in observation adds 20s and uses frontend 36s).
             try:
                 state["reap"] = reap_workers(workers)
                 if any(row["status"] != "reaped" for row in state["reap"]["workers"]):

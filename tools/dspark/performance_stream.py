@@ -234,7 +234,12 @@ class StreamingEngine:
             raise
         failure_directory = (kwargs.get("additional_config") or {}).get("dspark_profile_failure_dir")
         if failure_directory is not None:
-            self.profile_guard = ProfileFailureGuard(self.engine, failure_directory, require_worker_receipt=True)
+            self.profile_guard = ProfileFailureGuard(
+                self.engine,
+                failure_directory,
+                require_worker_receipt=True,
+                exit_observation=(kwargs.get("additional_config") or {}).get("dspark_profile_exit_observation", False),
+            )
         observation = (kwargs.get("additional_config") or {}).get("dspark_profile_observation", {})
         if observation.get("attention"):
             if self.profile_guard is None:

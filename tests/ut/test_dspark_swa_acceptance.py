@@ -188,8 +188,13 @@ def test_wrong_archive_hash_fails_before_loading(tmp_path):
         acceptance.audit_local(p)
 
 
-@pytest.mark.parametrize("generation_rc,report_rc", [(0, 0), (0, 1), (7, 1)])
-def test_actual_large_shell_filters_remote_and_preserves_generation_failure(tmp_path, generation_rc, report_rc):
+@pytest.mark.parametrize(
+    "generation_rc,report_rc,observation_rc",
+    [(0, 0, None), (0, 1, None), (7, 1, None), (7, 1, 9), (0, 1, 9), (0, 0, 9), (0, 0, 0)],
+)
+def test_actual_large_shell_filters_remote_and_preserves_generation_failure(
+    tmp_path, generation_rc, report_rc, observation_rc
+):
     workspace = tmp_path / "workspace"
     plugin = workspace / "vllm-ascend-hust"
     plugin.mkdir(parents=True)
@@ -205,8 +210,10 @@ def test_actual_large_shell_filters_remote_and_preserves_generation_failure(tmp_
     (binary / "python").write_text(
         '#!/bin/sh\nprintf "%s\\n" "$*" >> "$CALLS"\ncase "$*" in\n'
         f'*"run_large_batch.py"*) exit {generation_rc};;\n'
-        f'*"swa_acceptance report"*) exit {report_rc};;\nesac\n'
+        f'*"swa_acceptance report"*) exit {report_rc};;\n'
+        f'*"exit_observation_report"*) exit {observation_rc or 0};;\nesac\n'
     )
+    (binary / "timeout").write_text('#!/bin/sh\nwhile test "$1" != python; do shift; done\nexec "$@"\n')
     (binary / "sha256sum").write_text('#!/bin/sh\nshasum -a 256 "$@"\n')
     for path in binary.iterdir():
         path.chmod(0o755)
@@ -235,18 +242,22 @@ def test_actual_large_shell_filters_remote_and_preserves_generation_failure(tmp_
             "profile",
             "--batches",
             "64",
+            *(["--profile-exit-observation"] if observation_rc is not None else []),
         ],
         env=env,
         capture_output=True,
         text=True,
         timeout=15,
     )
-    assert run.returncode == (generation_rc or report_rc), run.stdout + run.stderr
+    assert run.returncode == (generation_rc or report_rc or observation_rc or 0), run.stdout + run.stderr
     commands = calls.read_text().splitlines()
     assert any("core-source" in c and "rzwang" in c for c in commands)
     generation = next(c for c in commands if "run_large_batch.py" in c)
     assert "--core-remote" not in generation and "--swa-acceptance-archive" not in generation
     assert not any("test_dspark_operator_capture.py" in c or "test_dspark_swa_lifecycle.py" in c for c in commands)
     assert any(f"b64 {generation_rc}" in c for c in commands if "swa_acceptance report" in c)
+    if observation_rc is not None:
+        assert any("exit_native_preflight" in c for c in commands)
+        assert any("exit_observation_report" in c for c in commands)
     result = next((workspace / "dspark-results").glob("dspark-large-batch.*-evidence.tar.gz"))
     assert result.is_file()

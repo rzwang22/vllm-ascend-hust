@@ -215,7 +215,16 @@ def model_report(root, raw_rc):
         "worker_force_events": workers.get("force_events"),
         "workers": exitcodes,
         "worker_natural_exit": bool(natural),
-        "overall_pass": bool(numerical and natural and raw_rc == 0),
+        "overall_pass": bool(numerical and natural and raw_rc == 0 and not plan.get("exit_observation", False)),
+        **(
+            {
+                "exit_observation": True,
+                "original_budget_acceptance": "NOT_EVALUATED_BY_THIS_DIAGNOSTIC",
+                "natural_exit_with_extended_budget": bool(natural),
+            }
+            if plan.get("exit_observation", False)
+            else {}
+        ),
         "evidence_errors": errors,
     }
 
@@ -242,6 +251,14 @@ def main():
     else:
         result = model_report(args.root, args.rc)
         write(args.output, result)
+        if result.get("exit_observation"):
+            # A successful diagnostic invocation is not original-budget acceptance.
+            completed = (
+                result["natural_exit_with_extended_budget"]
+                and args.rc == 0
+                and result["numerical_and_FULL_acceptance"] == "PASSED_THIS_RUN"
+            )
+            raise SystemExit(0 if completed else 1)
         raise SystemExit(0 if result["overall_pass"] else 1)
 
 

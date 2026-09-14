@@ -16,6 +16,8 @@ CANCEL_TIMEOUT_SECONDS = 1
 CLEANUP_TIMEOUT_SECONDS = 12
 CLEANUP_FINALIZE_SECONDS = 4
 SUPERVISOR_MARGIN_SECONDS = 6
+EXIT_OBSERVATION_ENGINE_SECONDS = 36
+EXIT_OBSERVATION_SUPERVISOR_SECONDS = 48
 # Includes cancellation of a failed operation, cleanup, loop task cancellation
 # and receipt/dispatch margin. Core's worker escalation alone allows 5+4s.
 FAILURE_GRACE_SECONDS = (
@@ -34,8 +36,9 @@ def write_json(path, data):
 
 
 class ProfileFailureGuard:
-    def __init__(self, engine, directory, *, require_worker_receipt=False):
+    def __init__(self, engine, directory, *, require_worker_receipt=False, exit_observation=False):
         self.engine = engine
+        self.exit_observation = exit_observation
         self.require_worker_receipt = require_worker_receipt
         self.phase = "runtime"
         self.directory = Path(directory)
@@ -131,16 +134,20 @@ class ProfileFailureGuard:
             return self.cleanup_result  # do not start a second destructor thread
         self.phase = "cleanup"
         started = time.monotonic()
-        outer_budget = CLEANUP_TIMEOUT_SECONDS + CLEANUP_FINALIZE_SECONDS
+        engine_budget = EXIT_OBSERVATION_ENGINE_SECONDS if self.exit_observation else CLEANUP_TIMEOUT_SECONDS
+        outer_budget = engine_budget + CLEANUP_FINALIZE_SECONDS
         deadline = started + outer_budget
         state = {
             "schema_version": 2,
             "performance_eligible": False,
             "started_utc": datetime.now(timezone.utc).isoformat(),
-            "timeout_seconds": CLEANUP_TIMEOUT_SECONDS,
+            "timeout_seconds": engine_budget,
+            "exit_observation": self.exit_observation,
             "finalize_timeout_seconds": CLEANUP_FINALIZE_SECONDS,
             "outer_timeout_seconds": outer_budget,
-            "supervisor_failure_grace_seconds": FAILURE_GRACE_SECONDS,
+            "supervisor_failure_grace_seconds": (
+                EXIT_OBSERVATION_SUPERVISOR_SECONDS if self.exit_observation else FAILURE_GRACE_SECONDS
+            ),
             "status": "running",
             "shutdown_completed": False,
             "engine_returned": False,
@@ -178,7 +185,7 @@ class ProfileFailureGuard:
                 with lock:
                     state["engine_started_utc"] = datetime.now(timezone.utc).isoformat()
                     state["forced_cleanup"] = False if available else None
-                self.engine.shutdown(timeout=CLEANUP_TIMEOUT_SECONDS)
+                self.engine.shutdown(timeout=engine_budget)
                 with lock:
                     state["engine_returned"] = True
                     state["returned_utc"] = datetime.now(timezone.utc).isoformat()

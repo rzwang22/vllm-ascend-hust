@@ -186,9 +186,16 @@ def main(argv=None):
         "--profile-write-timeline", action="store_true", help="Opt-in bounded historical slot writer timeline"
     )
     parser.add_argument(
+        "--profile-exit-observation",
+        action="store_true",
+        help="Diagnostic-only bounded native exit observation; original acceptance stays separate",
+    )
+    parser.add_argument(
         "--profile-worker-exit", action="store_true", help="Opt-in exit-only steps and pre-escalation stacks"
     )
     args = parser.parse_args(argv)
+    if args.profile_exit_observation and not args.profile_worker_exit:
+        parser.error("--profile-exit-observation requires --profile-worker-exit")
     if args.profile_worker_exit and args.profile_experiment != "target-boundaries":
         parser.error("--profile-worker-exit requires target-boundaries")
     if args.profile_write_timeline and not args.profile_operator_capture:

@@ -12,7 +12,7 @@ from contextlib import suppress
 from datetime import datetime, timezone
 from pathlib import Path
 
-from tools.dspark.profile_failure import FAILURE_GRACE_SECONDS, write_json
+from tools.dspark.profile_failure import EXIT_OBSERVATION_SUPERVISOR_SECONDS, FAILURE_GRACE_SECONDS, write_json
 
 TERM_GRACE_SECONDS = 5
 POLL_SECONDS = 0.1
@@ -140,13 +140,19 @@ def main():
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--max-runtime-seconds", type=float)
     parser.add_argument("--stop-file", type=Path)
+    parser.add_argument("--exit-observation", action="store_true")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
     if not command:
         parser.error("Child command is required")
     return supervise(
-        command, args.directory, args.receipt, max_runtime=args.max_runtime_seconds, stop_file=args.stop_file
+        command,
+        args.directory,
+        args.receipt,
+        max_runtime=args.max_runtime_seconds,
+        stop_file=args.stop_file,
+        grace=EXIT_OBSERVATION_SUPERVISOR_SECONDS if args.exit_observation else FAILURE_GRACE_SECONDS,
     )
 
 

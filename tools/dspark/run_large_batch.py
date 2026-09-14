@@ -92,6 +92,7 @@ def command(args, batch, root):
                 else []
             ),
             *(["--profile-worker-exit"] if getattr(args, "profile_worker_exit", False) else []),
+            *(["--profile-exit-observation"] if getattr(args, "profile_exit_observation", False) else []),
             *(["--profile-target-attention"] if getattr(args, "profile_target_attention", False) else []),
             *(["--profile-operator-capture"] if getattr(args, "profile_operator_capture", False) else []),
             *(["--profile-write-timeline"] if getattr(args, "profile_write_timeline", False) else []),
@@ -195,6 +196,7 @@ def run(args):
                     "--receipt",
                     str(args.output_dir / f"b{batch}-supervisor.json"),
                     *controls,
+                    *(["--exit-observation"] if getattr(args, "profile_exit_observation", False) else []),
                     "--",
                     *cmd,
                 ]
@@ -304,9 +306,16 @@ def main(argv=None):
         "--profile-write-timeline", action="store_true", help="Opt-in bounded historical slot writer timeline"
     )
     parser.add_argument(
+        "--profile-exit-observation",
+        action="store_true",
+        help="Diagnostic-only bounded native exit observation; original acceptance stays separate",
+    )
+    parser.add_argument(
         "--profile-worker-exit", action="store_true", help="Opt-in exit-only steps and pre-escalation stacks"
     )
     args = parser.parse_args(argv)
+    if args.profile_exit_observation and not args.profile_worker_exit:
+        parser.error("--profile-exit-observation requires --profile-worker-exit")
     if args.profile_worker_exit and args.profile_experiment != "target-boundaries":
         parser.error("--profile-worker-exit requires target-boundaries")
     if args.profile_write_timeline and not args.profile_operator_capture:

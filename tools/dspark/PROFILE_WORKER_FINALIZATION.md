@@ -1,5 +1,8 @@
 # 完整模型数值通过后的 worker 退出修复验收
 
+后续 l4CYeLJv 已证实关闭引用和真实回收生效，但自然退出仍失败。当前有界原生观察入口见
+[退出诊断对照](PROFILE_EXIT_OBSERVATION.md)；本页保留上一轮修复依据和原预算验收。
+
 ## iwviRLAg 原始证据
 
 实际读取 `dspark-large-batch.iwviRLAg-evidence.tar.gz`，SHA256：

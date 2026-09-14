@@ -445,7 +445,10 @@ def profile_engine_kwargs(
     worker_exit=False,
     attention=False,
     operator_capture=None,
+    exit_observation=False,
 ):
+    if exit_observation and not worker_exit:
+        raise ValueError("Extended exit observation requires --profile-worker-exit")
     if operator_capture is not None and not attention:
         raise ValueError("Operator capture requires attention detail")
     if operator_capture is not None and operator_capture.get("write_timeline"):
@@ -507,6 +510,8 @@ def profile_engine_kwargs(
     if worker_exit:
         kwargs["worker_cls"] = "vllm_ascend.diagnostics.dspark_profile_worker.ProfileNPUWorker"
         kwargs["additional_config"]["dspark_profile_worker_exit"] = True
+    if exit_observation:
+        kwargs["additional_config"]["dspark_profile_exit_observation"] = True
     return kwargs
 
 
@@ -562,7 +567,15 @@ def run(args):
     local.client_outstanding = None
     local.output_len = args.profile_output_tokens
     plan = suite.create_plan(local, root / "synthetic.jsonl", root)
-    benchmark._atomic_write_json(root / "plan.json", {**plan, "points": points, "performance_eligible": False})
+    benchmark._atomic_write_json(
+        root / "plan.json",
+        {
+            **plan,
+            "points": points,
+            "performance_eligible": False,
+            "exit_observation": getattr(args, "profile_exit_observation", False),
+        },
+    )
     argv = plan["runs"][0]["command"][2:]
     argv[argv.index("--no-ignore-eos")] = "--ignore-eos"  # synthetic profile ONLY
     parsed = benchmark.parse_args(argv)
@@ -595,6 +608,7 @@ def run(args):
                     if getattr(args, "profile_operator_capture", False)
                     else None
                 ),
+                exit_observation=getattr(args, "profile_exit_observation", False),
             ),
             parsed,
         )

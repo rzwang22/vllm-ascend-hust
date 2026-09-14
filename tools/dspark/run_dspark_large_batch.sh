@@ -27,13 +27,14 @@ main() {
         esac
     done
     set -- "${forwarded[@]}"
-    local model=/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8 previous='' argument experiment='' writer=false
+    local model=/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8 previous='' argument experiment='' writer=false exit_observation=false
     for argument in "$@"; do
         if test "$previous" = --model; then model=$argument; fi
         if test "$previous" = --profile-experiment; then experiment=$argument; fi
         case "$argument" in --model=*) model=${argument#--model=} ;; esac
         case "$argument" in --profile-experiment=*) experiment=${argument#--profile-experiment=} ;; esac
         if test "$argument" = --profile-write-timeline; then writer=true; fi
+        if test "$argument" = --profile-exit-observation; then exit_observation=true; fi
         previous=$argument
     done
     mkdir -p /workspace/dspark-results || return 1
@@ -84,6 +85,21 @@ PYTEST
         [[ " $* " != *" --profile-operator-capture "* ]] || return 1
         logged local-validation python -m tools.dspark.swa_acceptance audit-local \
             "$acceptance_archive" "$CONF_OUT/local-validation.json" || return "$?"
+        if test "$exit_observation" = true; then
+            logged exit-observation-tests python -m pytest --noconftest -q -ra \
+                tests/ut/test_dspark_exit_observation.py \
+                --basetemp "$CONF_OUT/exit-tests" --junitxml "$CONF_OUT/exit-observation.xml" || return "$?"
+            logged exit-observation-test-check python - "$CONF_OUT/exit-observation.xml" <<'PYTEST'
+import sys
+import xml.etree.ElementTree as ET
+cases = ET.parse(sys.argv[1]).getroot().findall('.//testcase')
+assert cases and not any(c.find(k) is not None for c in cases for k in ('failure', 'error', 'skipped'))
+print(f'Exit observation host tests: {len(cases)} passed; zero failures/skips')
+PYTEST
+            test "$?" -eq 0 || return 1
+            logged native-preflight timeout --signal=TERM --kill-after=2s 30s python -m tools.dspark.exit_native_preflight \
+                "$CONF_OUT/native-preflight" || return "$?"
+        else
         # The archived 22/3/23 tests already passed; validate entry and host teardown.
         logged acceptance-entry python -m pytest --noconftest -q -ra \
             tests/ut/test_dspark_swa_acceptance.py tests/ut/test_dspark_profile_teardown.py \
@@ -98,6 +114,7 @@ assert cases and not any(c.find(k) is not None for c in cases for k in ('failure
 print(f'Host entry/teardown: {len(cases)} passed, zero failures/skips; no NPU or model verification claimed')
 PYTEST
         test "$?" -eq 0 || return 1
+        fi
     else
     logged focused python -m pytest -q -ra \
         tests/ut/test_dspark_repeated_inputs.py tests/ut/test_dspark_startup_cost_profile.py \
@@ -124,14 +141,20 @@ PYTEST
     if test "$experiment" = target-boundaries && test -f "$CONF_OUT/STOP"; then return 130; fi
     logged generation python tools/dspark/run_large_batch.py \
         --plugin-sha "$sha" --manifest "$manifest" --output-dir "$CONF_OUT/runs" "$@"
-    local generation_rc=$? report_rc=0
+    local generation_rc=$? report_rc=0 observation_rc=0
     if test -n "$acceptance_archive"; then
         logged acceptance-report python -m tools.dspark.swa_acceptance report \
             "$CONF_OUT/runs/b64" "$generation_rc" "$CONF_OUT/model-acceptance.json"
         report_rc=$?
+        if test "$exit_observation" = true; then
+            logged exit-observation-report python -m tools.dspark.exit_observation_report \
+                "$CONF_OUT"
+            observation_rc=$?
+        fi
     fi
     if test "$generation_rc" -ne 0; then return "$generation_rc"; fi
-    return "$report_rc"
+    if test "$report_rc" -ne 0; then return "$report_rc"; fi
+    return "$observation_rc"
 }
 
 main "$@"
