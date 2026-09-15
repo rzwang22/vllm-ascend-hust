@@ -17,6 +17,7 @@ from pathlib import Path
 
 from vllm.v1.executor.multiproc_executor import MultiprocExecutor
 
+from tools.dspark.shutdown_policy import installed_budget
 from vllm_ascend.diagnostics.dspark_cleanup import EXECUTOR_FORCE_MESSAGES, ShutdownForceObserver
 from vllm_ascend.diagnostics.dspark_profile_teardown import reap_workers
 
@@ -53,6 +54,11 @@ class ProfileMultiprocExecutor(MultiprocExecutor):
         self._profile_cleanup_observed = False
         self._profile_worker_exit = vllm_config.additional_config.get("dspark_profile_worker_exit", False)
         self._profile_exit_observation = vllm_config.additional_config.get("dspark_profile_exit_observation", False)
+        self._profile_shutdown_budget = installed_budget(
+            vllm_config.additional_config.get("dspark_profile_shutdown_policy"),
+            exit_observation=self._profile_exit_observation,
+            worker_exit=self._profile_worker_exit,
+        )
         self._profile_exit_debugger = vllm_config.additional_config.get("dspark_profile_exit_debugger", True)
         if self._profile_exit_observation and not self._profile_worker_exit:
             raise ValueError("Extended exit observation requires the profile exit worker")
@@ -125,6 +131,11 @@ class ProfileMultiprocExecutor(MultiprocExecutor):
                     "performance_eligible": False,
                     "source": "MultiprocWorkerMonitor -> shutdown; before cleanup signals",
                     "observed_utc": datetime.now(timezone.utc).isoformat(),
+                    **(
+                        {"shutdown_budget": self._profile_shutdown_budget}
+                        if getattr(self, "_profile_shutdown_budget", None)
+                        else {}
+                    ),
                     "parent_pid": os.getpid(),
                     "point": self._profile_point,
                     "pending_operation": self._profile_operation,
@@ -170,6 +181,11 @@ class ProfileMultiprocExecutor(MultiprocExecutor):
         state = {
             "performance_eligible": False,
             "exit_observation": getattr(self, "_profile_exit_observation", False),
+            **(
+                {"shutdown_budget": self._profile_shutdown_budget}
+                if getattr(self, "_profile_shutdown_budget", None)
+                else {}
+            ),
             "parent_pid": os.getpid(),
             "point": self._profile_point,
             "started_utc": datetime.now(timezone.utc).isoformat(),
@@ -219,7 +235,8 @@ class ProfileMultiprocExecutor(MultiprocExecutor):
             # Core's escalation returns immediately after kill(). Reap owned
             # handles before publishing status, within the existing frontend
             # budget (5s grace + 4s TERM + <=1s join, frontend 12s;
-            # opt-in observation adds 20s and uses frontend 36s).
+            # opt-in observation adds 20s; named policy sets Core grace to
+            # 25s directly. Both use frontend 36s).
             try:
                 state["reap"] = reap_workers(workers)
                 if any(row["status"] != "reaped" for row in state["reap"]["workers"]):

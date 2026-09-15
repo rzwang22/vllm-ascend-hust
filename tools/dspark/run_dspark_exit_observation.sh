@@ -3,6 +3,7 @@
 # Child Bash only: archive the outer log/status and the new model evidence.
 set -uo pipefail
 out=''
+formal=false
 logged() {
     local label=$1; shift
     "$@" 2>&1 | tee "$out/$label.log"
@@ -15,12 +16,17 @@ main() {
     test "$#" -ge 3 && test "$#" -le 4 || return 1
     local sha=$1 manifest=$2 remote=$3 mode=--exit-observation
     if test "$#" -eq 4; then
-        test "$4" = --no-debugger || return 1
-        mode=--exit-observation-no-debugger
+        case "$4" in
+            --no-debugger) mode=--exit-observation-no-debugger ;;
+            --shutdown-policy=dspark-profile-25s-v1) mode=$4; formal=true ;;
+            *) return 1 ;;
+        esac
     fi
     [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || return 1
     mkdir -p /workspace/dspark-results || return 1
-    out=$(mktemp -d /workspace/dspark-results/dspark-exit-observation.XXXXXXXX) || return 1
+    local prefix=dspark-exit-observation
+    if test "$formal" = true; then prefix=dspark-model-acceptance; fi
+    out=$(mktemp -d "/workspace/dspark-results/$prefix.XXXXXXXX") || return 1
     printf 'EXIT_OBSERVATION_DIR=%s\n' "$out"
     cd /workspace/vllm-ascend-hust || return 1
     test -z "$(git status --porcelain)" || return 1
@@ -34,6 +40,9 @@ rc=$?
 export_rc=0
 if test -n "$out"; then
     printf 'MAIN_RC=%s\nDIAGNOSTIC_ONLY=true\nFORMAL_ACCEPTANCE=NOT_EVALUATED\n' "$rc" > "$out/status.txt"
+    if test "$formal" = true; then
+        printf 'MAIN_RC=%s\nACCEPTANCE_POLICY=dspark-profile-25s-v1\nFORMAL_ACCEPTANCE=SEE_MODEL_REPORT\nORIGINAL_BUDGET=NOT_EVALUATED\n' "$rc" > "$out/status.txt"
+    fi
     if test -f "$out/driver.log"; then
         model_dir=$(sed -n 's/^SERVER_RESULT_DIR=//p' "$out/driver.log" | head -1)
         if [[ "$model_dir" =~ ^/workspace/dspark-results/dspark-large-batch\.[A-Za-z0-9]+$ ]] && test -f "$model_dir-evidence.tar.gz"; then

@@ -196,7 +196,10 @@ def main(argv=None):
     parser.add_argument(
         "--profile-exit-no-debugger", action="store_true", help="Poll only; never run gdb/ptrace or attach preflight"
     )
+    parser.add_argument("--profile-shutdown-policy", choices=("dspark-profile-25s-v1",))
     args = parser.parse_args(argv)
+    if args.profile_shutdown_policy and (args.profile_exit_observation or not args.profile_worker_exit):
+        parser.error("Named shutdown policy requires worker receipts and excludes exit observation")
     if args.profile_exit_no_debugger and not args.profile_exit_observation:
         parser.error("--profile-exit-no-debugger requires --profile-exit-observation")
     if args.profile_exit_observation and not args.profile_worker_exit:

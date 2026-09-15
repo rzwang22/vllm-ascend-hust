@@ -27,8 +27,10 @@ main() {
         esac
     done
     set -- "${forwarded[@]}"
-    local model=/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8 previous='' argument experiment='' writer=false exit_observation=false no_debugger=false
+    local model=/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8 previous='' argument experiment='' writer=false exit_observation=false no_debugger=false shutdown_policy=''
     for argument in "$@"; do
+        if test "$previous" = --profile-shutdown-policy; then shutdown_policy=$argument; fi
+        case "$argument" in --profile-shutdown-policy=*) shutdown_policy=${argument#--profile-shutdown-policy=} ;; esac
         if test "$previous" = --model; then model=$argument; fi
         if test "$previous" = --profile-experiment; then experiment=$argument; fi
         case "$argument" in --model=*) model=${argument#--model=} ;; esac
@@ -86,7 +88,20 @@ PYTEST
         [[ " $* " != *" --profile-operator-capture "* ]] || return 1
         logged local-validation python -m tools.dspark.swa_acceptance audit-local \
             "$acceptance_archive" "$CONF_OUT/local-validation.json" || return "$?"
-        if test "$exit_observation" = true; then
+        if test -n "$shutdown_policy"; then
+            test "$shutdown_policy" = dspark-profile-25s-v1 && test "$exit_observation" = false || return 1
+            logged shutdown-policy-tests python -m pytest --noconftest -q -ra \
+                tests/ut/test_dspark_shutdown_policy.py \
+                --basetemp "$CONF_OUT/policy-tests" --junitxml "$CONF_OUT/shutdown-policy.xml" || return "$?"
+            logged shutdown-policy-test-check python - "$CONF_OUT/shutdown-policy.xml" <<'PYTEST'
+import sys
+import xml.etree.ElementTree as ET
+cases = ET.parse(sys.argv[1]).getroot().findall('.//testcase')
+assert cases and not any(c.find(k) is not None for c in cases for k in ('failure', 'error', 'skipped'))
+print(f'Shutdown policy host tests: {len(cases)} passed; zero failures/skips; no model initialization')
+PYTEST
+            test "$?" -eq 0 || return 1
+        elif test "$exit_observation" = true; then
             local exit_tests=tests/ut/test_dspark_exit_observation.py
             if test "$no_debugger" = true; then exit_tests=tests/ut/test_dspark_exit_no_debugger.py; fi
             logged exit-observation-tests python -m pytest --noconftest -q -ra \

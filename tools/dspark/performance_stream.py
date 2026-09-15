@@ -239,6 +239,7 @@ class StreamingEngine:
                 self.engine,
                 failure_directory,
                 require_worker_receipt=True,
+                shutdown_policy=(kwargs.get("additional_config") or {}).get("dspark_profile_shutdown_policy"),
                 exit_observation=(kwargs.get("additional_config") or {}).get("dspark_profile_exit_observation", False),
             )
         observation = (kwargs.get("additional_config") or {}).get("dspark_profile_observation", {})

@@ -1,0 +1,72 @@
+{
+  "baseline_plugin": "a0b1048f2ce23626d7df26b89a04025763527af3",
+  "core_unchanged": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+  "scope": "Named opt-in formal profile shutdown policy; no model/Core/custom op or default-budget modification",
+  "environment": {
+    "python": "3.12.13 (main, May 10 2026, 19:20:41) [Clang 22.1.3 ]",
+    "platform": "macOS-26.4-arm64-arm-64bit",
+    "torch": "2.10.0 CPU",
+    "torch_npu": "not installed"
+  },
+  "tests": {
+    "passed": 193,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "by_class": {
+      "tests.ut.test_dspark_shutdown_policy": 25,
+      "tests.ut.test_dspark_profile_failure": 34,
+      "tests.ut.test_dspark_exit_no_debugger": 26,
+      "tests.ut.test_dspark_exit_observation": 32,
+      "tests.ut.test_dspark_swa_acceptance": 22,
+      "tests.ut.test_dspark_startup_cost_profile": 18,
+      "tests.ut.test_dspark_performance_delivery": 36
+    },
+    "meaning": "Host/CPU, actual frozen Core method bodies with CPU process/time substitutions, real subprocess and shell archive tests. No NPU/full installed model execution."
+  },
+  "checks": {
+    "ruff": "passed",
+    "bash_syntax": "passed",
+    "git_diff_check": "passed",
+    "changed_file_manual_precommit": "all applicable passed",
+    "full_format": {
+      "returncode": 1,
+      "output_bytes": 1458405674,
+      "hooks": [
+        "ruff check..................................................................Failed",
+        "ruff format.................................................................Failed",
+        "codespell...................................................................Failed",
+        "typos.......................................................................Failed",
+        "clang-format................................................................Passed",
+        "markdownlint................................................................Failed",
+        "Lint GitHub Actions workflow files..........................................Failed",
+        "Lint shell scripts..........................................................Failed",
+        "Lint PNG exports from excalidraw............................................Passed",
+        "Check for spaces in all filenames...........................................Passed",
+        "Enforce __init__.py in Python packages......................................Passed",
+        "Forbid init_logger(__name__) in vllm_ascend modules.........................Passed",
+        "Check for forbidden imports.................................................Failed",
+        "Check for boolean ops in with-statements....................................Passed",
+        "Check that new functions over 100 lines have comments.......................Passed",
+        "Check symbolic shapes in meta kernels.......................................Passed",
+        "Suggestion..................................................................Passed"
+      ],
+      "auto_modified_count": 78,
+      "auto_modified_task_files": [],
+      "scope": "Full bash format.sh ci in disposable worktree, baseline plus staged patch. Unrelated changes discarded.",
+      "meaning": "Repository-wide check remains failing; task-file checks passed separately. No full CI pass claimed."
+    }
+  },
+  "prior_results": "Latest no-gdb archive independently passed numerical/FULL, frontend drain and eight-worker natural exit under diagnostic extended budget. Historical original-budget status unchanged.",
+  "pending": [
+    "Named dspark-profile-25s-v1 full model NPU acceptance",
+    "Specific native teardown-tail attribution remains UNKNOWN",
+    "Original profile-default-5s budget NOT_EVALUATED"
+  ],
+  "not_repeated": [
+    "22/3/23 lifecycle NPU tests",
+    "single operator controls",
+    "gdb/ptrace",
+    "B128/B256 and cost/performance profiling"
+  ]
+}

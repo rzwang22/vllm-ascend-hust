@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from tools.dspark.profile_failure import EXIT_OBSERVATION_SUPERVISOR_SECONDS, FAILURE_GRACE_SECONDS, write_json
+from tools.dspark.shutdown_policy import budget
 
 TERM_GRACE_SECONDS = 5
 POLL_SECONDS = 0.1
@@ -51,12 +52,17 @@ def supervise(
     term_grace=TERM_GRACE_SECONDS,
     max_runtime=None,
     stop_file=None,
+    shutdown_policy=None,
 ):
     if max_runtime is not None and max_runtime <= 0:
         raise ValueError("Profile runtime bound must be positive")
+    selected = budget(shutdown_policy)
+    if selected:
+        grace = selected["supervisor_seconds"]
     child = subprocess.Popen(command, start_new_session=True)
     started = time.monotonic()
     receipt = {
+        **({"shutdown_budget": selected} if selected else {}),
         "schema_version": 1,
         "performance_eligible": False,
         "child_pid": child.pid,
@@ -129,6 +135,9 @@ def supervise(
             receipt["raw_returncode"] = child.wait(timeout=term_grace)
         except subprocess.TimeoutExpired:
             receipt["reap_status"] = "unavailable: owned child did not reap within bound"
+        receipt["owned_group_remaining"] = group_exists(child.pid)
+        if receipt["owned_group_remaining"] and receipt["first_failure"] is None:
+            receipt["first_failure"] = {"source": "owned group remains after bounded cleanup"}
         receipt["completed_utc"] = datetime.now(timezone.utc).isoformat()
         write_json(receipt_path, receipt)
     return 1 if receipt["first_failure"] or receipt["raw_returncode"] != 0 else 0
@@ -140,9 +149,11 @@ def main():
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--max-runtime-seconds", type=float)
     parser.add_argument("--stop-file", type=Path)
+    parser.add_argument("--shutdown-policy", choices=("dspark-profile-25s-v1",))
     parser.add_argument("--exit-observation", action="store_true")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
+    budget(args.shutdown_policy, exit_observation=args.exit_observation)
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
     if not command:
         parser.error("Child command is required")
@@ -152,6 +163,7 @@ def main():
         args.receipt,
         max_runtime=args.max_runtime_seconds,
         stop_file=args.stop_file,
+        shutdown_policy=args.shutdown_policy,
         grace=EXIT_OBSERVATION_SUPERVISOR_SECONDS if args.exit_observation else FAILURE_GRACE_SECONDS,
     )
 

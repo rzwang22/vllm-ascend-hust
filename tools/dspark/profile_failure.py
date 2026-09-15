@@ -10,6 +10,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from tools.dspark.shutdown_policy import budget
+
 POLL_SECONDS = 0.1
 RPC_TIMEOUT_SECONDS = 120
 CANCEL_TIMEOUT_SECONDS = 1
@@ -36,9 +38,14 @@ def write_json(path, data):
 
 
 class ProfileFailureGuard:
-    def __init__(self, engine, directory, *, require_worker_receipt=False, exit_observation=False):
+    def __init__(
+        self, engine, directory, *, require_worker_receipt=False, exit_observation=False, shutdown_policy=None
+    ):
         self.engine = engine
         self.exit_observation = exit_observation
+        self.shutdown_budget = budget(
+            shutdown_policy, exit_observation=exit_observation, worker_exit=require_worker_receipt
+        )
         self.require_worker_receipt = require_worker_receipt
         self.phase = "runtime"
         self.directory = Path(directory)
@@ -136,9 +143,12 @@ class ProfileFailureGuard:
         now = time.monotonic()
         started, started_utc = frontend_started or (now, datetime.now(timezone.utc).isoformat())
         engine_budget = EXIT_OBSERVATION_ENGINE_SECONDS if self.exit_observation else CLEANUP_TIMEOUT_SECONDS
+        if self.shutdown_budget:
+            engine_budget = self.shutdown_budget["engine_seconds"]
         outer_budget = engine_budget + CLEANUP_FINALIZE_SECONDS
         deadline = started + outer_budget
         state = {
+            **({"shutdown_budget": self.shutdown_budget} if self.shutdown_budget else {}),
             "schema_version": 2,
             "performance_eligible": False,
             "started_utc": started_utc,
@@ -148,7 +158,11 @@ class ProfileFailureGuard:
             "finalize_timeout_seconds": CLEANUP_FINALIZE_SECONDS,
             "outer_timeout_seconds": outer_budget,
             "supervisor_failure_grace_seconds": (
-                EXIT_OBSERVATION_SUPERVISOR_SECONDS if self.exit_observation else FAILURE_GRACE_SECONDS
+                self.shutdown_budget["supervisor_seconds"]
+                if self.shutdown_budget
+                else EXIT_OBSERVATION_SUPERVISOR_SECONDS
+                if self.exit_observation
+                else FAILURE_GRACE_SECONDS
             ),
             "status": "running",
             "shutdown_completed": False,

@@ -7,6 +7,7 @@ sha=$1 manifest=$2 core_remote=$3
 extra=(--profile-worker-exit)
 if test "$#" -eq 4; then
     case "$4" in
+        --shutdown-policy=dspark-profile-25s-v1) extra+=(--profile-shutdown-policy dspark-profile-25s-v1) ;;
         --exit-observation) extra+=(--profile-exit-observation) ;;
         --exit-observation-no-debugger) extra+=(--profile-exit-observation --profile-exit-no-debugger) ;;
         *) exit 1 ;;

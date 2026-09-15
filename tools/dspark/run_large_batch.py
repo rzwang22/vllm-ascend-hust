@@ -14,6 +14,7 @@ from tools.dspark import benchmark_dspark_acceptance as benchmark
 from tools.dspark import run_performance_suite as suite
 from tools.dspark.graph64_checks import scan
 from tools.dspark.prepare_performance_data import copy_manifest_assets, input_population, read_manifest
+from tools.dspark.shutdown_policy import child_command
 
 TARGET_DIAGNOSTIC_RUNTIME_SECONDS = 3600
 
@@ -92,6 +93,11 @@ def command(args, batch, root):
                 else []
             ),
             *(["--profile-worker-exit"] if getattr(args, "profile_worker_exit", False) else []),
+            *(
+                ["--profile-shutdown-policy", args.profile_shutdown_policy]
+                if getattr(args, "profile_shutdown_policy", None)
+                else []
+            ),
             *(["--profile-exit-observation"] if getattr(args, "profile_exit_observation", False) else []),
             *(["--profile-exit-no-debugger"] if getattr(args, "profile_exit_no_debugger", False) else []),
             *(["--profile-target-attention"] if getattr(args, "profile_target_attention", False) else []),
@@ -198,8 +204,13 @@ def run(args):
                     str(args.output_dir / f"b{batch}-supervisor.json"),
                     *controls,
                     *(["--exit-observation"] if getattr(args, "profile_exit_observation", False) else []),
+                    *(
+                        ["--shutdown-policy", args.profile_shutdown_policy]
+                        if getattr(args, "profile_shutdown_policy", None)
+                        else []
+                    ),
                     "--",
-                    *cmd,
+                    *child_command(getattr(args, "profile_shutdown_policy", None), cmd),
                 ]
                 row["supervised_command"] = cmd
             benchmark._atomic_write_json(args.output_dir / f"b{batch}-command.json", row)
@@ -221,6 +232,18 @@ def run(args):
         except Exception as error:
             row["error"] = f"{type(error).__name__}: {error}"
             rc = 1
+        if getattr(args, "profile_shutdown_policy", None):
+            # Independent post-child resource check; never replace a prior error.
+            residual = {"success": False, "error": None}
+            try:
+                suite.resources_idle(args.output_dir / f"b{batch}-npu-after.log")
+                residual["success"] = True
+            except Exception as error:
+                residual["error"] = f"{type(error).__name__}: {error}"
+                row.setdefault("error", residual["error"])
+                row["status"] = "failed"
+                rc = 1
+            benchmark._atomic_write_json(args.output_dir / f"b{batch}-residual.json", residual)
         benchmark._atomic_write_json(args.output_dir / f"b{batch}-command.json", row)
         statuses.append(row)
         benchmark._atomic_write_json(args.output_dir / "stages.json", statuses)
@@ -322,7 +345,10 @@ def main(argv=None):
     parser.add_argument(
         "--profile-exit-no-debugger", action="store_true", help="Poll only; never run gdb/ptrace or attach preflight"
     )
+    parser.add_argument("--profile-shutdown-policy", choices=("dspark-profile-25s-v1",))
     args = parser.parse_args(argv)
+    if args.profile_shutdown_policy and (args.profile_exit_observation or not args.profile_worker_exit):
+        parser.error("Named shutdown policy requires worker receipts and excludes exit observation")
     if args.profile_exit_no_debugger and not args.profile_exit_observation:
         parser.error("--profile-exit-no-debugger requires --profile-exit-observation")
     if args.profile_exit_observation and not args.profile_worker_exit:

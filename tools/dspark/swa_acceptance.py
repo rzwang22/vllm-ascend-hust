@@ -15,6 +15,7 @@ import regex as re
 
 from tools.dspark import run_performance_suite as suite
 from tools.dspark.profile_attention_validity import AttentionValidity
+from tools.dspark.shutdown_acceptance import check
 from tools.dspark.startup_cost_profile import diagnostic_points, grid, point_numeric_status, point_samples
 
 LOCAL_ARCHIVE_SHA = "45e7dbe6679aa5192b644d542d0ac16bac67c7c735cd70502cb8cc6800023408"
@@ -199,7 +200,16 @@ def model_report(root, raw_rc):
             for r in rows
         )
     )
+    policy_result = {}
+    if plan.get("shutdown_policy"):
+        policy_result = check(root, plan["shutdown_policy"])
+        policy_result["named_budget_acceptance"] = (
+            "PASSED_THIS_RUN"
+            if numerical and natural and raw_rc == 0 and policy_result["shutdown_policy_evidence_valid"]
+            else "FAILED_OR_UNAVAILABLE"
+        )
     return {
+        **policy_result,
         "performance_eligible": False,
         "raw_generation_rc": raw_rc,
         "points": rows,
@@ -215,7 +225,13 @@ def model_report(root, raw_rc):
         "worker_force_events": workers.get("force_events"),
         "workers": exitcodes,
         "worker_natural_exit": bool(natural),
-        "overall_pass": bool(numerical and natural and raw_rc == 0 and not plan.get("exit_observation", False)),
+        "overall_pass": bool(
+            numerical
+            and natural
+            and raw_rc == 0
+            and not plan.get("exit_observation", False)
+            and policy_result.get("shutdown_policy_evidence_valid", True)
+        ),
         **(
             {
                 "exit_observation": True,

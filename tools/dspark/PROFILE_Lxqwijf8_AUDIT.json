@@ -1,0 +1,730 @@
+{
+  "archives": {
+    "dspark-exit-observation.cY8yC0P3-evidence.tar.gz": {
+      "sha256": "695445a070b106f971765681d72c9945a80417a930547577f1228a892aac807c",
+      "members": 11
+    },
+    "dspark-large-batch.Lxqwijf8-evidence.tar.gz": {
+      "sha256": "4041bbcc74936f6594e820e270f8d4735f916a5dbf2e5ed01cfc69f76a7aa7ac",
+      "members": 278
+    }
+  },
+  "baseline_plugin": "a0b1048f2ce23626d7df26b89a04025763527af3",
+  "core": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+  "nested_archive_identical": true,
+  "formal_model_report_recomputed_identical": true,
+  "host_tests_passed": 26,
+  "request_count": 26,
+  "tokens_per_request": 512,
+  "numerical_and_FULL_acceptance": "PASSED_THIS_RUN",
+  "historical_overall_pass": false,
+  "original_budget_acceptance": "NOT_EVALUATED_BY_THIS_DIAGNOSTIC",
+  "cleanup": {
+    "schema_version": 2,
+    "performance_eligible": false,
+    "started_utc": "2026-09-15T14:23:32.825751+00:00",
+    "pre_shutdown_elapsed_seconds": 0.0005431445315480232,
+    "timeout_seconds": 36,
+    "exit_observation": true,
+    "finalize_timeout_seconds": 4,
+    "outer_timeout_seconds": 40,
+    "supervisor_failure_grace_seconds": 48,
+    "status": "returned",
+    "shutdown_completed": true,
+    "engine_returned": true,
+    "thread_completed": true,
+    "timed_out": false,
+    "success": true,
+    "force_events": [],
+    "forced_cleanup": false,
+    "force_observation_scope": "frontend Core process-manager warning on cleanup thread; not descendant logs",
+    "graceful_worker_exit": true,
+    "event_loop": "closed",
+    "error": null,
+    "recording_error": null,
+    "returned_utc": "2026-09-15T14:23:48.415764+00:00",
+    "engine_started_utc": "2026-09-15T14:23:32.826964+00:00",
+    "engine_finished_utc": "2026-09-15T14:23:48.415790+00:00",
+    "engine_elapsed_seconds": 15.588826741091907,
+    "returned_after_outer_deadline": false,
+    "elapsed_seconds": 15.629096335731447,
+    "observed_utc": "2026-09-15T14:23:48.454847+00:00",
+    "output_handler_shutdown": {
+      "started_utc": "2026-09-15T14:23:32.825781+00:00",
+      "performance_eligible": false,
+      "timeout_seconds": 1,
+      "success": true,
+      "status": "drained",
+      "prior_error": null,
+      "error": null,
+      "unfinished_requests": 0,
+      "engine_errored_before_shutdown": false,
+      "last_batch_complete": true,
+      "cancelled": true,
+      "finished_utc": "2026-09-15T14:23:32.825952+00:00",
+      "elapsed_seconds": 0.00018109194934368134
+    }
+  },
+  "worker_cleanup": {
+    "performance_eligible": false,
+    "exit_observation": true,
+    "parent_pid": 286003,
+    "point": "ctx128-n4-t12-skewed",
+    "started_utc": "2026-09-15T14:23:32.831343+00:00",
+    "status": "returned",
+    "force_events": [],
+    "forced_cleanup": false,
+    "error": null,
+    "recording_error": null,
+    "reap": {
+      "budget_seconds": 1.0,
+      "elapsed_seconds": 0.00014922209084033966,
+      "workers": [
+        {
+          "rank": 0,
+          "pid": 286067,
+          "join_started_utc": "2026-09-15T14:23:45.591555+00:00",
+          "exitcode_before_join": 0,
+          "raw_exitcode": 0,
+          "status": "reaped",
+          "join_finished_utc": "2026-09-15T14:23:45.591589+00:00"
+        },
+        {
+          "rank": 1,
+          "pid": 286121,
+          "join_started_utc": "2026-09-15T14:23:45.591600+00:00",
+          "exitcode_before_join": 0,
+          "raw_exitcode": 0,
+          "status": "reaped",
+          "join_finished_utc": "2026-09-15T14:23:45.591616+00:00"
+        },
+        {
+          "rank": 2,
+          "pid": 286197,
+          "join_started_utc": "2026-09-15T14:23:45.591622+00:00",
+          "exitcode_before_join": 0,
+          "raw_exitcode": 0,
+          "status": "reaped",
+          "join_finished_utc": "2026-09-15T14:23:45.591631+00:00"
+        },
+        {
+          "rank": 3,
+          "pid": 286294,
+          "join_started_utc": "2026-09-15T14:23:45.591636+00:00",
+          "exitcode_before_join": 0,
+          "raw_exitcode": 0,
+          "status": "reaped",
+          "join_finished_utc": "2026-09-15T14:23:45.591644+00:00"
+        },
+        {
+          "rank": 4,
+          "pid": 286376,
+          "join_started_utc": "2026-09-15T14:23:45.591649+00:00",
+          "exitcode_before_join": 0,
+          "raw_exitcode": 0,
+          "status": "reaped",
+          "join_finished_utc": "2026-09-15T14:23:45.591657+00:00"
+        },
+        {
+          "rank": 5,
+          "pid": 286469,
+          "join_started_utc": "2026-09-15T14:23:45.591662+00:00",
+          "exitcode_before_join": 0,
+          "raw_exitcode": 0,
+          "status": "reaped",
+          "join_finished_utc": "2026-09-15T14:23:45.591669+00:00"
+        },
+        {
+          "rank": 6,
+          "pid": 286548,
+          "join_started_utc": "2026-09-15T14:23:45.591674+00:00",
+          "exitcode_before_join": 0,
+          "raw_exitcode": 0,
+          "status": "reaped",
+          "join_finished_utc": "2026-09-15T14:23:45.591682+00:00"
+        },
+        {
+          "rank": 7,
+          "pid": 286639,
+          "join_started_utc": "2026-09-15T14:23:45.591686+00:00",
+          "exitcode_before_join": 0,
+          "raw_exitcode": 0,
+          "status": "reaped",
+          "join_finished_utc": "2026-09-15T14:23:45.591694+00:00"
+        }
+      ]
+    },
+    "elapsed_seconds": 12.762401215732098,
+    "finished_utc": "2026-09-15T14:23:45.591710+00:00",
+    "workers": [
+      {
+        "pid": 286067,
+        "rank": 0,
+        "name": "VllmWorker-0",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-15T14:23:45.591724+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "pid": 286121,
+        "rank": 1,
+        "name": "VllmWorker-1",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-15T14:23:45.591735+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "pid": 286197,
+        "rank": 2,
+        "name": "VllmWorker-2",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-15T14:23:45.591741+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "pid": 286294,
+        "rank": 3,
+        "name": "VllmWorker-3",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-15T14:23:45.591747+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "pid": 286376,
+        "rank": 4,
+        "name": "VllmWorker-4",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-15T14:23:45.591752+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "pid": 286469,
+        "rank": 5,
+        "name": "VllmWorker-5",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-15T14:23:45.591758+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "pid": 286548,
+        "rank": 6,
+        "name": "VllmWorker-6",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-15T14:23:45.591763+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "pid": 286639,
+        "rank": 7,
+        "name": "VllmWorker-7",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-15T14:23:45.591769+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      }
+    ]
+  },
+  "output_handler": {
+    "started_utc": "2026-09-15T14:23:32.825781+00:00",
+    "performance_eligible": false,
+    "timeout_seconds": 1,
+    "success": true,
+    "status": "drained",
+    "prior_error": null,
+    "error": null,
+    "unfinished_requests": 0,
+    "engine_errored_before_shutdown": false,
+    "last_batch_complete": true,
+    "cancelled": true,
+    "finished_utc": "2026-09-15T14:23:32.825952+00:00",
+    "elapsed_seconds": 0.00018109194934368134
+  },
+  "supervisor": {
+    "schema_version": 1,
+    "performance_eligible": false,
+    "child_pid": 285874,
+    "owned_process_group": 285874,
+    "command": [
+      "/usr/local/python3.12.13/bin/python",
+      "/workspace/vllm-ascend-hust/tools/dspark/run_confidence_verification.py",
+      "--plugin",
+      "/workspace/vllm-ascend-hust",
+      "--core",
+      "/workspace/vllm-hust",
+      "--plugin-sha",
+      "a0b1048f2ce23626d7df26b89a04025763527af3",
+      "--model",
+      "/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8",
+      "--manifest",
+      "/workspace/dspark-results/dspark-repeated-input.WSJur2Ev/input/manifest.json",
+      "--num-prompts",
+      "400",
+      "--output-len",
+      "256",
+      "--warmup-prompts",
+      "4",
+      "--max-model-len",
+      "8192",
+      "--max-num-batched-tokens",
+      "8192",
+      "--gpu-memory-utilization",
+      "0.9",
+      "--stage",
+      "profile",
+      "--batch",
+      "64",
+      "--capture",
+      "6",
+      "12",
+      "24",
+      "48",
+      "96",
+      "192",
+      "384",
+      "--output-dir",
+      "/workspace/dspark-results/dspark-large-batch.Lxqwijf8/runs/b64",
+      "--profile-experiment",
+      "target-boundaries",
+      "--profile-stop-after-point",
+      "ctx128-n4-t12-skewed",
+      "--profile-target-layer",
+      "1",
+      "--profile-worker-exit",
+      "--profile-exit-observation",
+      "--profile-exit-no-debugger",
+      "--profile-target-attention",
+      "--profile-contexts",
+      "128",
+      "2048",
+      "--profile-output-tokens",
+      "512",
+      "--profile-warmup",
+      "2",
+      "--profile-samples",
+      "5"
+    ],
+    "first_failure": null,
+    "signals_sent": [],
+    "raw_returncode": 0,
+    "failure_grace_seconds": 48,
+    "term_grace_seconds": 5,
+    "max_runtime_seconds": 3600.0,
+    "stop_file": "/workspace/dspark-results/dspark-large-batch.Lxqwijf8/STOP",
+    "started_utc": "2026-09-15T14:08:36.353830+00:00",
+    "completed_utc": "2026-09-15T14:23:51.131904+00:00"
+  },
+  "independent_exit_report": {
+    "performance_eligible": false,
+    "diagnostic_only": true,
+    "status": "NATURAL_EXIT_NO_DEBUGGER",
+    "worker_natural_exit_observed": true,
+    "frontend_cleanup_success": true,
+    "formal_acceptance": "NOT_EVALUATED",
+    "original_budget_failure_preserved": true,
+    "numerical_and_FULL_acceptance": "PASSED_THIS_RUN",
+    "ten_points_generation_complete": true,
+    "native_observation": {
+      "performance_eligible": false,
+      "diagnostic_only": true,
+      "status": "returned",
+      "started_utc": "2026-09-15T14:23:32.832913+00:00",
+      "baseline_worker_grace_seconds": 5,
+      "additional_observe_seconds": 20.0,
+      "worker_grace_seconds": 25.0,
+      "term_seconds": 4,
+      "reap_seconds": 1,
+      "engine_seconds": 36,
+      "frontend_seconds": 40,
+      "supervisor_seconds": 48,
+      "exits": {
+        "1": {
+          "pid": 286121,
+          "raw_exitcode": 0,
+          "observed_utc": "2026-09-15T14:23:44.519883+00:00",
+          "elapsed_seconds": 11.686982648447156,
+          "meaning": "parent poll/reap timestamp, not kernel exit instant"
+        },
+        "6": {
+          "pid": 286548,
+          "raw_exitcode": 0,
+          "observed_utc": "2026-09-15T14:23:44.571621+00:00",
+          "elapsed_seconds": 11.73871873319149,
+          "meaning": "parent poll/reap timestamp, not kernel exit instant"
+        },
+        "5": {
+          "pid": 286469,
+          "raw_exitcode": 0,
+          "observed_utc": "2026-09-15T14:23:44.623034+00:00",
+          "elapsed_seconds": 11.790130662731826,
+          "meaning": "parent poll/reap timestamp, not kernel exit instant"
+        },
+        "3": {
+          "pid": 286294,
+          "raw_exitcode": 0,
+          "observed_utc": "2026-09-15T14:23:45.125492+00:00",
+          "elapsed_seconds": 12.29258940462023,
+          "meaning": "parent poll/reap timestamp, not kernel exit instant"
+        },
+        "0": {
+          "pid": 286067,
+          "raw_exitcode": 0,
+          "observed_utc": "2026-09-15T14:23:45.177225+00:00",
+          "elapsed_seconds": 12.344326827675104,
+          "meaning": "parent poll/reap timestamp, not kernel exit instant"
+        },
+        "2": {
+          "pid": 286197,
+          "raw_exitcode": 0,
+          "observed_utc": "2026-09-15T14:23:45.178612+00:00",
+          "elapsed_seconds": 12.34571438189596,
+          "meaning": "parent poll/reap timestamp, not kernel exit instant"
+        },
+        "7": {
+          "pid": 286639,
+          "raw_exitcode": 0,
+          "observed_utc": "2026-09-15T14:23:45.230040+00:00",
+          "elapsed_seconds": 12.397138951346278,
+          "meaning": "parent poll/reap timestamp, not kernel exit instant"
+        },
+        "4": {
+          "pid": 286376,
+          "raw_exitcode": 0,
+          "observed_utc": "2026-09-15T14:23:45.581942+00:00",
+          "elapsed_seconds": 12.749043419025838,
+          "meaning": "parent poll/reap timestamp, not kernel exit instant"
+        }
+      },
+      "last_alive": {
+        "0": {
+          "utc": "2026-09-15T14:23:45.124694+00:00",
+          "elapsed_seconds": 12.2917938567698
+        },
+        "1": {
+          "utc": "2026-09-15T14:23:44.468935+00:00",
+          "elapsed_seconds": 11.63602939248085
+        },
+        "2": {
+          "utc": "2026-09-15T14:23:45.124713+00:00",
+          "elapsed_seconds": 12.291807296685874
+        },
+        "3": {
+          "utc": "2026-09-15T14:23:45.074603+00:00",
+          "elapsed_seconds": 12.241696828976274
+        },
+        "4": {
+          "utc": "2026-09-15T14:23:45.531134+00:00",
+          "elapsed_seconds": 12.698232363909483
+        },
+        "5": {
+          "utc": "2026-09-15T14:23:44.570862+00:00",
+          "elapsed_seconds": 11.737955205142498
+        },
+        "6": {
+          "utc": "2026-09-15T14:23:44.520732+00:00",
+          "elapsed_seconds": 11.687825976870954
+        },
+        "7": {
+          "utc": "2026-09-15T14:23:45.179207+00:00",
+          "elapsed_seconds": 12.346301976591349
+        }
+      },
+      "native_samples": [],
+      "debugger_enabled": false,
+      "attachment_count": 0,
+      "native_sampling": "disabled_by_configuration",
+      "stack_plan": {
+        "at_seconds": [],
+        "max_ranks_per_round": 1,
+        "timeout_seconds": 4.0,
+        "detach_seconds": 0.5
+      },
+      "poll_resolution_seconds": 0.05,
+      "finished_utc": "2026-09-15T14:23:45.582615+00:00",
+      "elapsed_seconds": 12.749716375023127,
+      "interpretation": "No debugger/ptrace; parent polling/reap timestamps are upper bounds, not kernel exit instants"
+    },
+    "rank_timings": [
+      {
+        "pid": 286067,
+        "rank": 0,
+        "name": "VllmWorker-0",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-15T14:23:45.591724+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available",
+        "shutdown_returned_utc": "2026-09-15T14:23:36.123382+00:00",
+        "last_alive": {
+          "utc": "2026-09-15T14:23:45.124694+00:00",
+          "elapsed_seconds": 12.2917938567698
+        },
+        "exit_observed_utc": "2026-09-15T14:23:45.177225+00:00",
+        "join": {
+          "rank": 0,
+          "pid": 286067,
+          "join_started_utc": "2026-09-15T14:23:45.591555+00:00",
+          "exitcode_before_join": 0,
+          "raw_exitcode": 0,
+          "status": "reaped",
+          "join_finished_utc": "2026-09-15T14:23:45.591589+00:00"
+        },
+        "post_shutdown_observed_seconds_upper_bound": 9.053843,
+        "timing_source": "parent poll"
+      },
+      {
+        "pid": 286121,
+        "rank": 1,
+        "name": "VllmWorker-1",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-15T14:23:45.591735+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available",
+        "shutdown_returned_utc": "2026-09-15T14:23:35.973602+00:00",
+        "last_alive": {
+          "utc": "2026-09-15T14:23:44.468935+00:00",
+          "elapsed_seconds": 11.63602939248085
+        },
+        "exit_observed_utc": "2026-09-15T14:23:44.519883+00:00",
+        "join": {
+          "rank": 1,
+          "pid": 286121,
+          "join_started_utc": "2026-09-15T14:23:45.591600+00:00",
+          "exitcode_before_join": 0,
+          "raw_exitcode": 0,
+          "status": "reaped",
+          "join_finished_utc": "2026-09-15T14:23:45.591616+00:00"
+        },
+        "post_shutdown_observed_seconds_upper_bound": 8.546281,
+        "timing_source": "parent poll"
+      },
+      {
+        "pid": 286197,
+        "rank": 2,
+        "name": "VllmWorker-2",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-15T14:23:45.591741+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available",
+        "shutdown_returned_utc": "2026-09-15T14:23:36.123511+00:00",
+        "last_alive": {
+          "utc": "2026-09-15T14:23:45.124713+00:00",
+          "elapsed_seconds": 12.291807296685874
+        },
+        "exit_observed_utc": "2026-09-15T14:23:45.178612+00:00",
+        "join": {
+          "rank": 2,
+          "pid": 286197,
+          "join_started_utc": "2026-09-15T14:23:45.591622+00:00",
+          "exitcode_before_join": 0,
+          "raw_exitcode": 0,
+          "status": "reaped",
+          "join_finished_utc": "2026-09-15T14:23:45.591631+00:00"
+        },
+        "post_shutdown_observed_seconds_upper_bound": 9.055101,
+        "timing_source": "parent poll"
+      },
+      {
+        "pid": 286294,
+        "rank": 3,
+        "name": "VllmWorker-3",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-15T14:23:45.591747+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available",
+        "shutdown_returned_utc": "2026-09-15T14:23:36.123355+00:00",
+        "last_alive": {
+          "utc": "2026-09-15T14:23:45.074603+00:00",
+          "elapsed_seconds": 12.241696828976274
+        },
+        "exit_observed_utc": "2026-09-15T14:23:45.125492+00:00",
+        "join": {
+          "rank": 3,
+          "pid": 286294,
+          "join_started_utc": "2026-09-15T14:23:45.591636+00:00",
+          "exitcode_before_join": 0,
+          "raw_exitcode": 0,
+          "status": "reaped",
+          "join_finished_utc": "2026-09-15T14:23:45.591644+00:00"
+        },
+        "post_shutdown_observed_seconds_upper_bound": 9.002137,
+        "timing_source": "parent poll"
+      },
+      {
+        "pid": 286376,
+        "rank": 4,
+        "name": "VllmWorker-4",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-15T14:23:45.591752+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available",
+        "shutdown_returned_utc": "2026-09-15T14:23:36.123178+00:00",
+        "last_alive": {
+          "utc": "2026-09-15T14:23:45.531134+00:00",
+          "elapsed_seconds": 12.698232363909483
+        },
+        "exit_observed_utc": "2026-09-15T14:23:45.581942+00:00",
+        "join": {
+          "rank": 4,
+          "pid": 286376,
+          "join_started_utc": "2026-09-15T14:23:45.591649+00:00",
+          "exitcode_before_join": 0,
+          "raw_exitcode": 0,
+          "status": "reaped",
+          "join_finished_utc": "2026-09-15T14:23:45.591657+00:00"
+        },
+        "post_shutdown_observed_seconds_upper_bound": 9.458764,
+        "timing_source": "parent poll"
+      },
+      {
+        "pid": 286469,
+        "rank": 5,
+        "name": "VllmWorker-5",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-15T14:23:45.591758+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available",
+        "shutdown_returned_utc": "2026-09-15T14:23:36.123303+00:00",
+        "last_alive": {
+          "utc": "2026-09-15T14:23:44.570862+00:00",
+          "elapsed_seconds": 11.737955205142498
+        },
+        "exit_observed_utc": "2026-09-15T14:23:44.623034+00:00",
+        "join": {
+          "rank": 5,
+          "pid": 286469,
+          "join_started_utc": "2026-09-15T14:23:45.591662+00:00",
+          "exitcode_before_join": 0,
+          "raw_exitcode": 0,
+          "status": "reaped",
+          "join_finished_utc": "2026-09-15T14:23:45.591669+00:00"
+        },
+        "post_shutdown_observed_seconds_upper_bound": 8.499731,
+        "timing_source": "parent poll"
+      },
+      {
+        "pid": 286548,
+        "rank": 6,
+        "name": "VllmWorker-6",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-15T14:23:45.591763+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available",
+        "shutdown_returned_utc": "2026-09-15T14:23:36.123101+00:00",
+        "last_alive": {
+          "utc": "2026-09-15T14:23:44.520732+00:00",
+          "elapsed_seconds": 11.687825976870954
+        },
+        "exit_observed_utc": "2026-09-15T14:23:44.571621+00:00",
+        "join": {
+          "rank": 6,
+          "pid": 286548,
+          "join_started_utc": "2026-09-15T14:23:45.591674+00:00",
+          "exitcode_before_join": 0,
+          "raw_exitcode": 0,
+          "status": "reaped",
+          "join_finished_utc": "2026-09-15T14:23:45.591682+00:00"
+        },
+        "post_shutdown_observed_seconds_upper_bound": 8.44852,
+        "timing_source": "parent poll"
+      },
+      {
+        "pid": 286639,
+        "rank": 7,
+        "name": "VllmWorker-7",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-15T14:23:45.591769+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available",
+        "shutdown_returned_utc": "2026-09-15T14:23:36.123531+00:00",
+        "last_alive": {
+          "utc": "2026-09-15T14:23:45.179207+00:00",
+          "elapsed_seconds": 12.346301976591349
+        },
+        "exit_observed_utc": "2026-09-15T14:23:45.230040+00:00",
+        "join": {
+          "rank": 7,
+          "pid": 286639,
+          "join_started_utc": "2026-09-15T14:23:45.591686+00:00",
+          "exitcode_before_join": 0,
+          "raw_exitcode": 0,
+          "status": "reaped",
+          "join_finished_utc": "2026-09-15T14:23:45.591694+00:00"
+        },
+        "post_shutdown_observed_seconds_upper_bound": 9.106509,
+        "timing_source": "parent poll"
+      }
+    ],
+    "native_coverage": "DISABLED_BY_CONFIGURATION",
+    "debugger_enabled": false,
+    "attachment_count": 0,
+    "no_debugger_control_valid": true,
+    "output_handler_shutdown": {
+      "started_utc": "2026-09-15T14:23:32.825781+00:00",
+      "performance_eligible": false,
+      "timeout_seconds": 1,
+      "success": true,
+      "status": "drained",
+      "prior_error": null,
+      "error": null,
+      "unfinished_requests": 0,
+      "engine_errored_before_shutdown": false,
+      "last_batch_complete": true,
+      "cancelled": true,
+      "finished_utc": "2026-09-15T14:23:32.825952+00:00",
+      "elapsed_seconds": 0.00018109194934368134
+    },
+    "limits": "Exit timestamps are parent polling upper bounds. Debugger pause affects elapsed time. Repeated native frames alone do not prove deadlock; slow progress may exceed this window.",
+    "root_cause": "PENDING_REVIEW"
+  },
+  "pipestatus": {
+    "exit-observation-report.pipestatus": "0 0",
+    "native-disabled.pipestatus": "0 0",
+    "acceptance-report.pipestatus": "0 0",
+    "core-source.pipestatus": "0 0",
+    "frozen-inputs.pipestatus": "0 0",
+    "source.pipestatus": "0 0",
+    "exit-observation-test-check.pipestatus": "0 0",
+    "checkpoint.pipestatus": "0 0",
+    "local-validation.pipestatus": "0 0",
+    "generation.pipestatus": "0 0",
+    "exit-observation-tests.pipestatus": "0 0",
+    "runs/b64.pipestatus": "0 0"
+  },
+  "outer_status": "MAIN_RC=0\nDIAGNOSTIC_ONLY=true\nFORMAL_ACCEPTANCE=NOT_EVALUATED\nEXPORT_RC=0\n",
+  "final_log_gate": [
+    "RESIDUAL_PROCESSES []",
+    "ERROR_COUNT 0"
+  ],
+  "source_anchors": [
+    "source.log",
+    "core-source.json",
+    "runs/b64/plan.json",
+    "runs/b64/retained.json",
+    "runs/b64/worker-exit",
+    "runs/b64.log",
+    "generation.log"
+  ],
+  "interpretation": "Natural exit with no debugger under 20s observation + 5s Core wait; not original-budget or new named-policy acceptance. Shutdown-tail native producer remains UNKNOWN."
+}

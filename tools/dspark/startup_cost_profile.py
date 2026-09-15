@@ -15,6 +15,7 @@ import statistics
 from tools.dspark import benchmark_dspark_acceptance as benchmark
 from tools.dspark import run_performance_suite as suite
 from tools.dspark.profile_request_ids import validate_point_request_ids
+from tools.dspark.shutdown_policy import installed_budget
 from tools.dspark.verification_tools import checkpoint_preflight, measured_scheduler_overhead
 
 UPSTREAM_COMMIT = "e2e335334669d1c94c7351937474c0104dcbfdfb"
@@ -447,7 +448,9 @@ def profile_engine_kwargs(
     operator_capture=None,
     exit_observation=False,
     exit_no_debugger=False,
+    shutdown_policy=None,
 ):
+    policy = installed_budget(shutdown_policy, exit_observation=exit_observation, worker_exit=worker_exit)
     if exit_no_debugger and not exit_observation:
         raise ValueError("No-debugger exit mode requires exit observation")
     if exit_observation and not worker_exit:
@@ -513,6 +516,8 @@ def profile_engine_kwargs(
     if worker_exit:
         kwargs["worker_cls"] = "vllm_ascend.diagnostics.dspark_profile_worker.ProfileNPUWorker"
         kwargs["additional_config"]["dspark_profile_worker_exit"] = True
+    if policy:
+        kwargs["additional_config"]["dspark_profile_shutdown_policy"] = shutdown_policy
     if exit_observation:
         kwargs["additional_config"]["dspark_profile_exit_observation"] = True
         kwargs["additional_config"]["dspark_profile_exit_debugger"] = not exit_no_debugger
@@ -579,6 +584,11 @@ def run(args):
             "performance_eligible": False,
             "exit_observation": getattr(args, "profile_exit_observation", False),
             "exit_no_debugger": getattr(args, "profile_exit_no_debugger", False),
+            **(
+                {"shutdown_policy": args.profile_shutdown_policy}
+                if getattr(args, "profile_shutdown_policy", None)
+                else {}
+            ),
         },
     )
     argv = plan["runs"][0]["command"][2:]
@@ -613,6 +623,7 @@ def run(args):
                     if getattr(args, "profile_operator_capture", False)
                     else None
                 ),
+                shutdown_policy=getattr(args, "profile_shutdown_policy", None),
                 exit_observation=getattr(args, "profile_exit_observation", False),
                 exit_no_debugger=getattr(args, "profile_exit_no_debugger", False),
             ),
