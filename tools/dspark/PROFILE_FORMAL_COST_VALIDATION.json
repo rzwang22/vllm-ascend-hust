@@ -1,0 +1,72 @@
+{
+  "scope": "Host-only formal calibration plan, publication gates and frozen real-text contract; no Core/model/custom-op change",
+  "environment": {
+    "python": "3.12.13",
+    "torch": "2.10.0",
+    "torch_npu": "not installed",
+    "NPU": "unavailable"
+  },
+  "related_tests": {
+    "passed": 191,
+    "failed": 0,
+    "skipped": 0,
+    "files": {
+      "tests.ut.test_dspark_formal_cost": 27,
+      "tests.ut.test_dspark_startup_cost_profile": 18,
+      "tests.ut.test_dspark_profile_context": 18,
+      "tests.ut.test_dspark_repeated_inputs": 16,
+      "tests.ut.test_dspark_shutdown_policy": 25,
+      "tests.ut.test_dspark_functional_phase2": 24,
+      "tests.ut.test_dspark_swa_acceptance": 22,
+      "tests.ut.test_dspark_exit_observation": 41
+    }
+  },
+  "final_publication_recheck": {
+    "passed": 27,
+    "failed": 0,
+    "skipped": 0,
+    "note": "After publication ordering change; included in the 191 unique related cases, not additive"
+  },
+  "archive_audit": "Outer/inner/nested SHA verified; model report reconstructed identical; 7 points/288 requests accepted; specified_lengths only",
+  "real_text_contract_audit": "Existing read_manifest validated all 400 records; selected first64 distinct GSM8K prompt hashes/IDs/revision; actual lengths29..116; not run",
+  "lookup_regression": "All10464 legal request/token combinations across five in-bucket contexts; missing cell/context>640/request>64 rejected",
+  "changed_file_hooks": "passed; irrelevant file-type hooks not applicable",
+  "shell_syntax": "passed for four touched entry scripts",
+  "format_sh_ci": {
+    "returncode": 1,
+    "output_bytes": 1458405674,
+    "hooks": [
+      "ruff check..................................................................Failed",
+      "ruff format.................................................................Failed",
+      "codespell...................................................................Failed",
+      "typos.......................................................................Failed",
+      "clang-format................................................................Passed",
+      "markdownlint................................................................Failed",
+      "Lint GitHub Actions workflow files..........................................Failed",
+      "Lint shell scripts..........................................................Failed",
+      "Lint PNG exports from excalidraw............................................Passed",
+      "Check for spaces in all filenames...........................................Passed",
+      "Enforce __init__.py in Python packages......................................Passed",
+      "Forbid init_logger(__name__) in vllm_ascend modules.........................Passed",
+      "Check for forbidden imports.................................................Failed",
+      "Check for boolean ops in with-statements....................................Passed",
+      "Check that new functions over 100 lines have comments.......................Passed",
+      "Check symbolic shapes in meta kernels.......................................Passed",
+      "Suggestion..................................................................Passed"
+    ],
+    "auto_modified_count": 78,
+    "auto_modified_task_files": [],
+    "scope": "isolated staged worktree; pre-existing repository-wide failures; no task file auto-modified",
+    "examples": [
+      "examples/offline_inference_npu.py E402",
+      "tests/ut/eplb/test_eplb_updator.py F841",
+      "historic evidence spelling"
+    ]
+  },
+  "remote_CI": "NOT_RUN",
+  "NPU_formal_cost_collection": "PENDING",
+  "runtime_table_publication": "PENDING",
+  "real_confidence_closed_loop": "NOT_RUN; next separate gate after cost acceptance",
+  "performance_comparison": "NOT_SCHEDULED",
+  "performance_eligible": false
+}

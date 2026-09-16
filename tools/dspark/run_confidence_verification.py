@@ -11,6 +11,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from tools.dspark import benchmark_dspark_acceptance as benchmark
+from tools.dspark import formal_cost
 from tools.dspark import functional_coverage as coverage
 from tools.dspark import run_performance_suite as suite
 from tools.dspark.graph64_checks import scan
@@ -199,9 +200,11 @@ def main(argv=None):
     )
     parser.add_argument("--profile-shutdown-policy", choices=("dspark-profile-25s-v1",))
     parser.add_argument("--profile-coverage-phase", choices=coverage.PHASES)
+    parser.add_argument("--formal-cost-plan", choices=(formal_cost.NAME,))
     args = parser.parse_args(argv)
     try:
         coverage.validate_args(args)
+        formal_cost.validate_args(args)
     except ValueError as error:
         parser.error(str(error))
     if args.profile_shutdown_policy and (args.profile_exit_observation or not args.profile_worker_exit):
@@ -210,7 +213,7 @@ def main(argv=None):
         parser.error("--profile-exit-no-debugger requires --profile-exit-observation")
     if args.profile_exit_observation and not args.profile_worker_exit:
         parser.error("--profile-exit-observation requires --profile-worker-exit")
-    if args.profile_worker_exit and args.profile_experiment != "target-boundaries":
+    if args.profile_worker_exit and args.profile_experiment != "target-boundaries" and not args.formal_cost_plan:
         parser.error("--profile-worker-exit requires target-boundaries")
     if args.profile_write_timeline and not args.profile_operator_capture:
         parser.error("--profile-write-timeline requires --profile-operator-capture")

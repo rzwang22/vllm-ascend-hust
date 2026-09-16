@@ -273,7 +273,18 @@ def point_numeric_status(snapshots):
     return "no_nan_observed_at_enabled_boundaries"
 
 
-def collect(engine_factory, points, sampling, directory, *, warmup, samples, ranks=8, require_numerical=False):
+def collect(
+    engine_factory,
+    points,
+    sampling,
+    directory,
+    *,
+    warmup,
+    samples,
+    ranks=8,
+    require_numerical=False,
+    require_completion=False,
+):
     """Injected factory for CPU lifecycle tests; one construction, unconditional shutdown."""
     lifecycle = {"engine_initialization_attempts": 1, "engine_initializations": 0, "shutdown": False}
     benchmark._atomic_write_json(directory / "lifecycle.json", lifecycle)
@@ -321,6 +332,8 @@ def collect(engine_factory, points, sampling, directory, *, warmup, samples, ran
                     raise ValueError("Profile configuration changed within one engine")
                 identity = current
             selected = point_samples(point, snapshots, warmup, samples, ranks)
+            if require_completion and not coverage.requests_complete(point, engine.last_batch):
+                raise ValueError("Formal cost point prompt/output lengths or completion mismatch")
             if require_numerical:
                 if point_numeric_status(snapshots) != "no_nan_observed_at_enabled_boundaries":
                     raise ValueError("Functional point numerical acceptance failed or unavailable")
@@ -456,6 +469,7 @@ def profile_engine_kwargs(
     exit_observation=False,
     exit_no_debugger=False,
     shutdown_policy=None,
+    formal_cost=False,
 ):
     policy = installed_budget(shutdown_policy, exit_observation=exit_observation, worker_exit=worker_exit)
     if exit_no_debugger and not exit_observation:
@@ -469,7 +483,7 @@ def profile_engine_kwargs(
             raise ValueError("Write timeline requires an explicit target layer")
     if attention and (experiment != "target-boundaries" or target_layer is None):
         raise ValueError("Attention detail requires target-boundaries and target_layer")
-    if worker_exit and experiment != "target-boundaries":
+    if worker_exit and experiment != "target-boundaries" and not formal_cost:
         raise ValueError("Worker exit tracing requires target-boundaries")
     if target_layer is not None and (
         experiment != "target-boundaries" or type(target_layer) is not int or target_layer < 0
@@ -518,6 +532,13 @@ def profile_engine_kwargs(
             "vllm_ascend.diagnostics.dspark_profile_executor.ProfileMultiprocExecutor"
         )
         kwargs["additional_config"]["dspark_profile_failure_dir"] = str(directory.parent.resolve())
+    if formal_cost:
+        if diagnostic or experiment is not None or not worker_exit or not shutdown_policy:
+            raise ValueError("Formal costs require clean event timing and bounded exit receipts")
+        kwargs["distributed_executor_backend"] = (
+            "vllm_ascend.diagnostics.dspark_profile_executor.ProfileMultiprocExecutor"
+        )
+        kwargs["additional_config"]["dspark_profile_failure_dir"] = str(directory.parent.resolve())
     if operator_capture is not None and operator_capture.get("write_timeline"):
         kwargs["scheduler_cls"] = "vllm_ascend.diagnostics.dspark_write_scheduler.WriteTimelineScheduler"
     if worker_exit:
@@ -532,7 +553,11 @@ def profile_engine_kwargs(
 
 
 def run(args):
+    from tools.dspark import formal_cost
+
     coverage.validate_args(args)
+    formal_cost.validate_args(args)
+    formal = bool(getattr(args, "formal_cost_plan", None))
     phase = getattr(args, "profile_coverage_phase", None)
     root = args.output_dir
     root.mkdir(parents=True, exist_ok=False)
@@ -540,6 +565,10 @@ def run(args):
     checkpoint = checkpoint_preflight(args.model)
     benchmark._atomic_write_json(root / "checkpoint.json", checkpoint)
     counts, points = grid(args.batch, args.capture, args.profile_contexts, args.profile_output_tokens)
+    if formal:
+        contract = formal_cost.plan()
+        counts, points = contract["request_grid"], contract["points"]
+        print(json.dumps(contract, indent=2), flush=True)
     diagnostic = getattr(args, "profile_nan_diagnostic", False)
     experiment = getattr(args, "profile_experiment", None)
     target_layer = getattr(args, "profile_target_layer", None)
@@ -591,6 +620,7 @@ def run(args):
         {
             **plan,
             "points": points,
+            **({"formal_cost": formal_cost.plan()} if formal else {}),
             **({"functional_coverage": coverage.plan(phase)} if phase else {}),
             "performance_eligible": False,
             "exit_observation": getattr(args, "profile_exit_observation", False),
@@ -634,6 +664,7 @@ def run(args):
                     if getattr(args, "profile_operator_capture", False)
                     else None
                 ),
+                formal_cost=formal,
                 shutdown_policy=getattr(args, "profile_shutdown_policy", None),
                 exit_observation=getattr(args, "profile_exit_observation", False),
                 exit_no_debugger=getattr(args, "profile_exit_no_debugger", False),
@@ -670,6 +701,7 @@ def run(args):
             warmup=args.profile_warmup,
             samples=args.profile_samples,
             require_numerical=bool(phase),
+            require_completion=formal,
         )
     except BaseException as error:
         if isolated:
@@ -709,7 +741,16 @@ def run(args):
     )
     from vllm_ascend.spec_decode.dspark_verification import CostTable
 
-    table["scheduler_seconds"] = measured_scheduler_overhead(identity, CostTable.load_startup(table, identity))
+    if formal:
+        host_receipt = {}
+        table["scheduler_seconds"] = measured_scheduler_overhead(
+            identity, CostTable.load_startup(table, identity), receipt=host_receipt
+        )
+        benchmark._atomic_write_json(root / "scheduler-overhead.json", host_receipt)
+    else:
+        table["scheduler_seconds"] = measured_scheduler_overhead(identity, CostTable.load_startup(table, identity))
     CostTable.load_startup(table, identity)
-    benchmark._atomic_write_json(root / "cost-profile.json", table)
+    if formal:
+        table = {**table, "source": "unpublished_startup_npu_event_profile"}
+    benchmark._atomic_write_json(root / ("cost-profile.pending.json" if formal else "cost-profile.json"), table)
     return 0

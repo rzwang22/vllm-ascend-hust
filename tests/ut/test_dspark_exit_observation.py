@@ -363,7 +363,7 @@ def test_natural_codes_without_observation_do_not_claim_no_debugger(tmp_path):
 
 
 @pytest.mark.parametrize("driver_rc,have_model_archive", [(0, True), (7, True), (7, False)])
-@pytest.mark.parametrize("mode", ["observation", "formal", "coverage", "coverage2"])
+@pytest.mark.parametrize("mode", ["observation", "formal", "coverage", "coverage2", "cost"])
 def test_outer_entry_archives_logs_pipestatus_and_preserves_driver_error(tmp_path, driver_rc, have_model_archive, mode):
     formal = mode != "observation"
     workspace = tmp_path / "workspace"
@@ -399,7 +399,9 @@ def test_outer_entry_archives_logs_pipestatus_and_preserves_driver_error(tmp_pat
             "manifest",
             "rzwang",
             *(
-                ["--coverage=b64-functional-2" if mode == "coverage2" else "--coverage=b64-functional-1"]
+                ["--formal-cost=b64-confidence-cost-v1"]
+                if mode == "cost"
+                else ["--coverage=b64-functional-2" if mode == "coverage2" else "--coverage=b64-functional-1"]
                 if mode in ("coverage", "coverage2")
                 else ["--shutdown-policy=dspark-profile-25s-v1"]
                 if formal
@@ -413,7 +415,9 @@ def test_outer_entry_archives_logs_pipestatus_and_preserves_driver_error(tmp_pat
     )
     assert run.returncode == driver_rc, run.stdout + run.stderr
     prefix = (
-        "dspark-functional-coverage"
+        "dspark-formal-cost"
+        if mode == "cost"
+        else "dspark-functional-coverage"
         if mode in ("coverage", "coverage2")
         else "dspark-model-acceptance"
         if formal
@@ -428,7 +432,10 @@ def test_outer_entry_archives_logs_pipestatus_and_preserves_driver_error(tmp_pat
         assert content("/driver.pipestatus").strip() == f"{driver_rc} 0".encode()
         assert f"MAIN_RC={driver_rc}".encode() in content("/status.txt")
         assert b"SERVER_RESULT_DIR=" in content("/driver.log")
-        if formal:
+        if mode == "cost":
+            assert b"COST_PLAN=b64-confidence-cost-v1" in content("/status.txt")
+            assert b"COST_TABLE_USABLE=SEE_COST_PUBLICATION" in content("/status.txt")
+        elif formal:
             assert b"ACCEPTANCE_POLICY=dspark-profile-25s-v1" in content("/status.txt")
             assert b"ORIGINAL_BUDGET=NOT_EVALUATED" in content("/status.txt")
         if mode in ("coverage", "coverage2"):

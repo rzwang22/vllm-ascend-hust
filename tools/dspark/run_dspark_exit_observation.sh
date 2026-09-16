@@ -5,6 +5,7 @@ set -uo pipefail
 out=''
 formal=false
 coverage=false
+formal_cost=false
 coverage_phase=''
 logged() {
     local label=$1; shift
@@ -19,6 +20,7 @@ main() {
     local sha=$1 manifest=$2 remote=$3 mode=--exit-observation
     if test "$#" -eq 4; then
         case "$4" in
+            --formal-cost=b64-confidence-cost-v1) mode=$4; formal=true; formal_cost=true ;;
             --coverage=b64-functional-1|--coverage=b64-functional-2) mode=$4; formal=true; coverage=true; coverage_phase=${4#--coverage=} ;;
             --no-debugger) mode=--exit-observation-no-debugger ;;
             --shutdown-policy=dspark-profile-25s-v1) mode=$4; formal=true ;;
@@ -30,6 +32,7 @@ main() {
     local prefix=dspark-exit-observation
     if test "$formal" = true; then prefix=dspark-model-acceptance; fi
     if test "$coverage" = true; then prefix=dspark-functional-coverage; fi
+    if test "$formal_cost" = true; then prefix=dspark-formal-cost; fi
     out=$(mktemp -d "/workspace/dspark-results/$prefix.XXXXXXXX") || return 1
     printf 'EXIT_OBSERVATION_DIR=%s\n' "$out"
     cd /workspace/vllm-ascend-hust || return 1
@@ -46,6 +49,9 @@ if test -n "$out"; then
     printf 'MAIN_RC=%s\nDIAGNOSTIC_ONLY=true\nFORMAL_ACCEPTANCE=NOT_EVALUATED\n' "$rc" > "$out/status.txt"
     if test "$formal" = true; then
         printf 'MAIN_RC=%s\nACCEPTANCE_POLICY=dspark-profile-25s-v1\nFORMAL_ACCEPTANCE=SEE_MODEL_REPORT\nORIGINAL_BUDGET=NOT_EVALUATED\n' "$rc" > "$out/status.txt"
+    fi
+    if test "$formal_cost" = true; then
+        printf 'MAIN_RC=%s\nCOST_PLAN=b64-confidence-cost-v1\nCOST_TABLE_USABLE=SEE_COST_PUBLICATION\nPERFORMANCE_ELIGIBLE=false\n' "$rc" > "$out/status.txt"
     fi
     if test "$coverage" = true; then printf 'FUNCTIONAL_PHASE=%s\nORIGINAL_TEN_POINT_BLOCKER=CLOSED\n' "$coverage_phase" >> "$out/status.txt"; fi
     if test -f "$out/driver.log"; then

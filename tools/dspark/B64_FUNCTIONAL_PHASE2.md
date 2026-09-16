@@ -1,5 +1,8 @@
 # B64 功能覆盖第二阶段：2048 输入与较大并发
 
+第二阶段已通过并独立审计冻结，见 [正式成本与confidence计划](B64_FORMAL_COST.md)。
+不重复以下7点，也不新增第三阶段合成功能矩阵；以下保留第二阶段实施与验收依据。
+
 ## 第一阶段已通过并冻结
 
 已实际读取 hBoDUBTA 外层和 XM02ngWZ 模型归档，验证两份SHA256与内嵌归档一致性。
@@ -101,4 +104,4 @@ fi
 数值/归属/FULL、关闭耗时、真实退出码、残留和整体验收报告，导出内嵌模型归档与SHA256。
 如需受控停止，在日志 `SERVER_RESULT_DIR` 对应目录创建 `STOP`，按既有supervisor机制保留失败证据。
 最少回传一个新 `dspark-functional-coverage.*-evidence.tar.gz` 及其SHA256。
-第二阶段NPU验收 **PENDING**；本地CPU/mock通过不能替代它。
+第二阶段NPU验收已由 pJap5lfX / v8vohAeE 归档确认通过；真实confidence调度仍未执行。

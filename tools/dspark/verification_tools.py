@@ -307,7 +307,7 @@ def compile_profile(results):
     }
 
 
-def measured_scheduler_overhead(identity, costs=None):
+def measured_scheduler_overhead(identity, costs=None, *, receipt=None):
     # Profile CPU scheduling separately, without touching worker/request state.
     import time
 
@@ -329,7 +329,19 @@ def measured_scheduler_overhead(identity, costs=None):
             costs=table,
         )
         values.append(time.perf_counter() - start)
-    return statistics.median(values)
+    result = statistics.median(values)
+    if receipt is not None:
+        receipt.update(
+            source="host_allocate_prefixes_perf_counter",
+            unit="seconds",
+            samples=values,
+            median_seconds=result,
+            requests=count,
+            context=0,
+            conditional_probabilities=[0.9] * 5,
+            excludes=["confidence head/D2H", "TP broadcast", "end-to-end host work"],
+        )
+    return result
 
 
 def calibrate(path, weight_hash):

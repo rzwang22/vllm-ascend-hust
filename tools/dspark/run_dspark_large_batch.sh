@@ -27,8 +27,10 @@ main() {
         esac
     done
     set -- "${forwarded[@]}"
-    local model=/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8 previous='' argument experiment='' writer=false exit_observation=false no_debugger=false shutdown_policy='' coverage_phase=''
+    local model=/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8 previous='' argument experiment='' writer=false exit_observation=false no_debugger=false shutdown_policy='' coverage_phase='' formal_cost=''
     for argument in "$@"; do
+        if test "$previous" = --formal-cost-plan; then formal_cost=$argument; fi
+        case "$argument" in --formal-cost-plan=*) formal_cost=${argument#--formal-cost-plan=} ;; esac
         if test "$previous" = --profile-coverage-phase; then coverage_phase=$argument; fi
         case "$argument" in --profile-coverage-phase=*) coverage_phase=${argument#--profile-coverage-phase=} ;; esac
         if test "$previous" = --profile-shutdown-policy; then shutdown_policy=$argument; fi
@@ -73,6 +75,12 @@ main() {
             "$CONF_OUT/coverage-plan.json" \
             --baseline-archive "$baseline_archive" || return "$?"
     fi
+    if test -n "$formal_cost"; then
+        test "$formal_cost" = b64-confidence-cost-v1 && test -z "$acceptance_archive" || return 1
+        logged formal-preflight timeout --signal=TERM --kill-after=15s 1800s python -m tools.dspark.formal_cost prepare \
+            "$model" /workspace/dspark-results/dspark-large-batch.v8vohAeE-evidence.tar.gz \
+            "$CONF_OUT/formal-cost-preflight.json" "$sha" "$manifest" || return "$?"
+    fi
     logged checkpoint python tools/dspark/verification_tools.py checkpoint \
         --model "$model" \
         --output "$CONF_OUT/checkpoint.json" || return "$?"
@@ -94,7 +102,18 @@ print('Writer probe: real opaque NPU replay and installed Core forwarding passed
 PYTEST
         test "$?" -eq 0 || return 1
     fi
-    if test -n "$acceptance_archive"; then
+    if test -n "$formal_cost"; then
+        logged formal-host-tests python -m pytest --noconftest -q -ra tests/ut/test_dspark_formal_cost.py \
+            --junitxml "$CONF_OUT/formal-host-tests.xml" || return "$?"
+        logged formal-host-check python - "$CONF_OUT/formal-host-tests.xml" <<'PYTEST'
+import sys
+import xml.etree.ElementTree as ET
+cases = ET.parse(sys.argv[1]).getroot().findall('.//testcase')
+assert cases and not any(c.find(k) is not None for c in cases for k in ('failure', 'error', 'skipped'))
+print(f'Formal cost host tests: {len(cases)} passed, zero skips; no NPU model initialized')
+PYTEST
+        test "$?" -eq 0 || return 1
+    elif test -n "$acceptance_archive"; then
         test "$experiment" = target-boundaries && test "$writer" = false || return 1
         [[ " $* " != *" --profile-operator-capture "* ]] || return 1
         if test -z "$coverage_phase"; then
@@ -198,6 +217,11 @@ PYTEST
                 "$CONF_OUT"
             observation_rc=$?
         fi
+    fi
+    if test -n "$formal_cost"; then
+        logged cost-publication timeout --signal=TERM --kill-after=15s 1800s python -m tools.dspark.formal_cost publish \
+            "$CONF_OUT/runs/b64" "$generation_rc" "$sha"
+        report_rc=$?
     fi
     if test "$generation_rc" -ne 0; then return "$generation_rc"; fi
     if test "$report_rc" -ne 0; then return "$report_rc"; fi

@@ -1,5 +1,10 @@
 # DSpark startup costs and large-batch performance
 
+Current bounded B64 entry: [formal cost collection](B64_FORMAL_COST.md).
+It pins the SWA-fixed Core, separates clean timing from diagnostic data, and publishes
+only after named-budget natural shutdown. The older sweep instructions below are
+historical, not the next authorized run. No B128/B256 or performance run is scheduled.
+
 This is the DSpark confidence-versus-fixed-K performance experiment. It is not
 V3.8 A1–A4 acceptance or a formal B0/B1 comparison. `SERVER_NOT_REVALIDATED`:
 local CPU/reference tests do not validate Ascend execution or performance.

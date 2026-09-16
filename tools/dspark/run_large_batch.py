@@ -11,6 +11,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from tools.dspark import benchmark_dspark_acceptance as benchmark
+from tools.dspark import formal_cost
 from tools.dspark import functional_coverage as coverage
 from tools.dspark import run_performance_suite as suite
 from tools.dspark.graph64_checks import scan
@@ -100,6 +101,7 @@ def command(args, batch, root):
                 if getattr(args, "profile_target_layer", None) is not None
                 else []
             ),
+            *(["--formal-cost-plan", args.formal_cost_plan] if getattr(args, "formal_cost_plan", None) else []),
             *(["--profile-worker-exit"] if getattr(args, "profile_worker_exit", False) else []),
             *(
                 ["--profile-shutdown-policy", args.profile_shutdown_policy]
@@ -165,6 +167,7 @@ def command(args, batch, root):
 def run(args):
     args.output_dir.mkdir(parents=True, exist_ok=False)
     coverage.validate_args(args)
+    formal_cost.validate_args(args)
     suite.source_gate(args)
     if getattr(args, "profile_coverage_phase", None):
         benchmark._atomic_write_json(args.output_dir / "coverage-plan.json", coverage.plan(args.profile_coverage_phase))
@@ -190,18 +193,26 @@ def run(args):
         try:
             cmd = command(args, batch, args.output_dir / f"b{batch}")
             row["command"] = cmd
-            if args.stage == "profile" and getattr(args, "profile_experiment", None) in (
-                "metadata-only",
-                "numeric-boundaries",
-                "upstream-boundaries",
-                "auxiliary-transfers",
-                "target-boundaries",
+            if args.stage == "profile" and (
+                getattr(args, "formal_cost_plan", None)
+                or getattr(args, "profile_experiment", None)
+                in (
+                    "metadata-only",
+                    "numeric-boundaries",
+                    "upstream-boundaries",
+                    "auxiliary-transfers",
+                    "target-boundaries",
+                )
             ):
                 controls = []
-                if args.profile_experiment == "target-boundaries":
+                if args.profile_experiment == "target-boundaries" or getattr(args, "formal_cost_plan", None):
                     controls = [
                         "--max-runtime-seconds",
-                        str(TARGET_DIAGNOSTIC_RUNTIME_SECONDS),
+                        str(
+                            formal_cost.RUNTIME_SECONDS
+                            if getattr(args, "formal_cost_plan", None)
+                            else TARGET_DIAGNOSTIC_RUNTIME_SECONDS
+                        ),
                         "--stop-file",
                         str(args.output_dir.parent / "STOP"),
                     ]
@@ -236,7 +247,9 @@ def run(args):
                 raise
             row["log_scan_rc"] = 0
             row["status"] = (
-                "diagnostic_completed"
+                "calibration_completed_pending_publication"
+                if getattr(args, "formal_cost_plan", None)
+                else "diagnostic_completed"
                 if (getattr(args, "profile_nan_diagnostic", False) or getattr(args, "profile_experiment", None))
                 else "valid"
             )
@@ -267,15 +280,23 @@ def run(args):
         {
             "status": "failed"
             if rc
+            else "calibration_completed_pending_publication"
+            if getattr(args, "formal_cost_plan", None)
             else "diagnostic_completed"
             if (getattr(args, "profile_nan_diagnostic", False) or getattr(args, "profile_experiment", None))
             else "valid",
             "performance_eligible": False
-            if (getattr(args, "profile_nan_diagnostic", False) or getattr(args, "profile_experiment", None))
+            if (
+                getattr(args, "formal_cost_plan", None)
+                or getattr(args, "profile_nan_diagnostic", False)
+                or getattr(args, "profile_experiment", None)
+            )
             else None,
             "stage": args.stage,
             "stages": statuses,
-            "primary_result": "BOUNDED_FUNCTIONAL_COVERAGE; original ten-point baseline remains closed; no performance"
+            "primary_result": "FORMAL_COST_CALIBRATION; publication requires post-exit validation; not performance"
+            if getattr(args, "formal_cost_plan", None)
+            else "BOUNDED_FUNCTIONAL_COVERAGE; original ten-point baseline remains closed; no performance"
             if getattr(args, "profile_coverage_phase", None)
             else "ROOT_CAUSE_NOT_YET_PROVEN; isolated diagnostic, not performance"
             if (getattr(args, "profile_nan_diagnostic", False) or getattr(args, "profile_experiment", None))
@@ -360,9 +381,11 @@ def main(argv=None):
     )
     parser.add_argument("--profile-shutdown-policy", choices=("dspark-profile-25s-v1",))
     parser.add_argument("--profile-coverage-phase", choices=coverage.PHASES)
+    parser.add_argument("--formal-cost-plan", choices=(formal_cost.NAME,))
     args = parser.parse_args(argv)
     try:
         coverage.validate_args(args)
+        formal_cost.validate_args(args)
     except ValueError as error:
         parser.error(str(error))
     if args.profile_shutdown_policy and (args.profile_exit_observation or not args.profile_worker_exit):
@@ -371,7 +394,7 @@ def main(argv=None):
         parser.error("--profile-exit-no-debugger requires --profile-exit-observation")
     if args.profile_exit_observation and not args.profile_worker_exit:
         parser.error("--profile-exit-observation requires --profile-worker-exit")
-    if args.profile_worker_exit and args.profile_experiment != "target-boundaries":
+    if args.profile_worker_exit and args.profile_experiment != "target-boundaries" and not args.formal_cost_plan:
         parser.error("--profile-worker-exit requires target-boundaries")
     if args.profile_write_timeline and not args.profile_operator_capture:
         parser.error("--profile-write-timeline requires --profile-operator-capture")
