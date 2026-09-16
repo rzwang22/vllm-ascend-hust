@@ -27,8 +27,10 @@ main() {
         esac
     done
     set -- "${forwarded[@]}"
-    local model=/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8 previous='' argument experiment='' writer=false exit_observation=false no_debugger=false shutdown_policy=''
+    local model=/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8 previous='' argument experiment='' writer=false exit_observation=false no_debugger=false shutdown_policy='' coverage_phase=''
     for argument in "$@"; do
+        if test "$previous" = --profile-coverage-phase; then coverage_phase=$argument; fi
+        case "$argument" in --profile-coverage-phase=*) coverage_phase=${argument#--profile-coverage-phase=} ;; esac
         if test "$previous" = --profile-shutdown-policy; then shutdown_policy=$argument; fi
         case "$argument" in --profile-shutdown-policy=*) shutdown_policy=${argument#--profile-shutdown-policy=} ;; esac
         if test "$previous" = --model; then model=$argument; fi
@@ -62,6 +64,11 @@ main() {
     unset RANK LOCAL_RANK WORLD_SIZE GROUP_RANK ROLE_RANK LOCAL_WORLD_SIZE MASTER_ADDR MASTER_PORT
     cd "$plugin" || return 1
     logged source python tools/dspark/p08_r8_checks.py source "$plugin" "$core" || return "$?"
+    if test -n "$coverage_phase"; then
+        logged coverage-plan python -m tools.dspark.functional_coverage "$coverage_phase" \
+            "$CONF_OUT/coverage-plan.json" \
+            --baseline-archive /workspace/dspark-results/dspark-large-batch.Ck6iA7rN-evidence.tar.gz || return "$?"
+    fi
     logged checkpoint python tools/dspark/verification_tools.py checkpoint \
         --model "$model" \
         --output "$CONF_OUT/checkpoint.json" || return "$?"
@@ -86,12 +93,16 @@ PYTEST
     if test -n "$acceptance_archive"; then
         test "$experiment" = target-boundaries && test "$writer" = false || return 1
         [[ " $* " != *" --profile-operator-capture "* ]] || return 1
-        logged local-validation python -m tools.dspark.swa_acceptance audit-local \
-            "$acceptance_archive" "$CONF_OUT/local-validation.json" || return "$?"
+        if test -z "$coverage_phase"; then
+            logged local-validation python -m tools.dspark.swa_acceptance audit-local \
+                "$acceptance_archive" "$CONF_OUT/local-validation.json" || return "$?"
+        fi
         if test -n "$shutdown_policy"; then
             test "$shutdown_policy" = dspark-profile-25s-v1 && test "$exit_observation" = false || return 1
+            local policy_tests=tests/ut/test_dspark_shutdown_policy.py
+            if test -n "$coverage_phase"; then policy_tests=tests/ut/test_dspark_functional_coverage.py; fi
             logged shutdown-policy-tests python -m pytest --noconftest -q -ra \
-                tests/ut/test_dspark_shutdown_policy.py \
+                "$policy_tests" \
                 --basetemp "$CONF_OUT/policy-tests" --junitxml "$CONF_OUT/shutdown-policy.xml" || return "$?"
             logged shutdown-policy-test-check python - "$CONF_OUT/shutdown-policy.xml" <<'PYTEST'
 import sys

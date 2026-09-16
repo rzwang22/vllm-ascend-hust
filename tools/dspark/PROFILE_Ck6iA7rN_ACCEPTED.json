@@ -1,0 +1,513 @@
+{
+  "archives": {
+    "dspark-model-acceptance.IqsNuZU6": {
+      "sha256": "23ac9472ec9d04a035769e199ff791c22826e39b56f3b1bd9fef23d22a0b3302",
+      "members": 11
+    },
+    "dspark-large-batch.Ck6iA7rN": {
+      "sha256": "7b91b1b039cd2de7cb020d802862583f0c34b4decdecede0e29477bb3e1c2f8e",
+      "members": 510
+    }
+  },
+  "nested_archive_matches": true,
+  "baseline_plugin": "b2810899840141f1a71324d90e263008eecc4f06",
+  "core_source": {
+    "expected_head": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+    "selected_remote": "rzwang",
+    "status": "verified",
+    "head_before": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+    "remote_url": "file:///workspace/vllm-hust/",
+    "origin_url_before": "https://github.com/vLLM-HUST/vllm-hust.git",
+    "fetched_head": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+    "actual_head": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970"
+  },
+  "source_meaning": "Exact Core HEAD verified through selected local file remote; not a GitHub personal-remote fetch verification.",
+  "report_recomputed_identical": true,
+  "report": {
+    "acceptance_policy": "dspark-profile-25s-v1",
+    "original_budget_reference": "profile-default-5s",
+    "original_budget_acceptance": "NOT_EVALUATED",
+    "shutdown_policy_evidence_valid": true,
+    "shutdown_policy_errors": [],
+    "named_budget_acceptance": "PASSED_THIS_RUN",
+    "performance_eligible": false,
+    "raw_generation_rc": 0,
+    "points": [
+      {
+        "point": "ctx128-n1-t6-balanced",
+        "generation_complete": true,
+        "tokens": [
+          512
+        ],
+        "numeric": "no_nan_observed_at_enabled_boundaries",
+        "graph": "VALIDATED_FULL_SAMPLES"
+      },
+      {
+        "point": "ctx128-n1-t6-skewed",
+        "generation_complete": true,
+        "tokens": [
+          512
+        ],
+        "numeric": "no_nan_observed_at_enabled_boundaries",
+        "graph": "VALIDATED_FULL_SAMPLES"
+      },
+      {
+        "point": "ctx128-n2-t6-balanced",
+        "generation_complete": true,
+        "tokens": [
+          512,
+          512
+        ],
+        "numeric": "no_nan_observed_at_enabled_boundaries",
+        "graph": "VALIDATED_FULL_SAMPLES"
+      },
+      {
+        "point": "ctx128-n2-t6-skewed",
+        "generation_complete": true,
+        "tokens": [
+          512,
+          512
+        ],
+        "numeric": "no_nan_observed_at_enabled_boundaries",
+        "graph": "VALIDATED_FULL_SAMPLES"
+      },
+      {
+        "point": "ctx128-n2-t12-balanced",
+        "generation_complete": true,
+        "tokens": [
+          512,
+          512
+        ],
+        "numeric": "no_nan_observed_at_enabled_boundaries",
+        "graph": "VALIDATED_FULL_SAMPLES"
+      },
+      {
+        "point": "ctx128-n2-t12-skewed",
+        "generation_complete": true,
+        "tokens": [
+          512,
+          512
+        ],
+        "numeric": "no_nan_observed_at_enabled_boundaries",
+        "graph": "VALIDATED_FULL_SAMPLES"
+      },
+      {
+        "point": "ctx128-n4-t6-balanced",
+        "generation_complete": true,
+        "tokens": [
+          512,
+          512,
+          512,
+          512
+        ],
+        "numeric": "no_nan_observed_at_enabled_boundaries",
+        "graph": "VALIDATED_FULL_SAMPLES"
+      },
+      {
+        "point": "ctx128-n4-t6-skewed",
+        "generation_complete": true,
+        "tokens": [
+          512,
+          512,
+          512,
+          512
+        ],
+        "numeric": "no_nan_observed_at_enabled_boundaries",
+        "graph": "VALIDATED_FULL_SAMPLES"
+      },
+      {
+        "point": "ctx128-n4-t12-balanced",
+        "generation_complete": true,
+        "tokens": [
+          512,
+          512,
+          512,
+          512
+        ],
+        "numeric": "no_nan_observed_at_enabled_boundaries",
+        "graph": "VALIDATED_FULL_SAMPLES"
+      },
+      {
+        "point": "ctx128-n4-t12-skewed",
+        "generation_complete": true,
+        "tokens": [
+          512,
+          512,
+          512,
+          512
+        ],
+        "numeric": "no_nan_observed_at_enabled_boundaries",
+        "graph": "VALIDATED_FULL_SAMPLES"
+      }
+    ],
+    "ten_points_generation_complete": true,
+    "point_acceptance_status": "completed",
+    "numerical_and_FULL_acceptance": "PASSED_THIS_RUN",
+    "first_point_FULL_receipts_valid": true,
+    "markov_NaN_in_log": false,
+    "owner_error_in_log": false,
+    "primary_failure": {},
+    "cleanup": {
+      "shutdown_budget": {
+        "name": "dspark-profile-25s-v1",
+        "worker_seconds": 25,
+        "term_seconds": 4,
+        "shared_reap_seconds": 1,
+        "engine_seconds": 36,
+        "frontend_outer_seconds": 40,
+        "supervisor_seconds": 48,
+        "debugger_enabled": false,
+        "attachment_count": 0,
+        "observation_extra_wait_seconds": 0
+      },
+      "schema_version": 2,
+      "performance_eligible": false,
+      "started_utc": "2026-09-15T18:33:57.524734+00:00",
+      "pre_shutdown_elapsed_seconds": 0.000607694499194622,
+      "timeout_seconds": 36,
+      "exit_observation": false,
+      "finalize_timeout_seconds": 4,
+      "outer_timeout_seconds": 40,
+      "supervisor_failure_grace_seconds": 48,
+      "status": "returned",
+      "shutdown_completed": true,
+      "engine_returned": true,
+      "thread_completed": true,
+      "timed_out": false,
+      "success": true,
+      "force_events": [],
+      "forced_cleanup": false,
+      "force_observation_scope": "frontend Core process-manager warning on cleanup thread; not descendant logs",
+      "graceful_worker_exit": true,
+      "event_loop": "closed",
+      "error": null,
+      "recording_error": null,
+      "returned_utc": "2026-09-15T18:34:12.972020+00:00",
+      "engine_started_utc": "2026-09-15T18:33:57.526170+00:00",
+      "engine_finished_utc": "2026-09-15T18:34:12.972060+00:00",
+      "engine_elapsed_seconds": 15.44589020870626,
+      "returned_after_outer_deadline": false,
+      "elapsed_seconds": 15.536659782752395,
+      "observed_utc": "2026-09-15T18:34:13.061392+00:00",
+      "worker_cleanup": {
+        "performance_eligible": false,
+        "exit_observation": false,
+        "shutdown_budget": {
+          "name": "dspark-profile-25s-v1",
+          "worker_seconds": 25,
+          "term_seconds": 4,
+          "shared_reap_seconds": 1,
+          "engine_seconds": 36,
+          "frontend_outer_seconds": 40,
+          "supervisor_seconds": 48,
+          "debugger_enabled": false,
+          "attachment_count": 0,
+          "observation_extra_wait_seconds": 0,
+          "effective_core_worker_seconds": 25
+        },
+        "parent_pid": 305684,
+        "point": "ctx128-n4-t12-skewed",
+        "started_utc": "2026-09-15T18:33:57.530980+00:00",
+        "status": "returned",
+        "force_events": [],
+        "forced_cleanup": false,
+        "error": null,
+        "recording_error": null,
+        "reap": {
+          "budget_seconds": 1.0,
+          "elapsed_seconds": 0.00018557067960500717,
+          "workers": [
+            {
+              "rank": 0,
+              "pid": 305751,
+              "join_started_utc": "2026-09-15T18:34:09.964838+00:00",
+              "exitcode_before_join": 0,
+              "raw_exitcode": 0,
+              "status": "reaped",
+              "join_finished_utc": "2026-09-15T18:34:09.964895+00:00"
+            },
+            {
+              "rank": 1,
+              "pid": 305805,
+              "join_started_utc": "2026-09-15T18:34:09.964906+00:00",
+              "exitcode_before_join": 0,
+              "raw_exitcode": 0,
+              "status": "reaped",
+              "join_finished_utc": "2026-09-15T18:34:09.964920+00:00"
+            },
+            {
+              "rank": 2,
+              "pid": 305885,
+              "join_started_utc": "2026-09-15T18:34:09.964927+00:00",
+              "exitcode_before_join": 0,
+              "raw_exitcode": 0,
+              "status": "reaped",
+              "join_finished_utc": "2026-09-15T18:34:09.964936+00:00"
+            },
+            {
+              "rank": 3,
+              "pid": 305969,
+              "join_started_utc": "2026-09-15T18:34:09.964943+00:00",
+              "exitcode_before_join": 0,
+              "raw_exitcode": 0,
+              "status": "reaped",
+              "join_finished_utc": "2026-09-15T18:34:09.964951+00:00"
+            },
+            {
+              "rank": 4,
+              "pid": 306052,
+              "join_started_utc": "2026-09-15T18:34:09.964956+00:00",
+              "exitcode_before_join": 0,
+              "raw_exitcode": 0,
+              "status": "reaped",
+              "join_finished_utc": "2026-09-15T18:34:09.964964+00:00"
+            },
+            {
+              "rank": 5,
+              "pid": 306134,
+              "join_started_utc": "2026-09-15T18:34:09.964969+00:00",
+              "exitcode_before_join": 0,
+              "raw_exitcode": 0,
+              "status": "reaped",
+              "join_finished_utc": "2026-09-15T18:34:09.964976+00:00"
+            },
+            {
+              "rank": 6,
+              "pid": 306210,
+              "join_started_utc": "2026-09-15T18:34:09.964981+00:00",
+              "exitcode_before_join": 0,
+              "raw_exitcode": 0,
+              "status": "reaped",
+              "join_finished_utc": "2026-09-15T18:34:09.964988+00:00"
+            },
+            {
+              "rank": 7,
+              "pid": 306292,
+              "join_started_utc": "2026-09-15T18:34:09.964993+00:00",
+              "exitcode_before_join": 0,
+              "raw_exitcode": 0,
+              "status": "reaped",
+              "join_finished_utc": "2026-09-15T18:34:09.965000+00:00"
+            }
+          ]
+        },
+        "elapsed_seconds": 12.4362364821136,
+        "finished_utc": "2026-09-15T18:34:09.965016+00:00",
+        "workers": [
+          {
+            "pid": 305751,
+            "rank": 0,
+            "name": "VllmWorker-0",
+            "raw_exitcode": 0,
+            "status_observed_utc": "2026-09-15T18:34:09.965031+00:00",
+            "signal": null,
+            "signal_name": null,
+            "exit_status": "available"
+          },
+          {
+            "pid": 305805,
+            "rank": 1,
+            "name": "VllmWorker-1",
+            "raw_exitcode": 0,
+            "status_observed_utc": "2026-09-15T18:34:09.965040+00:00",
+            "signal": null,
+            "signal_name": null,
+            "exit_status": "available"
+          },
+          {
+            "pid": 305885,
+            "rank": 2,
+            "name": "VllmWorker-2",
+            "raw_exitcode": 0,
+            "status_observed_utc": "2026-09-15T18:34:09.965047+00:00",
+            "signal": null,
+            "signal_name": null,
+            "exit_status": "available"
+          },
+          {
+            "pid": 305969,
+            "rank": 3,
+            "name": "VllmWorker-3",
+            "raw_exitcode": 0,
+            "status_observed_utc": "2026-09-15T18:34:09.965052+00:00",
+            "signal": null,
+            "signal_name": null,
+            "exit_status": "available"
+          },
+          {
+            "pid": 306052,
+            "rank": 4,
+            "name": "VllmWorker-4",
+            "raw_exitcode": 0,
+            "status_observed_utc": "2026-09-15T18:34:09.965058+00:00",
+            "signal": null,
+            "signal_name": null,
+            "exit_status": "available"
+          },
+          {
+            "pid": 306134,
+            "rank": 5,
+            "name": "VllmWorker-5",
+            "raw_exitcode": 0,
+            "status_observed_utc": "2026-09-15T18:34:09.965064+00:00",
+            "signal": null,
+            "signal_name": null,
+            "exit_status": "available"
+          },
+          {
+            "pid": 306210,
+            "rank": 6,
+            "name": "VllmWorker-6",
+            "raw_exitcode": 0,
+            "status_observed_utc": "2026-09-15T18:34:09.965069+00:00",
+            "signal": null,
+            "signal_name": null,
+            "exit_status": "available"
+          },
+          {
+            "pid": 306292,
+            "rank": 7,
+            "name": "VllmWorker-7",
+            "raw_exitcode": 0,
+            "status_observed_utc": "2026-09-15T18:34:09.965074+00:00",
+            "signal": null,
+            "signal_name": null,
+            "exit_status": "available"
+          }
+        ]
+      },
+      "output_handler_shutdown": {
+        "started_utc": "2026-09-15T18:33:57.524771+00:00",
+        "performance_eligible": false,
+        "timeout_seconds": 1,
+        "success": true,
+        "status": "drained",
+        "prior_error": null,
+        "error": null,
+        "unfinished_requests": 0,
+        "engine_errored_before_shutdown": false,
+        "last_batch_complete": true,
+        "cancelled": true,
+        "finished_utc": "2026-09-15T18:33:57.524966+00:00",
+        "elapsed_seconds": 0.0002046516165137291
+      }
+    },
+    "cleanup_failure": {},
+    "worker_force_events": [],
+    "workers": [
+      {
+        "rank": 0,
+        "pid": 305751,
+        "name": "VllmWorker-0",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-15T18:34:09.965031+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "rank": 1,
+        "pid": 305805,
+        "name": "VllmWorker-1",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-15T18:34:09.965040+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "rank": 2,
+        "pid": 305885,
+        "name": "VllmWorker-2",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-15T18:34:09.965047+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "rank": 3,
+        "pid": 305969,
+        "name": "VllmWorker-3",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-15T18:34:09.965052+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "rank": 4,
+        "pid": 306052,
+        "name": "VllmWorker-4",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-15T18:34:09.965058+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "rank": 5,
+        "pid": 306134,
+        "name": "VllmWorker-5",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-15T18:34:09.965064+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "rank": 6,
+        "pid": 306210,
+        "name": "VllmWorker-6",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-15T18:34:09.965069+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "rank": 7,
+        "pid": 306292,
+        "name": "VllmWorker-7",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-15T18:34:09.965074+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      }
+    ],
+    "worker_natural_exit": true,
+    "overall_pass": true,
+    "evidence_errors": []
+  },
+  "outer_status": "MAIN_RC=0\nACCEPTANCE_POLICY=dspark-profile-25s-v1\nFORMAL_ACCEPTANCE=SEE_MODEL_REPORT\nORIGINAL_BUDGET=NOT_EVALUATED\nEXPORT_RC=0\n",
+  "pipes": {
+    "shutdown-policy-test-check.pipestatus": "0 0",
+    "acceptance-report.pipestatus": "0 0",
+    "core-source.pipestatus": "0 0",
+    "shutdown-policy-tests.pipestatus": "0 0",
+    "frozen-inputs.pipestatus": "0 0",
+    "source.pipestatus": "0 0",
+    "checkpoint.pipestatus": "0 0",
+    "local-validation.pipestatus": "0 0",
+    "generation.pipestatus": "0 0"
+  },
+  "matrix_points": 136,
+  "matrix_requests": 2948,
+  "coverage": "Original first ten points only: input128, admitted requests1/2/4, B64 engine capacity. Not 64 concurrent requests or input2048.",
+  "closure": "Original ten-point named-budget full-model blocker CLOSED. Original5s NOT_EVALUATED and native-tail attribution UNKNOWN are not current blockers.",
+  "server_host_tests": {
+    "passed": 25,
+    "skipped": 0
+  },
+  "worker_cleanup_seconds": 12.4362364821136,
+  "cleanup_counts": {
+    "workers": 8,
+    "natural_exitcode_zero": 8,
+    "reaped": 8
+  },
+  "log_gates": [
+    "ERROR_COUNT 0",
+    "RESIDUAL_PROCESSES []"
+  ]
+}

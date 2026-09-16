@@ -13,6 +13,7 @@ from pathlib import Path
 
 import regex as re
 
+from tools.dspark import functional_coverage as coverage
 from tools.dspark import run_performance_suite as suite
 from tools.dspark.profile_attention_validity import AttentionValidity
 from tools.dspark.shutdown_acceptance import check
@@ -92,6 +93,12 @@ def core_source(root, remote, output):
         assert git("branch", "--show-current") == "feat/dspark"
         assert re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", remote), "Invalid remote name"
         result["remote_url"] = git("remote", "get-url", remote)
+        result["source_transport"] = (
+            "local" if result["remote_url"].startswith(("file:", "/", ".")) else "network_remote"
+        )
+        result["verification_scope"] = (
+            "Exact HEAD through selected remote URL; remote name alone does not verify GitHub provenance"
+        )
         result["origin_url_before"] = git("remote", "get-url", "origin")
         git("fetch", remote, "feat/dspark")
         result["fetched_head"] = git("rev-parse", "FETCH_HEAD")
@@ -114,6 +121,8 @@ def model_report(root, raw_rc):
         return json.loads(path.read_text()) if path.exists() else default
 
     plan = read("plan.json", {})
+    functional = plan.get("functional_coverage")
+    phase = functional.get("phase") if isinstance(functional, dict) else None
     retained = read("retained.json", [])
     completion = read("point-completion.json", {})
     rows, errors = [], []
@@ -121,27 +130,36 @@ def model_report(root, raw_rc):
         path = root / (point["id"] + ".json")
         raw = read(path.name, {})
         stream = raw.get("streaming") or {}
-        requests = stream.get("requests", [])
+        requests = stream.get("requests") or []
         generation = (
             len(requests) == point["requests"]
             and not stream.get("error")
-            and all(not r.get("error") and len(r.get("output_token_ids", [])) == 512 for r in requests)
+            and all(
+                isinstance(r, dict) and not r.get("error") and len(r.get("output_token_ids", [])) == 512
+                for r in requests
+            )
         )
+        if phase:
+            generation = generation and coverage.requests_complete(point, stream)
+        observed = None
         graph = "UNAVAILABLE"
         numeric = point_numeric_status(raw.get("ranks", []))
         try:
             record = next(r for r in retained if r["point"]["id"] == point["id"])
             assert hashlib.sha256(path.read_bytes()).hexdigest() == record["raw_sha256"]
             assert raw.get("request_identity_validation"), "Request identity validation unavailable"
-            point_samples(point, raw["ranks"], 2, 5, 8)
+            selected = point_samples(point, raw["ranks"], 2, 5, 8)
+            if phase:
+                observed = coverage.observed_layout(point, raw["ranks"], selected, stream)
             graph = "VALIDATED_FULL_SAMPLES"
         except Exception as error:
             errors.append({"point": point["id"], "error": str(error)})
         rows.append(
             {
+                **({"functional_coverage": observed} if phase else {}),
                 "point": point["id"],
                 "generation_complete": bool(generation),
-                "tokens": [len(r.get("output_token_ids", [])) for r in requests],
+                "tokens": [len(r.get("output_token_ids", [])) if isinstance(r, dict) else None for r in requests],
                 "numeric": numeric,
                 "graph": graph,
             }
@@ -181,12 +199,21 @@ def model_report(root, raw_rc):
     owner = "Scheduled candidates lack current proposal owners" in text
     _, expected_points = grid(64, [6, 12, 24, 48, 96, 192, 384], [128, 2048], 512)
     expected_points = diagnostic_points(expected_points, "ctx128-n4-t12-skewed")
+    if phase:
+        expected_points = coverage.plan(phase)["points"]
     valid_plan = (
         plan.get("core_sha") == suite.CORE_SHA
         and plan.get("performance_eligible") is False
         and plan.get("points") == expected_points
-        and len(rows) == 10
-        and rows[-1]["point"] == "ctx128-n4-t12-skewed"
+        and len(rows) == len(expected_points)
+        and (
+            not phase
+            or (
+                functional == coverage.plan(phase)
+                and plan.get("shutdown_policy") == "dspark-profile-25s-v1"
+                and read("lifecycle.json", {}).get("engine_initializations") == 1
+            )
+        )
     )
     generated = valid_plan and all(r["generation_complete"] for r in rows)
     numerical = (
@@ -213,7 +240,16 @@ def model_report(root, raw_rc):
         "performance_eligible": False,
         "raw_generation_rc": raw_rc,
         "points": rows,
-        "ten_points_generation_complete": generated,
+        **(
+            {
+                "functional_phase": phase,
+                "planned_points_generation_complete": generated,
+                "prior_baseline": coverage.plan(phase)["prior_baseline"],
+                "coverage_plan": functional,
+            }
+            if phase
+            else {"ten_points_generation_complete": generated}
+        ),
         "point_acceptance_status": completion.get("status", "unavailable"),
         "numerical_and_FULL_acceptance": "PASSED_THIS_RUN" if numerical else "FAILED_OR_UNAVAILABLE",
         "first_point_FULL_receipts_valid": first_full,

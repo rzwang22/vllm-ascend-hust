@@ -1,5 +1,8 @@
 # DSpark 正式退出预算：dspark-profile-25s-v1
 
+状态更新：IqsNuZU6/Ck6iA7rN 已独立核验通过，原十点命名预算验收阻塞已关闭。
+以下保留当时交付记录；当前阶段见 [B64功能覆盖](B64_FUNCTIONAL_COVERAGE.md)。
+
 ## 剩余问题与工程决策
 
 剩余的工程问题是：正式入口仍使用 Core 默认5秒 worker 宽限，早于这组模型的自然退出。

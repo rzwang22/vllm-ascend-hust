@@ -363,10 +363,9 @@ def test_natural_codes_without_observation_do_not_claim_no_debugger(tmp_path):
 
 
 @pytest.mark.parametrize("driver_rc,have_model_archive", [(0, True), (7, True), (7, False)])
-@pytest.mark.parametrize("formal", [False, True])
-def test_outer_entry_archives_logs_pipestatus_and_preserves_driver_error(
-    tmp_path, driver_rc, have_model_archive, formal
-):
+@pytest.mark.parametrize("mode", ["observation", "formal", "coverage"])
+def test_outer_entry_archives_logs_pipestatus_and_preserves_driver_error(tmp_path, driver_rc, have_model_archive, mode):
+    formal = mode != "observation"
     workspace = tmp_path / "workspace"
     plugin = workspace / "vllm-ascend-hust"
     scripts = plugin / "tools/dspark"
@@ -399,7 +398,13 @@ def test_outer_entry_archives_logs_pipestatus_and_preserves_driver_error(
             "a" * 40,
             "manifest",
             "rzwang",
-            *(["--shutdown-policy=dspark-profile-25s-v1"] if formal else []),
+            *(
+                ["--coverage=b64-functional-1"]
+                if mode == "coverage"
+                else ["--shutdown-policy=dspark-profile-25s-v1"]
+                if formal
+                else []
+            ),
         ],
         env={**os.environ, "PATH": str(binary) + ":" + os.environ["PATH"]},
         text=True,
@@ -407,7 +412,13 @@ def test_outer_entry_archives_logs_pipestatus_and_preserves_driver_error(
         timeout=10,
     )
     assert run.returncode == driver_rc, run.stdout + run.stderr
-    prefix = "dspark-model-acceptance" if formal else "dspark-exit-observation"
+    prefix = (
+        "dspark-functional-coverage"
+        if mode == "coverage"
+        else "dspark-model-acceptance"
+        if formal
+        else "dspark-exit-observation"
+    )
     archive = next((workspace / "dspark-results").glob(prefix + ".*-evidence.tar.gz"))
     with tarfile.open(archive) as saved:
 
@@ -420,6 +431,9 @@ def test_outer_entry_archives_logs_pipestatus_and_preserves_driver_error(
         if formal:
             assert b"ACCEPTANCE_POLICY=dspark-profile-25s-v1" in content("/status.txt")
             assert b"ORIGINAL_BUDGET=NOT_EVALUATED" in content("/status.txt")
+        if mode == "coverage":
+            assert b"ORIGINAL_TEN_POINT_BLOCKER=CLOSED" in content("/status.txt")
+            assert b"FUNCTIONAL_PHASE=b64-functional-1" in content("/status.txt")
         if have_model_archive:
             assert content("/model-evidence.tar.gz") == original
         else:

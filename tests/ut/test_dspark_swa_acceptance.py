@@ -53,6 +53,8 @@ def test_real_remote_selection_and_exact_head_without_origin_rewrite(tmp_path, m
         data = json.loads(output.read_text())
         assert data["actual_head"] == data["expected_head"] == sha
         assert data["remote_url"] == str(fork)
+        assert data["source_transport"] == "local"
+        assert "remote name alone does not verify GitHub" in data["verification_scope"]
         assert data["status"] == "verified"
     assert git(checkout, "remote", "get-url", "origin") == str(origin)
 

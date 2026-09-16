@@ -11,6 +11,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from tools.dspark import benchmark_dspark_acceptance as benchmark
+from tools.dspark import functional_coverage as coverage
 from tools.dspark import run_performance_suite as suite
 from tools.dspark.graph64_checks import scan
 from tools.dspark.prepare_performance_data import copy_manifest_assets, input_population, read_manifest
@@ -197,7 +198,12 @@ def main(argv=None):
         "--profile-exit-no-debugger", action="store_true", help="Poll only; never run gdb/ptrace or attach preflight"
     )
     parser.add_argument("--profile-shutdown-policy", choices=("dspark-profile-25s-v1",))
+    parser.add_argument("--profile-coverage-phase", choices=(coverage.PHASE,))
     args = parser.parse_args(argv)
+    try:
+        coverage.validate_args(args)
+    except ValueError as error:
+        parser.error(str(error))
     if args.profile_shutdown_policy and (args.profile_exit_observation or not args.profile_worker_exit):
         parser.error("Named shutdown policy requires worker receipts and excludes exit observation")
     if args.profile_exit_no_debugger and not args.profile_exit_observation:

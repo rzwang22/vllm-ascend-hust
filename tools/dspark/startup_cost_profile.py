@@ -13,6 +13,7 @@ import math
 import statistics
 
 from tools.dspark import benchmark_dspark_acceptance as benchmark
+from tools.dspark import functional_coverage as coverage
 from tools.dspark import run_performance_suite as suite
 from tools.dspark.profile_request_ids import validate_point_request_ids
 from tools.dspark.shutdown_policy import installed_budget
@@ -272,7 +273,7 @@ def point_numeric_status(snapshots):
     return "no_nan_observed_at_enabled_boundaries"
 
 
-def collect(engine_factory, points, sampling, directory, *, warmup, samples, ranks=8):
+def collect(engine_factory, points, sampling, directory, *, warmup, samples, ranks=8, require_numerical=False):
     """Injected factory for CPU lifecycle tests; one construction, unconditional shutdown."""
     lifecycle = {"engine_initialization_attempts": 1, "engine_initializations": 0, "shutdown": False}
     benchmark._atomic_write_json(directory / "lifecycle.json", lifecycle)
@@ -320,6 +321,12 @@ def collect(engine_factory, points, sampling, directory, *, warmup, samples, ran
                     raise ValueError("Profile configuration changed within one engine")
                 identity = current
             selected = point_samples(point, snapshots, warmup, samples, ranks)
+            if require_numerical:
+                if point_numeric_status(snapshots) != "no_nan_observed_at_enabled_boundaries":
+                    raise ValueError("Functional point numerical acceptance failed or unavailable")
+                if not coverage.requests_complete(point, engine.last_batch):
+                    raise ValueError("Functional point prompt/output lengths or request completion mismatch")
+                raw["functional_coverage"] = coverage.observed_layout(point, snapshots, selected, engine.last_batch)
             benchmark._atomic_write_json(path, raw)  # include classifications, preserve original values
             records.append(
                 {
@@ -525,6 +532,8 @@ def profile_engine_kwargs(
 
 
 def run(args):
+    coverage.validate_args(args)
+    phase = getattr(args, "profile_coverage_phase", None)
     root = args.output_dir
     root.mkdir(parents=True, exist_ok=False)
     suite.source_gate(args)
@@ -538,7 +547,7 @@ def run(args):
         raise ValueError("Full diagnostics and low-interference experiments are mutually exclusive")
     isolated = diagnostic or experiment is not None
     if isolated:
-        points = diagnostic_points(points, args.profile_stop_after_point)
+        points = coverage.select(points, phase) if phase else diagnostic_points(points, args.profile_stop_after_point)
         benchmark._atomic_write_json(
             root / "diagnostic.json",
             {
@@ -550,7 +559,8 @@ def run(args):
                 "write_timeline": getattr(args, "profile_write_timeline", False),
                 "worker_exit_trace": getattr(args, "profile_worker_exit", False),
                 "status": "running",
-                "root_cause": "ROOT_CAUSE_NOT_YET_PROVEN",
+                "root_cause": "ORIGINAL_TEN_POINT_BLOCKER_CLOSED" if phase else "ROOT_CAUSE_NOT_YET_PROVEN",
+                **({"functional_phase": phase} if phase else {}),
                 "points": [point["id"] for point in points],
                 "worker_directory": str((root / "worker-first-failure").resolve()),
                 "observation_effect": (
@@ -581,6 +591,7 @@ def run(args):
         {
             **plan,
             "points": points,
+            **({"functional_coverage": coverage.plan(phase)} if phase else {}),
             "performance_eligible": False,
             "exit_observation": getattr(args, "profile_exit_observation", False),
             "exit_no_debugger": getattr(args, "profile_exit_no_debugger", False),
@@ -652,7 +663,13 @@ def run(args):
 
     try:
         records, identity = collect(
-            initialize, points, sampling, root, warmup=args.profile_warmup, samples=args.profile_samples
+            initialize,
+            points,
+            sampling,
+            root,
+            warmup=args.profile_warmup,
+            samples=args.profile_samples,
+            require_numerical=bool(phase),
         )
     except BaseException as error:
         if isolated:

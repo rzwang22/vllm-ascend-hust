@@ -11,12 +11,13 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from tools.dspark import benchmark_dspark_acceptance as benchmark
+from tools.dspark import functional_coverage as coverage
 from tools.dspark import run_performance_suite as suite
 from tools.dspark.graph64_checks import scan
 from tools.dspark.prepare_performance_data import copy_manifest_assets, input_population, read_manifest
 from tools.dspark.shutdown_policy import child_command
 
-TARGET_DIAGNOSTIC_RUNTIME_SECONDS = 3600
+TARGET_DIAGNOSTIC_RUNTIME_SECONDS = coverage.RUNTIME_SECONDS
 
 
 def captures(batch, explicit=None):
@@ -76,7 +77,14 @@ def command(args, batch, root):
             "--output-dir",
             str(root),
             *(
-                ["--profile-nan-diagnostic", "--profile-stop-after-point", args.profile_stop_after_point]
+                [
+                    "--profile-experiment",
+                    args.profile_experiment,
+                    "--profile-coverage-phase",
+                    args.profile_coverage_phase,
+                ]
+                if getattr(args, "profile_coverage_phase", None)
+                else ["--profile-nan-diagnostic", "--profile-stop-after-point", args.profile_stop_after_point]
                 if getattr(args, "profile_nan_diagnostic", False)
                 else [
                     "--profile-experiment",
@@ -156,7 +164,10 @@ def command(args, batch, root):
 
 def run(args):
     args.output_dir.mkdir(parents=True, exist_ok=False)
+    coverage.validate_args(args)
     suite.source_gate(args)
+    if getattr(args, "profile_coverage_phase", None):
+        benchmark._atomic_write_json(args.output_dir / "coverage-plan.json", coverage.plan(args.profile_coverage_phase))
     manifest, rows, _ = read_manifest(args.manifest, args.num_prompts)
     if len(rows) != args.num_prompts:
         raise ValueError(
@@ -264,7 +275,9 @@ def run(args):
             else None,
             "stage": args.stage,
             "stages": statuses,
-            "primary_result": "ROOT_CAUSE_NOT_YET_PROVEN; isolated diagnostic, not performance"
+            "primary_result": "BOUNDED_FUNCTIONAL_COVERAGE; original ten-point baseline remains closed; no performance"
+            if getattr(args, "profile_coverage_phase", None)
+            else "ROOT_CAUSE_NOT_YET_PROVEN; isolated diagnostic, not performance"
             if (getattr(args, "profile_nan_diagnostic", False) or getattr(args, "profile_experiment", None))
             else "confidence / fixed K end-to-end output tok/s, paired by B and repeat",
             "reports": [f"b{row['batch']}/summary.json" for row in statuses] if args.stage != "profile" else [],
@@ -346,7 +359,12 @@ def main(argv=None):
         "--profile-exit-no-debugger", action="store_true", help="Poll only; never run gdb/ptrace or attach preflight"
     )
     parser.add_argument("--profile-shutdown-policy", choices=("dspark-profile-25s-v1",))
+    parser.add_argument("--profile-coverage-phase", choices=(coverage.PHASE,))
     args = parser.parse_args(argv)
+    try:
+        coverage.validate_args(args)
+    except ValueError as error:
+        parser.error(str(error))
     if args.profile_shutdown_policy and (args.profile_exit_observation or not args.profile_worker_exit):
         parser.error("Named shutdown policy requires worker receipts and excludes exit observation")
     if args.profile_exit_no_debugger and not args.profile_exit_observation:

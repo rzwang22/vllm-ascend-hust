@@ -4,6 +4,7 @@
 set -uo pipefail
 out=''
 formal=false
+coverage=false
 logged() {
     local label=$1; shift
     "$@" 2>&1 | tee "$out/$label.log"
@@ -17,6 +18,7 @@ main() {
     local sha=$1 manifest=$2 remote=$3 mode=--exit-observation
     if test "$#" -eq 4; then
         case "$4" in
+            --coverage=b64-functional-1) mode=$4; formal=true; coverage=true ;;
             --no-debugger) mode=--exit-observation-no-debugger ;;
             --shutdown-policy=dspark-profile-25s-v1) mode=$4; formal=true ;;
             *) return 1 ;;
@@ -26,6 +28,7 @@ main() {
     mkdir -p /workspace/dspark-results || return 1
     local prefix=dspark-exit-observation
     if test "$formal" = true; then prefix=dspark-model-acceptance; fi
+    if test "$coverage" = true; then prefix=dspark-functional-coverage; fi
     out=$(mktemp -d "/workspace/dspark-results/$prefix.XXXXXXXX") || return 1
     printf 'EXIT_OBSERVATION_DIR=%s\n' "$out"
     cd /workspace/vllm-ascend-hust || return 1
@@ -43,6 +46,7 @@ if test -n "$out"; then
     if test "$formal" = true; then
         printf 'MAIN_RC=%s\nACCEPTANCE_POLICY=dspark-profile-25s-v1\nFORMAL_ACCEPTANCE=SEE_MODEL_REPORT\nORIGINAL_BUDGET=NOT_EVALUATED\n' "$rc" > "$out/status.txt"
     fi
+    if test "$coverage" = true; then printf 'FUNCTIONAL_PHASE=b64-functional-1\nORIGINAL_TEN_POINT_BLOCKER=CLOSED\n' >> "$out/status.txt"; fi
     if test -f "$out/driver.log"; then
         model_dir=$(sed -n 's/^SERVER_RESULT_DIR=//p' "$out/driver.log" | head -1)
         if [[ "$model_dir" =~ ^/workspace/dspark-results/dspark-large-batch\.[A-Za-z0-9]+$ ]] && test -f "$model_dir-evidence.tar.gz"; then

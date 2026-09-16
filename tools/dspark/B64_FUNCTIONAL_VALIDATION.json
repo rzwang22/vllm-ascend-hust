@@ -1,0 +1,82 @@
+{
+  "baseline_plugin": "b2810899840141f1a71324d90e263008eecc4f06",
+  "core_unchanged": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+  "scope": "Bounded B64 functional coverage only; original named-budget ten-point blocker closed",
+  "environment": {
+    "python": "3.12.13 (main, May 10 2026, 19:20:41) [Clang 22.1.3 ]",
+    "platform": "macOS-26.4-arm64-arm-64bit",
+    "torch": "2.10.0 CPU",
+    "torch_npu": "not installed"
+  },
+  "tests": {
+    "passed": 182,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "by_class": {
+      "tests.ut.test_dspark_functional_coverage": 26,
+      "tests.ut.test_dspark_startup_cost_profile": 18,
+      "tests.ut.test_dspark_swa_acceptance": 22,
+      "tests.ut.test_dspark_shutdown_policy": 25,
+      "tests.ut.test_dspark_performance_delivery": 36,
+      "tests.ut.test_dspark_profile_request_ids": 20,
+      "tests.ut.test_dspark_exit_observation": 35
+    },
+    "meaning": "CPU/mock, real CLI/shell subprocess and archive paths; no NPU or new model execution. Existing frozen Core method tests use substituted CPU handles/time."
+  },
+  "new_server_host_file": "tests/ut/test_dspark_functional_coverage.py",
+  "archive_audit": {
+    "hashes_verified": 2,
+    "nested_archive_identical": true,
+    "formal_report_recomputed_identical": true,
+    "baseline_preflight_audit_executed": true,
+    "actual_source": "selected_remote=rzwang; file:///workspace/vllm-hust/; precise HEAD71d2; not a GitHub fetch proof"
+  },
+  "checks": {
+    "changed_file_manual_hooks": "all applicable passed",
+    "ruff": "passed",
+    "bash_syntax": "passed",
+    "diff_check": "passed",
+    "full_format": {
+      "returncode": 1,
+      "output_bytes": 1458405674,
+      "hooks": [
+        "ruff check..................................................................Failed",
+        "ruff format.................................................................Failed",
+        "codespell...................................................................Failed",
+        "typos.......................................................................Failed",
+        "clang-format................................................................Passed",
+        "markdownlint................................................................Failed",
+        "Lint GitHub Actions workflow files..........................................Failed",
+        "Lint shell scripts..........................................................Failed",
+        "Lint PNG exports from excalidraw............................................Passed",
+        "Check for spaces in all filenames...........................................Passed",
+        "Enforce __init__.py in Python packages......................................Passed",
+        "Forbid init_logger(__name__) in vllm_ascend modules.........................Passed",
+        "Check for forbidden imports.................................................Failed",
+        "Check for boolean ops in with-statements....................................Passed",
+        "Check that new functions over 100 lines have comments.......................Passed",
+        "Check symbolic shapes in meta kernels.......................................Passed",
+        "Suggestion..................................................................Passed"
+      ],
+      "auto_modified_count": 78,
+      "auto_modified_task_files": [],
+      "scope": "bash format.sh ci in disposable worktree; unrelated auto-format changes discarded"
+    },
+    "full_ci": "Not passed: repository-wide existing failures; task files clean"
+  },
+  "pending": [
+    "b64-functional-1 real NPU coverage: 12 points, 328 requests, maximum3600s"
+  ],
+  "nonblocking_unclosed": [
+    "Original5s budget NOT_EVALUATED",
+    "Specific native shutdown-tail attribution UNKNOWN"
+  ],
+  "not_repeated": [
+    "22/3/23 lifecycle NPU tests",
+    "Original ten-point model rerun",
+    "single-operator controls",
+    "gdb",
+    "B128/B256 and performance/cost-table generation"
+  ]
+}
