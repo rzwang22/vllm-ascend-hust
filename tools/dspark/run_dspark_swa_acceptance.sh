@@ -9,9 +9,9 @@ selection=(--profile-stop-after-point ctx128-n4-t12-skewed)
 if test "$#" -eq 4; then
     case "$4" in
         --shutdown-policy=dspark-profile-25s-v1) extra+=(--profile-shutdown-policy dspark-profile-25s-v1) ;;
-        --coverage=b64-functional-1)
+        --coverage=b64-functional-1|--coverage=b64-functional-2)
             extra+=(--profile-shutdown-policy dspark-profile-25s-v1)
-            selection=(--profile-coverage-phase b64-functional-1) ;;
+            selection=(--profile-coverage-phase "${4#--coverage=}") ;;
         --exit-observation) extra+=(--profile-exit-observation) ;;
         --exit-observation-no-debugger) extra+=(--profile-exit-observation --profile-exit-no-debugger) ;;
         *) exit 1 ;;

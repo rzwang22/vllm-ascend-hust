@@ -235,7 +235,7 @@ def model_report(root, raw_rc):
             if numerical and natural and raw_rc == 0 and policy_result["shutdown_policy_evidence_valid"]
             else "FAILED_OR_UNAVAILABLE"
         )
-    return {
+    result = {
         **policy_result,
         "performance_eligible": False,
         "raw_generation_rc": raw_rc,
@@ -279,6 +279,18 @@ def model_report(root, raw_rc):
         ),
         "evidence_errors": errors,
     }
+
+    if phase == coverage.PHASE2:
+        result.update(
+            prior_functional_stage=coverage.plan(phase)["prior_functional_stage"],
+            synthetic_functional_exit_criterion="PASSED_THIS_RUN" if result["overall_pass"] else "NOT_MET",
+            real_text_validation_readiness=(
+                "READY_FOR_SEPARATE_REAL_TEXT_VALIDATION" if result["overall_pass"] else "BLOCKED_BY_PHASE2"
+            ),
+            real_text_validation="NOT_RUN",
+            further_synthetic_matrix_expansion="NOT_SCHEDULED",
+        )
+    return result
 
 
 def main():

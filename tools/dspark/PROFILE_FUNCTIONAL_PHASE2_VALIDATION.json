@@ -1,0 +1,78 @@
+{
+  "scope": "Host-only B64 phase2 selection, report, transport; no model/Core/custom op/diagnostic runtime change",
+  "environment": {
+    "python": "3.12.13",
+    "torch": "2.10.0",
+    "torch_npu": "not installed",
+    "NPU": "unavailable"
+  },
+  "related_tests": {
+    "passed": 135,
+    "failed": 0,
+    "skipped": 0,
+    "by_file": {
+      "test_dspark_functional_coverage": 26,
+      "test_dspark_functional_phase2": 24,
+      "test_dspark_exit_observation": 38,
+      "test_dspark_shutdown_policy": 25,
+      "test_dspark_swa_acceptance": 22
+    }
+  },
+  "server_phase2_preflight": {
+    "file": "tests/ut/test_dspark_functional_phase2.py",
+    "expected_tests": 24,
+    "requirements": "zero failures/errors/skips; no model initialization"
+  },
+  "archive_audit": {
+    "outer_and_inner_sha256": "matched",
+    "nested_model_archive": "identical",
+    "formal_model_report": "recomputed identical, overall_pass=true",
+    "phase1_plan_after_change": "unchanged",
+    "phase2_preflight_on_real_phase1_archive": "passed"
+  },
+  "changed_file_hooks": "passed; irrelevant file-type hooks not applicable",
+  "shell_syntax": "passed for all four changed shell scripts",
+  "format_sh_ci": {
+    "returncode": 1,
+    "output_bytes": 1458405674,
+    "hooks": [
+      "ruff check..................................................................Failed",
+      "ruff format.................................................................Failed",
+      "codespell...................................................................Failed",
+      "typos.......................................................................Failed",
+      "clang-format................................................................Passed",
+      "markdownlint................................................................Failed",
+      "Lint GitHub Actions workflow files..........................................Failed",
+      "Lint shell scripts..........................................................Failed",
+      "Lint PNG exports from excalidraw............................................Passed",
+      "Check for spaces in all filenames...........................................Passed",
+      "Enforce __init__.py in Python packages......................................Passed",
+      "Forbid init_logger(__name__) in vllm_ascend modules.........................Passed",
+      "Check for forbidden imports.................................................Failed",
+      "Check for boolean ops in with-statements....................................Passed",
+      "Check that new functions over 100 lines have comments.......................Passed",
+      "Check symbolic shapes in meta kernels.......................................Passed",
+      "Suggestion..................................................................Passed"
+    ],
+    "auto_modified_count": 78,
+    "auto_modified_task_files": [],
+    "scope": "Disposable worktree with staged patch; unrelated autoformat changes discarded",
+    "interpretation": "Repository-wide existing failures outside this change; no task files auto-modified",
+    "examples": [
+      "examples/offline_inference_npu.py E402",
+      "tests/ut/eplb/test_eplb_updator.py F841",
+      "vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py F821",
+      "historic benchmark evidence spelling"
+    ]
+  },
+  "CI": "not run remotely",
+  "NPU_phase2": "PENDING; do not substitute CPU tests",
+  "prior_acceptance": {
+    "original_ten_points": "PASSED_AND_CLOSED",
+    "b64-functional-1": "PASSED_AND_FROZEN",
+    "original_5s_budget": "NOT_EVALUATED",
+    "native_tail_cost": "UNKNOWN; not a named-budget blocker"
+  },
+  "real_text_validation": "NOT_RUN; phase2 overall pass is readiness only",
+  "performance_eligible": false
+}

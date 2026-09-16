@@ -65,9 +65,13 @@ main() {
     cd "$plugin" || return 1
     logged source python tools/dspark/p08_r8_checks.py source "$plugin" "$core" || return "$?"
     if test -n "$coverage_phase"; then
+        local baseline_archive=/workspace/dspark-results/dspark-large-batch.Ck6iA7rN-evidence.tar.gz
+        if test "$coverage_phase" = b64-functional-2; then
+            baseline_archive=/workspace/dspark-results/dspark-large-batch.XM02ngWZ-evidence.tar.gz
+        fi
         logged coverage-plan python -m tools.dspark.functional_coverage "$coverage_phase" \
             "$CONF_OUT/coverage-plan.json" \
-            --baseline-archive /workspace/dspark-results/dspark-large-batch.Ck6iA7rN-evidence.tar.gz || return "$?"
+            --baseline-archive "$baseline_archive" || return "$?"
     fi
     logged checkpoint python tools/dspark/verification_tools.py checkpoint \
         --model "$model" \
@@ -101,6 +105,7 @@ PYTEST
             test "$shutdown_policy" = dspark-profile-25s-v1 && test "$exit_observation" = false || return 1
             local policy_tests=tests/ut/test_dspark_shutdown_policy.py
             if test -n "$coverage_phase"; then policy_tests=tests/ut/test_dspark_functional_coverage.py; fi
+            if test "$coverage_phase" = b64-functional-2; then policy_tests=tests/ut/test_dspark_functional_phase2.py; fi
             logged shutdown-policy-tests python -m pytest --noconftest -q -ra \
                 "$policy_tests" \
                 --basetemp "$CONF_OUT/policy-tests" --junitxml "$CONF_OUT/shutdown-policy.xml" || return "$?"

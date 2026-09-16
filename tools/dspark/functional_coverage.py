@@ -10,6 +10,19 @@ import tempfile
 from pathlib import Path
 
 PHASE = "b64-functional-1"
+PHASE2 = "b64-functional-2"
+PHASES = (PHASE, PHASE2)
+PHASE1_PLUGIN = "c271239bc3bfc104309b61740476df6f2d07c9bc"
+PHASE1_ARCHIVE_SHA = "ed690d6971ec777af5a43359ae79f9a24c9f082fb7105485d256022c32cb1fed"
+PHASE2_POINT_IDS = (
+    "ctx2048-n16-t48-balanced",
+    "ctx2048-n16-t48-skewed",
+    "ctx2048-n32-t96-balanced",
+    "ctx2048-n32-t96-skewed",
+    "ctx2048-n64-t192-balanced",
+    "ctx2048-n64-t192-skewed",
+    "ctx2048-n64-t384-balanced",
+)
 CAPTURES = (6, 12, 24, 48, 96, 192, 384)
 CONTEXTS = (128, 2048)
 RUNTIME_SECONDS = 3600
@@ -35,13 +48,14 @@ def plan(phase):
     # startup_cost_profile consumes this selector; avoid a module import cycle.
     from tools.dspark.startup_cost_profile import grid
 
-    if phase != PHASE:
+    if phase not in PHASES:
         raise ValueError("Unknown functional coverage phase")
     _, matrix = grid(64, list(CAPTURES), list(CONTEXTS), 512)
-    selected = [p for p in matrix if p["id"] in POINT_IDS]
-    if tuple(p["id"] for p in selected) != POINT_IDS:
+    ids = POINT_IDS if phase == PHASE else PHASE2_POINT_IDS
+    selected = [p for p in matrix if p["id"] in ids]
+    if tuple(p["id"] for p in selected) != ids:
         raise ValueError("Functional phase no longer matches the existing legal matrix")
-    return {
+    result = {
         "phase": phase,
         "performance_eligible": False,
         "engine_max_num_seqs": 64,
@@ -66,10 +80,24 @@ def plan(phase):
         },
     }
 
+    if phase == PHASE2:
+        result.update(
+            prior_functional_stage={
+                "phase": PHASE,
+                "plugin": PHASE1_PLUGIN,
+                "archive_sha256": PHASE1_ARCHIVE_SHA,
+                "status": "PHASE1_NAMED_BUDGET_PASSED_AND_FROZEN",
+            },
+            remaining_matrix_point_ids=[p["id"] for p in matrix[10:] if p["id"] not in POINT_IDS + PHASE2_POINT_IDS],
+            remaining_matrix_is_not_a_required_checklist=True,
+            next_stage="Separate real-text validation after phase2 passes; no automatic synthetic expansion",
+        )
+    return result
+
 
 def select(points, phase):
     expected = plan(phase)["points"]
-    actual = [p for p in points if p["id"] in POINT_IDS]
+    actual = [p for p in points if p["id"] in {p["id"] for p in expected}]
     if actual != expected:
         raise ValueError("Coverage requires unchanged B64 captures, contexts, lengths and 512-token output")
     return actual
@@ -79,7 +107,7 @@ def validate_args(args):
     if not getattr(args, "profile_coverage_phase", None):
         return
     if (
-        args.profile_coverage_phase != PHASE
+        args.profile_coverage_phase not in PHASES
         or args.stage != "profile"
         or getattr(args, "batch", 64) != 64
         or getattr(args, "batches", [64]) != [64]
@@ -159,13 +187,17 @@ def observed_layout(point, snapshots, retained, stream=None):
     }
 
 
-def audit_baseline(path):
+def audit_baseline(path, phase=PHASE):
     # Read scripts only as archive bytes; never execute or follow archived links.
     from tools.dspark.swa_acceptance import model_report
 
+    plan(phase)  # Reject unknown stages before reading an archive.
+    expected_sha = BASELINE_ARCHIVE_SHA if phase == PHASE else PHASE1_ARCHIVE_SHA
+    expected_plugin = BASELINE_PLUGIN if phase == PHASE else PHASE1_PLUGIN
+    directory = "dspark-large-batch.Ck6iA7rN" if phase == PHASE else "dspark-large-batch.XM02ngWZ"
     with path.open("rb") as stream:
         digest = hashlib.file_digest(stream, "sha256").hexdigest()
-    if digest != BASELINE_ARCHIVE_SHA:
+    if digest != expected_sha:
         raise ValueError("Accepted model baseline archive hash mismatch")
     with tempfile.TemporaryDirectory(prefix="dspark-accepted-baseline-") as temporary:
         root = Path(temporary).resolve()
@@ -177,17 +209,21 @@ def audit_baseline(path):
                 if member.isfile():
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_bytes(archive.extractfile(member).read())
-        model = root / "dspark-large-batch.Ck6iA7rN"
+        model = root / directory
         result = model_report(model / "runs/b64", 0)
         saved = json.loads((model / "model-acceptance.json").read_text())
         source = json.loads((model / "core-source.json").read_text())
         original_plan = json.loads((model / "runs/b64/plan.json").read_text())
-        if result != saved or result.get("overall_pass") is not True or original_plan["plugin_sha"] != BASELINE_PLUGIN:
+        if result != saved or result.get("overall_pass") is not True or original_plan["plugin_sha"] != expected_plugin:
             raise ValueError("Accepted baseline failed independent report reconstruction")
         return {
             "archive_sha256": digest,
-            "plugin": BASELINE_PLUGIN,
-            "status": "ORIGINAL_TEN_POINT_NAMED_BUDGET_PASSED_AND_CLOSED",
+            "plugin": expected_plugin,
+            "status": (
+                "ORIGINAL_TEN_POINT_NAMED_BUDGET_PASSED_AND_CLOSED"
+                if phase == PHASE
+                else "PHASE1_NAMED_BUDGET_PASSED_AND_FROZEN"
+            ),
             "core_source": source,
             "source_scope": "Recorded URL and exact HEAD; selected_remote=rzwang does not imply a GitHub fetch",
             "original_budget_acceptance": result["original_budget_acceptance"],
@@ -196,12 +232,16 @@ def audit_baseline(path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=(PHASE,))
+    parser.add_argument("phase", choices=PHASES)
     parser.add_argument("output", type=Path)
     parser.add_argument("--baseline-archive", type=Path)
     args = parser.parse_args()
     data = plan(args.phase)
-    receipt = {"plan": data, "baseline_audit": audit_baseline(args.baseline_archive)} if args.baseline_archive else data
+    receipt = (
+        {"plan": data, "baseline_audit": audit_baseline(args.baseline_archive, args.phase)}
+        if args.baseline_archive
+        else data
+    )
     args.output.write_text(json.dumps(receipt, indent=2) + "\n")
     print(json.dumps({k: v for k, v in data.items() if k != "remaining_matrix_point_ids"}, indent=2))
 

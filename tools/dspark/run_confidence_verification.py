@@ -198,7 +198,7 @@ def main(argv=None):
         "--profile-exit-no-debugger", action="store_true", help="Poll only; never run gdb/ptrace or attach preflight"
     )
     parser.add_argument("--profile-shutdown-policy", choices=("dspark-profile-25s-v1",))
-    parser.add_argument("--profile-coverage-phase", choices=(coverage.PHASE,))
+    parser.add_argument("--profile-coverage-phase", choices=coverage.PHASES)
     args = parser.parse_args(argv)
     try:
         coverage.validate_args(args)

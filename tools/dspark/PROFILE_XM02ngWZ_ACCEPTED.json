@@ -1,0 +1,1674 @@
+{
+  "archives": {
+    "dspark-functional-coverage.hBoDUBTA": {
+      "sha256": "6fae3c072c96159efe6cb029191bf607d18c4686cd72d57c553ccd3e05b346f8",
+      "members": 11
+    },
+    "dspark-large-batch.XM02ngWZ": {
+      "sha256": "ed690d6971ec777af5a43359ae79f9a24c9f082fb7105485d256022c32cb1fed",
+      "members": 604
+    }
+  },
+  "nested_archive_identical": true,
+  "report_recomputed_identical": true,
+  "plugin": "c271239bc3bfc104309b61740476df6f2d07c9bc",
+  "core": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+  "core_source": {
+    "expected_head": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+    "selected_remote": "rzwang",
+    "status": "verified",
+    "head_before": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+    "remote_url": "https://github.com/rzwang22/vllm-hust.git",
+    "source_transport": "network_remote",
+    "verification_scope": "Exact HEAD through selected remote URL; remote name alone does not verify GitHub provenance",
+    "origin_url_before": "https://github.com/vLLM-HUST/vllm-hust.git",
+    "fetched_head": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+    "actual_head": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970"
+  },
+  "phase": "b64-functional-1",
+  "point_proof": [
+    {
+      "point": "ctx128-n8-t24-balanced",
+      "requests": 8,
+      "observed_input": 128,
+      "outputs_per_request": 512,
+      "rank_FULL_counts": [
+        {
+          "rank": 0,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 0,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 1,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 1,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 2,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 2,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 3,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 3,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 4,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 4,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 5,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 5,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 6,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 6,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 7,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 7,
+          "kind": "draft",
+          "count": 5
+        }
+      ],
+      "raw_sha256": "3f687b64ea607bc858f5fc5d49496258e121718ce114034a5e3e69168f75b7c8"
+    },
+    {
+      "point": "ctx128-n8-t24-skewed",
+      "requests": 8,
+      "observed_input": 128,
+      "outputs_per_request": 512,
+      "rank_FULL_counts": [
+        {
+          "rank": 0,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 0,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 1,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 1,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 2,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 2,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 3,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 3,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 4,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 4,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 5,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 5,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 6,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 6,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 7,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 7,
+          "kind": "draft",
+          "count": 5
+        }
+      ],
+      "raw_sha256": "745eee411b7aa8c31d0a68c0ffd16b359ff24c233aacb4f1cee5b3fcad6ed193"
+    },
+    {
+      "point": "ctx128-n16-t48-balanced",
+      "requests": 16,
+      "observed_input": 128,
+      "outputs_per_request": 512,
+      "rank_FULL_counts": [
+        {
+          "rank": 0,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 0,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 1,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 1,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 2,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 2,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 3,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 3,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 4,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 4,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 5,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 5,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 6,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 6,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 7,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 7,
+          "kind": "draft",
+          "count": 5
+        }
+      ],
+      "raw_sha256": "85c3402ca83907111ea7beac5157451641fa5bf4448b06fa22f4b982d2f8a825"
+    },
+    {
+      "point": "ctx128-n16-t48-skewed",
+      "requests": 16,
+      "observed_input": 128,
+      "outputs_per_request": 512,
+      "rank_FULL_counts": [
+        {
+          "rank": 0,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 0,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 1,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 1,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 2,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 2,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 3,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 3,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 4,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 4,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 5,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 5,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 6,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 6,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 7,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 7,
+          "kind": "draft",
+          "count": 5
+        }
+      ],
+      "raw_sha256": "8c56d34dec0b85f89ef7398323b316214d2f73b0c3b2c6b565aaef536686331b"
+    },
+    {
+      "point": "ctx128-n32-t96-balanced",
+      "requests": 32,
+      "observed_input": 128,
+      "outputs_per_request": 512,
+      "rank_FULL_counts": [
+        {
+          "rank": 0,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 0,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 1,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 1,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 2,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 2,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 3,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 3,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 4,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 4,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 5,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 5,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 6,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 6,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 7,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 7,
+          "kind": "draft",
+          "count": 5
+        }
+      ],
+      "raw_sha256": "a9ab2507e72ac537eb8add1cd447590b3f49813aed6f3f292cc4feeace6aafd6"
+    },
+    {
+      "point": "ctx128-n32-t96-skewed",
+      "requests": 32,
+      "observed_input": 128,
+      "outputs_per_request": 512,
+      "rank_FULL_counts": [
+        {
+          "rank": 0,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 0,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 1,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 1,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 2,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 2,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 3,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 3,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 4,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 4,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 5,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 5,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 6,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 6,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 7,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 7,
+          "kind": "draft",
+          "count": 5
+        }
+      ],
+      "raw_sha256": "1fc4f632974f5e2cbd225b3e8e4cd93b457a36363d4b3aecafdac67ee02c6104"
+    },
+    {
+      "point": "ctx128-n64-t192-balanced",
+      "requests": 64,
+      "observed_input": 128,
+      "outputs_per_request": 512,
+      "rank_FULL_counts": [
+        {
+          "rank": 0,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 0,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 1,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 1,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 2,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 2,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 3,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 3,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 4,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 4,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 5,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 5,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 6,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 6,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 7,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 7,
+          "kind": "draft",
+          "count": 5
+        }
+      ],
+      "raw_sha256": "488faa32030d9e22aadcf933d89a304c6f8bd8356b52179acc80cda58cd4d5f1"
+    },
+    {
+      "point": "ctx128-n64-t192-skewed",
+      "requests": 64,
+      "observed_input": 128,
+      "outputs_per_request": 512,
+      "rank_FULL_counts": [
+        {
+          "rank": 0,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 0,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 1,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 1,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 2,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 2,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 3,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 3,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 4,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 4,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 5,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 5,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 6,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 6,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 7,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 7,
+          "kind": "draft",
+          "count": 5
+        }
+      ],
+      "raw_sha256": "b8feb20c54780063c4687380d6f229c7b1638c3b8ecf1fa3a618b567d14e40d4"
+    },
+    {
+      "point": "ctx128-n64-t384-balanced",
+      "requests": 64,
+      "observed_input": 128,
+      "outputs_per_request": 512,
+      "rank_FULL_counts": [
+        {
+          "rank": 0,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 0,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 1,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 1,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 2,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 2,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 3,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 3,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 4,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 4,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 5,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 5,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 6,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 6,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 7,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 7,
+          "kind": "draft",
+          "count": 5
+        }
+      ],
+      "raw_sha256": "c82beda145e0e86fb7f9d0d6d217d7a3307498ba8c66ad12f2f1f426bbfda08c"
+    },
+    {
+      "point": "ctx2048-n8-t12-balanced",
+      "requests": 8,
+      "observed_input": 2048,
+      "outputs_per_request": 512,
+      "rank_FULL_counts": [
+        {
+          "rank": 0,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 0,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 1,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 1,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 2,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 2,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 3,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 3,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 4,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 4,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 5,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 5,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 6,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 6,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 7,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 7,
+          "kind": "draft",
+          "count": 5
+        }
+      ],
+      "raw_sha256": "53cd39e2be0a80a8d006f17ce6c9ca0b1f616d8eab0c7084b50e504224536a8e"
+    },
+    {
+      "point": "ctx2048-n8-t24-skewed",
+      "requests": 8,
+      "observed_input": 2048,
+      "outputs_per_request": 512,
+      "rank_FULL_counts": [
+        {
+          "rank": 0,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 0,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 1,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 1,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 2,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 2,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 3,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 3,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 4,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 4,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 5,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 5,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 6,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 6,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 7,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 7,
+          "kind": "draft",
+          "count": 5
+        }
+      ],
+      "raw_sha256": "e38785065dcad3c7a6bfa619b2b4ded4394323e9c6ecb5da46de356484f198c6"
+    },
+    {
+      "point": "ctx2048-n8-t48-balanced",
+      "requests": 8,
+      "observed_input": 2048,
+      "outputs_per_request": 512,
+      "rank_FULL_counts": [
+        {
+          "rank": 0,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 0,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 1,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 1,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 2,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 2,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 3,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 3,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 4,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 4,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 5,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 5,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 6,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 6,
+          "kind": "draft",
+          "count": 5
+        },
+        {
+          "rank": 7,
+          "kind": "target",
+          "count": 5
+        },
+        {
+          "rank": 7,
+          "kind": "draft",
+          "count": 5
+        }
+      ],
+      "raw_sha256": "6b86d98a4b9725d05c54307658eaaf9cd7b659f7b9e42a73aa2fe2f88a287779"
+    }
+  ],
+  "total_requests": 328,
+  "total_output_tokens": 167936,
+  "named_budget_acceptance": "PASSED_THIS_RUN",
+  "numerical_and_FULL_acceptance": "PASSED_THIS_RUN",
+  "overall_pass": true,
+  "worker_cleanup": {
+    "performance_eligible": false,
+    "exit_observation": false,
+    "shutdown_budget": {
+      "name": "dspark-profile-25s-v1",
+      "worker_seconds": 25,
+      "term_seconds": 4,
+      "shared_reap_seconds": 1,
+      "engine_seconds": 36,
+      "frontend_outer_seconds": 40,
+      "supervisor_seconds": 48,
+      "debugger_enabled": false,
+      "attachment_count": 0,
+      "observation_extra_wait_seconds": 0,
+      "effective_core_worker_seconds": 25
+    },
+    "parent_pid": 330870,
+    "point": "ctx2048-n8-t48-balanced",
+    "started_utc": "2026-09-16T06:33:41.540668+00:00",
+    "status": "returned",
+    "force_events": [],
+    "forced_cleanup": false,
+    "error": null,
+    "recording_error": null,
+    "reap": {
+      "budget_seconds": 1.0,
+      "elapsed_seconds": 0.00020291469991207123,
+      "workers": [
+        {
+          "rank": 0,
+          "pid": 330929,
+          "join_started_utc": "2026-09-16T06:33:54.374753+00:00",
+          "exitcode_before_join": 0,
+          "raw_exitcode": 0,
+          "status": "reaped",
+          "join_finished_utc": "2026-09-16T06:33:54.374829+00:00"
+        },
+        {
+          "rank": 1,
+          "pid": 330988,
+          "join_started_utc": "2026-09-16T06:33:54.374844+00:00",
+          "exitcode_before_join": 0,
+          "raw_exitcode": 0,
+          "status": "reaped",
+          "join_finished_utc": "2026-09-16T06:33:54.374859+00:00"
+        },
+        {
+          "rank": 2,
+          "pid": 331074,
+          "join_started_utc": "2026-09-16T06:33:54.374866+00:00",
+          "exitcode_before_join": 0,
+          "raw_exitcode": 0,
+          "status": "reaped",
+          "join_finished_utc": "2026-09-16T06:33:54.374875+00:00"
+        },
+        {
+          "rank": 3,
+          "pid": 331161,
+          "join_started_utc": "2026-09-16T06:33:54.374880+00:00",
+          "exitcode_before_join": 0,
+          "raw_exitcode": 0,
+          "status": "reaped",
+          "join_finished_utc": "2026-09-16T06:33:54.374888+00:00"
+        },
+        {
+          "rank": 4,
+          "pid": 331243,
+          "join_started_utc": "2026-09-16T06:33:54.374893+00:00",
+          "exitcode_before_join": 0,
+          "raw_exitcode": 0,
+          "status": "reaped",
+          "join_finished_utc": "2026-09-16T06:33:54.374901+00:00"
+        },
+        {
+          "rank": 5,
+          "pid": 331341,
+          "join_started_utc": "2026-09-16T06:33:54.374906+00:00",
+          "exitcode_before_join": 0,
+          "raw_exitcode": 0,
+          "status": "reaped",
+          "join_finished_utc": "2026-09-16T06:33:54.374914+00:00"
+        },
+        {
+          "rank": 6,
+          "pid": 331426,
+          "join_started_utc": "2026-09-16T06:33:54.374919+00:00",
+          "exitcode_before_join": 0,
+          "raw_exitcode": 0,
+          "status": "reaped",
+          "join_finished_utc": "2026-09-16T06:33:54.374926+00:00"
+        },
+        {
+          "rank": 7,
+          "pid": 331516,
+          "join_started_utc": "2026-09-16T06:33:54.374931+00:00",
+          "exitcode_before_join": 0,
+          "raw_exitcode": 0,
+          "status": "reaped",
+          "join_finished_utc": "2026-09-16T06:33:54.374938+00:00"
+        }
+      ]
+    },
+    "elapsed_seconds": 12.838707679882646,
+    "finished_utc": "2026-09-16T06:33:54.374966+00:00",
+    "workers": [
+      {
+        "pid": 330929,
+        "rank": 0,
+        "name": "VllmWorker-0",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-16T06:33:54.374995+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "pid": 330988,
+        "rank": 1,
+        "name": "VllmWorker-1",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-16T06:33:54.375014+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "pid": 331074,
+        "rank": 2,
+        "name": "VllmWorker-2",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-16T06:33:54.375029+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "pid": 331161,
+        "rank": 3,
+        "name": "VllmWorker-3",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-16T06:33:54.375036+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "pid": 331243,
+        "rank": 4,
+        "name": "VllmWorker-4",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-16T06:33:54.375041+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "pid": 331341,
+        "rank": 5,
+        "name": "VllmWorker-5",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-16T06:33:54.375047+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "pid": 331426,
+        "rank": 6,
+        "name": "VllmWorker-6",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-16T06:33:54.375052+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      },
+      {
+        "pid": 331516,
+        "rank": 7,
+        "name": "VllmWorker-7",
+        "raw_exitcode": 0,
+        "status_observed_utc": "2026-09-16T06:33:54.375058+00:00",
+        "signal": null,
+        "signal_name": null,
+        "exit_status": "available"
+      }
+    ]
+  },
+  "frontend_cleanup": {
+    "shutdown_budget": {
+      "name": "dspark-profile-25s-v1",
+      "worker_seconds": 25,
+      "term_seconds": 4,
+      "shared_reap_seconds": 1,
+      "engine_seconds": 36,
+      "frontend_outer_seconds": 40,
+      "supervisor_seconds": 48,
+      "debugger_enabled": false,
+      "attachment_count": 0,
+      "observation_extra_wait_seconds": 0
+    },
+    "schema_version": 2,
+    "performance_eligible": false,
+    "started_utc": "2026-09-16T06:33:41.530095+00:00",
+    "pre_shutdown_elapsed_seconds": 0.0007705744355916977,
+    "timeout_seconds": 36,
+    "exit_observation": false,
+    "finalize_timeout_seconds": 4,
+    "outer_timeout_seconds": 40,
+    "supervisor_failure_grace_seconds": 48,
+    "status": "returned",
+    "shutdown_completed": true,
+    "engine_returned": true,
+    "thread_completed": true,
+    "timed_out": false,
+    "success": true,
+    "force_events": [],
+    "forced_cleanup": false,
+    "force_observation_scope": "frontend Core process-manager warning on cleanup thread; not descendant logs",
+    "graceful_worker_exit": true,
+    "event_loop": "closed",
+    "error": null,
+    "recording_error": null,
+    "returned_utc": "2026-09-16T06:33:57.900363+00:00",
+    "engine_started_utc": "2026-09-16T06:33:41.531787+00:00",
+    "engine_finished_utc": "2026-09-16T06:33:57.900397+00:00",
+    "engine_elapsed_seconds": 16.368611778132617,
+    "returned_after_outer_deadline": false,
+    "elapsed_seconds": 16.439346378669143,
+    "observed_utc": "2026-09-16T06:33:57.969434+00:00",
+    "worker_cleanup": {
+      "performance_eligible": false,
+      "exit_observation": false,
+      "shutdown_budget": {
+        "name": "dspark-profile-25s-v1",
+        "worker_seconds": 25,
+        "term_seconds": 4,
+        "shared_reap_seconds": 1,
+        "engine_seconds": 36,
+        "frontend_outer_seconds": 40,
+        "supervisor_seconds": 48,
+        "debugger_enabled": false,
+        "attachment_count": 0,
+        "observation_extra_wait_seconds": 0,
+        "effective_core_worker_seconds": 25
+      },
+      "parent_pid": 330870,
+      "point": "ctx2048-n8-t48-balanced",
+      "started_utc": "2026-09-16T06:33:41.540668+00:00",
+      "status": "returned",
+      "force_events": [],
+      "forced_cleanup": false,
+      "error": null,
+      "recording_error": null,
+      "reap": {
+        "budget_seconds": 1.0,
+        "elapsed_seconds": 0.00020291469991207123,
+        "workers": [
+          {
+            "rank": 0,
+            "pid": 330929,
+            "join_started_utc": "2026-09-16T06:33:54.374753+00:00",
+            "exitcode_before_join": 0,
+            "raw_exitcode": 0,
+            "status": "reaped",
+            "join_finished_utc": "2026-09-16T06:33:54.374829+00:00"
+          },
+          {
+            "rank": 1,
+            "pid": 330988,
+            "join_started_utc": "2026-09-16T06:33:54.374844+00:00",
+            "exitcode_before_join": 0,
+            "raw_exitcode": 0,
+            "status": "reaped",
+            "join_finished_utc": "2026-09-16T06:33:54.374859+00:00"
+          },
+          {
+            "rank": 2,
+            "pid": 331074,
+            "join_started_utc": "2026-09-16T06:33:54.374866+00:00",
+            "exitcode_before_join": 0,
+            "raw_exitcode": 0,
+            "status": "reaped",
+            "join_finished_utc": "2026-09-16T06:33:54.374875+00:00"
+          },
+          {
+            "rank": 3,
+            "pid": 331161,
+            "join_started_utc": "2026-09-16T06:33:54.374880+00:00",
+            "exitcode_before_join": 0,
+            "raw_exitcode": 0,
+            "status": "reaped",
+            "join_finished_utc": "2026-09-16T06:33:54.374888+00:00"
+          },
+          {
+            "rank": 4,
+            "pid": 331243,
+            "join_started_utc": "2026-09-16T06:33:54.374893+00:00",
+            "exitcode_before_join": 0,
+            "raw_exitcode": 0,
+            "status": "reaped",
+            "join_finished_utc": "2026-09-16T06:33:54.374901+00:00"
+          },
+          {
+            "rank": 5,
+            "pid": 331341,
+            "join_started_utc": "2026-09-16T06:33:54.374906+00:00",
+            "exitcode_before_join": 0,
+            "raw_exitcode": 0,
+            "status": "reaped",
+            "join_finished_utc": "2026-09-16T06:33:54.374914+00:00"
+          },
+          {
+            "rank": 6,
+            "pid": 331426,
+            "join_started_utc": "2026-09-16T06:33:54.374919+00:00",
+            "exitcode_before_join": 0,
+            "raw_exitcode": 0,
+            "status": "reaped",
+            "join_finished_utc": "2026-09-16T06:33:54.374926+00:00"
+          },
+          {
+            "rank": 7,
+            "pid": 331516,
+            "join_started_utc": "2026-09-16T06:33:54.374931+00:00",
+            "exitcode_before_join": 0,
+            "raw_exitcode": 0,
+            "status": "reaped",
+            "join_finished_utc": "2026-09-16T06:33:54.374938+00:00"
+          }
+        ]
+      },
+      "elapsed_seconds": 12.838707679882646,
+      "finished_utc": "2026-09-16T06:33:54.374966+00:00",
+      "workers": [
+        {
+          "pid": 330929,
+          "rank": 0,
+          "name": "VllmWorker-0",
+          "raw_exitcode": 0,
+          "status_observed_utc": "2026-09-16T06:33:54.374995+00:00",
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "available"
+        },
+        {
+          "pid": 330988,
+          "rank": 1,
+          "name": "VllmWorker-1",
+          "raw_exitcode": 0,
+          "status_observed_utc": "2026-09-16T06:33:54.375014+00:00",
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "available"
+        },
+        {
+          "pid": 331074,
+          "rank": 2,
+          "name": "VllmWorker-2",
+          "raw_exitcode": 0,
+          "status_observed_utc": "2026-09-16T06:33:54.375029+00:00",
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "available"
+        },
+        {
+          "pid": 331161,
+          "rank": 3,
+          "name": "VllmWorker-3",
+          "raw_exitcode": 0,
+          "status_observed_utc": "2026-09-16T06:33:54.375036+00:00",
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "available"
+        },
+        {
+          "pid": 331243,
+          "rank": 4,
+          "name": "VllmWorker-4",
+          "raw_exitcode": 0,
+          "status_observed_utc": "2026-09-16T06:33:54.375041+00:00",
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "available"
+        },
+        {
+          "pid": 331341,
+          "rank": 5,
+          "name": "VllmWorker-5",
+          "raw_exitcode": 0,
+          "status_observed_utc": "2026-09-16T06:33:54.375047+00:00",
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "available"
+        },
+        {
+          "pid": 331426,
+          "rank": 6,
+          "name": "VllmWorker-6",
+          "raw_exitcode": 0,
+          "status_observed_utc": "2026-09-16T06:33:54.375052+00:00",
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "available"
+        },
+        {
+          "pid": 331516,
+          "rank": 7,
+          "name": "VllmWorker-7",
+          "raw_exitcode": 0,
+          "status_observed_utc": "2026-09-16T06:33:54.375058+00:00",
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "available"
+        }
+      ]
+    },
+    "output_handler_shutdown": {
+      "started_utc": "2026-09-16T06:33:41.530133+00:00",
+      "performance_eligible": false,
+      "timeout_seconds": 1,
+      "success": true,
+      "status": "drained",
+      "prior_error": null,
+      "error": null,
+      "unfinished_requests": 0,
+      "engine_errored_before_shutdown": false,
+      "last_batch_complete": true,
+      "cancelled": true,
+      "finished_utc": "2026-09-16T06:33:41.530422+00:00",
+      "elapsed_seconds": 0.00029950588941574097
+    }
+  },
+  "supervisor": {
+    "shutdown_budget": {
+      "name": "dspark-profile-25s-v1",
+      "worker_seconds": 25,
+      "term_seconds": 4,
+      "shared_reap_seconds": 1,
+      "engine_seconds": 36,
+      "frontend_outer_seconds": 40,
+      "supervisor_seconds": 48,
+      "debugger_enabled": false,
+      "attachment_count": 0,
+      "observation_extra_wait_seconds": 0
+    },
+    "schema_version": 1,
+    "performance_eligible": false,
+    "child_pid": 330749,
+    "owned_process_group": 330749,
+    "command": [
+      "env",
+      "VLLM_WORKER_SHUTDOWN_TIMEOUT_SECONDS=25",
+      "/usr/local/python3.12.13/bin/python",
+      "/workspace/vllm-ascend-hust/tools/dspark/run_confidence_verification.py",
+      "--plugin",
+      "/workspace/vllm-ascend-hust",
+      "--core",
+      "/workspace/vllm-hust",
+      "--plugin-sha",
+      "c271239bc3bfc104309b61740476df6f2d07c9bc",
+      "--model",
+      "/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8",
+      "--manifest",
+      "/workspace/dspark-results/dspark-repeated-input.WSJur2Ev/input/manifest.json",
+      "--num-prompts",
+      "400",
+      "--output-len",
+      "256",
+      "--warmup-prompts",
+      "4",
+      "--max-model-len",
+      "8192",
+      "--max-num-batched-tokens",
+      "8192",
+      "--gpu-memory-utilization",
+      "0.9",
+      "--stage",
+      "profile",
+      "--batch",
+      "64",
+      "--capture",
+      "6",
+      "12",
+      "24",
+      "48",
+      "96",
+      "192",
+      "384",
+      "--output-dir",
+      "/workspace/dspark-results/dspark-large-batch.XM02ngWZ/runs/b64",
+      "--profile-experiment",
+      "target-boundaries",
+      "--profile-coverage-phase",
+      "b64-functional-1",
+      "--profile-target-layer",
+      "1",
+      "--profile-worker-exit",
+      "--profile-shutdown-policy",
+      "dspark-profile-25s-v1",
+      "--profile-target-attention",
+      "--profile-contexts",
+      "128",
+      "2048",
+      "--profile-output-tokens",
+      "512",
+      "--profile-warmup",
+      "2",
+      "--profile-samples",
+      "5"
+    ],
+    "first_failure": null,
+    "signals_sent": [],
+    "raw_returncode": 0,
+    "failure_grace_seconds": 48,
+    "term_grace_seconds": 5,
+    "max_runtime_seconds": 3600.0,
+    "stop_file": "/workspace/dspark-results/dspark-large-batch.XM02ngWZ/STOP",
+    "started_utc": "2026-09-16T06:12:34.398244+00:00",
+    "owned_group_remaining": false,
+    "completed_utc": "2026-09-16T06:34:00.675590+00:00"
+  },
+  "supervisor_wall_seconds_including_init_capture_exit": 1286.277346,
+  "pipestatus": {
+    "shutdown-policy-test-check.pipestatus": "0 0",
+    "acceptance-report.pipestatus": "0 0",
+    "core-source.pipestatus": "0 0",
+    "shutdown-policy-tests.pipestatus": "0 0",
+    "frozen-inputs.pipestatus": "0 0",
+    "source.pipestatus": "0 0",
+    "coverage-plan.pipestatus": "0 0",
+    "checkpoint.pipestatus": "0 0",
+    "generation.pipestatus": "0 0",
+    "runs/b64.pipestatus": "0 0"
+  },
+  "outer_pipestatus": {
+    "fetch.pipestatus": "0 0",
+    "checkout.pipestatus": "0 0",
+    "driver.pipestatus": "0 0"
+  },
+  "outer_status": "MAIN_RC=0\nACCEPTANCE_POLICY=dspark-profile-25s-v1\nFORMAL_ACCEPTANCE=SEE_MODEL_REPORT\nORIGINAL_BUDGET=NOT_EVALUATED\nFUNCTIONAL_PHASE=b64-functional-1\nORIGINAL_TEN_POINT_BLOCKER=CLOSED\nEXPORT_RC=0\n",
+  "log_checks": [
+    "ERROR_COUNT 0",
+    "RESIDUAL_PROCESSES []"
+  ],
+  "performance_eligible": false,
+  "interpretation": "Original ten-point baseline and b64-functional-1 PASSED and frozen. No real-text, throughput or original5s-budget acceptance claimed.",
+  "server_host_tests": {
+    "passed": 26,
+    "failed": 0,
+    "skipped": 0
+  },
+  "phase2_preflight_reconstruction": {
+    "archive_sha256": "ed690d6971ec777af5a43359ae79f9a24c9f082fb7105485d256022c32cb1fed",
+    "plugin": "c271239bc3bfc104309b61740476df6f2d07c9bc",
+    "status": "PHASE1_NAMED_BUDGET_PASSED_AND_FROZEN",
+    "core_source": {
+      "expected_head": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+      "selected_remote": "rzwang",
+      "status": "verified",
+      "head_before": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+      "remote_url": "https://github.com/rzwang22/vllm-hust.git",
+      "source_transport": "network_remote",
+      "verification_scope": "Exact HEAD through selected remote URL; remote name alone does not verify GitHub provenance",
+      "origin_url_before": "https://github.com/vLLM-HUST/vllm-hust.git",
+      "fetched_head": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+      "actual_head": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970"
+    },
+    "source_scope": "Recorded URL and exact HEAD; selected_remote=rzwang does not imply a GitHub fetch",
+    "original_budget_acceptance": "NOT_EVALUATED"
+  }
+}

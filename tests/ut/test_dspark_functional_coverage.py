@@ -141,9 +141,9 @@ def stream(point):
     }
 
 
-def functional_fixture(root):
+def functional_fixture(root, phase=coverage.PHASE):
     update = configured_model(root)
-    manifest = coverage.plan(coverage.PHASE)
+    manifest = coverage.plan(phase)
     update(root / "plan.json", points=manifest["points"], functional_coverage=manifest)
     update(root / "lifecycle.json", engine_initializations=1)
     retained = []
@@ -159,7 +159,7 @@ def functional_fixture(root):
         retained.append({"point": point, "raw_sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
     acceptance.write(root / "retained.json", retained)
     for rank in range(8):
-        publish(root / "worker-first-failure", rank, point=coverage.POINT_IDS[0])
+        publish(root / "worker-first-failure", rank, point=manifest["points"][0]["id"])
     return update
 
 
@@ -178,10 +178,10 @@ def functional_fixture(root):
         "second_engine",
     ],
 )
-def test_report_requires_real_full_concurrency_and_preserves_closed_baseline(tmp_path, problem):
+def test_report_requires_real_full_concurrency_and_preserves_closed_baseline(tmp_path, problem, phase=coverage.PHASE):
     root = tmp_path / "b64"
-    update = functional_fixture(root)
-    point = coverage.plan(coverage.PHASE)["points"][-1]
+    update = functional_fixture(root, phase)
+    point = coverage.plan(phase)["points"][-1]
     path = root / (point["id"] + ".json")
     raw = json.loads(path.read_text())
     if problem == "partial_request":
@@ -213,7 +213,7 @@ def test_report_requires_real_full_concurrency_and_preserves_closed_baseline(tmp
     assert result["prior_baseline"]["status"].endswith("PASSED_AND_CLOSED")
     assert "ten_points_generation_complete" not in result
     if problem is None:
-        proof = result["points"][7]["functional_coverage"]
+        proof = result["points"][7 if phase == coverage.PHASE else 5]["functional_coverage"]
         assert proof["submitted_requests"] == 64
         assert all(r["scheduled_requests"] == [64] and r["count"] == 5 for r in proof["matched_FULL_samples_by_rank"])
         assert result["points"][-1]["functional_coverage"]["observed_prompt_lengths"] == [2048]
@@ -290,7 +290,7 @@ def test_real_collect_single_engine_stops_at_failed_point_and_keeps_prior_result
     assert len(instances) == 1 and instances[0].closed
 
 
-def test_real_shell_selection_contains_only_phase_not_old_prefix(tmp_path):
+def test_real_shell_selection_contains_only_phase_not_old_prefix(tmp_path, phase=coverage.PHASE):
     shim = tmp_path / "bash"
     shim.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$ARGS_OUT"\n')
     shim.chmod(0o755)
@@ -302,13 +302,13 @@ def test_real_shell_selection_contains_only_phase_not_old_prefix(tmp_path):
             "a" * 40,
             "manifest",
             "rzwang",
-            "--coverage=" + coverage.PHASE,
+            "--coverage=" + phase,
         ],
         check=True,
         env={**os.environ, "PATH": str(tmp_path) + ":" + os.environ["PATH"], "ARGS_OUT": str(out)},
     )
     args = out.read_text().splitlines()
-    assert args[args.index("--profile-coverage-phase") + 1] == coverage.PHASE
+    assert args[args.index("--profile-coverage-phase") + 1] == phase
     assert "--profile-stop-after-point" not in args
     assert args[args.index("--profile-shutdown-policy") + 1] == "dspark-profile-25s-v1"
     assert "--profile-operator-capture" not in args and "--profile-exit-observation" not in args

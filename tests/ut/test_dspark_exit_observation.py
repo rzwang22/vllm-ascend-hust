@@ -363,7 +363,7 @@ def test_natural_codes_without_observation_do_not_claim_no_debugger(tmp_path):
 
 
 @pytest.mark.parametrize("driver_rc,have_model_archive", [(0, True), (7, True), (7, False)])
-@pytest.mark.parametrize("mode", ["observation", "formal", "coverage"])
+@pytest.mark.parametrize("mode", ["observation", "formal", "coverage", "coverage2"])
 def test_outer_entry_archives_logs_pipestatus_and_preserves_driver_error(tmp_path, driver_rc, have_model_archive, mode):
     formal = mode != "observation"
     workspace = tmp_path / "workspace"
@@ -399,8 +399,8 @@ def test_outer_entry_archives_logs_pipestatus_and_preserves_driver_error(tmp_pat
             "manifest",
             "rzwang",
             *(
-                ["--coverage=b64-functional-1"]
-                if mode == "coverage"
+                ["--coverage=b64-functional-2" if mode == "coverage2" else "--coverage=b64-functional-1"]
+                if mode in ("coverage", "coverage2")
                 else ["--shutdown-policy=dspark-profile-25s-v1"]
                 if formal
                 else []
@@ -414,7 +414,7 @@ def test_outer_entry_archives_logs_pipestatus_and_preserves_driver_error(tmp_pat
     assert run.returncode == driver_rc, run.stdout + run.stderr
     prefix = (
         "dspark-functional-coverage"
-        if mode == "coverage"
+        if mode in ("coverage", "coverage2")
         else "dspark-model-acceptance"
         if formal
         else "dspark-exit-observation"
@@ -431,9 +431,10 @@ def test_outer_entry_archives_logs_pipestatus_and_preserves_driver_error(tmp_pat
         if formal:
             assert b"ACCEPTANCE_POLICY=dspark-profile-25s-v1" in content("/status.txt")
             assert b"ORIGINAL_BUDGET=NOT_EVALUATED" in content("/status.txt")
-        if mode == "coverage":
+        if mode in ("coverage", "coverage2"):
             assert b"ORIGINAL_TEN_POINT_BLOCKER=CLOSED" in content("/status.txt")
-            assert b"FUNCTIONAL_PHASE=b64-functional-1" in content("/status.txt")
+            phase = "b64-functional-2" if mode == "coverage2" else "b64-functional-1"
+            assert f"FUNCTIONAL_PHASE={phase}".encode() in content("/status.txt")
         if have_model_archive:
             assert content("/model-evidence.tar.gz") == original
         else:
