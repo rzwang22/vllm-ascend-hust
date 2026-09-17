@@ -27,8 +27,9 @@ main() {
         esac
     done
     set -- "${forwarded[@]}"
-    local model=/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8 previous='' argument experiment='' writer=false exit_observation=false no_debugger=false shutdown_policy='' coverage_phase='' formal_cost=''
+    local model=/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8 previous='' argument experiment='' writer=false exit_observation=false no_debugger=false shutdown_policy='' coverage_phase='' formal_cost='' confidence_acceptance=false
     for argument in "$@"; do
+        if test "$argument" = --confidence-acceptance; then confidence_acceptance=true; fi
         if test "$previous" = --formal-cost-plan; then formal_cost=$argument; fi
         case "$argument" in --formal-cost-plan=*) formal_cost=${argument#--formal-cost-plan=} ;; esac
         if test "$previous" = --profile-coverage-phase; then coverage_phase=$argument; fi
@@ -66,6 +67,24 @@ main() {
     unset RANK LOCAL_RANK WORLD_SIZE GROUP_RANK ROLE_RANK LOCAL_WORLD_SIZE MASTER_ADDR MASTER_PORT
     cd "$plugin" || return 1
     logged source python tools/dspark/p08_r8_checks.py source "$plugin" "$core" || return "$?"
+    if test "$confidence_acceptance" = true; then
+        test "$#" -eq 1 || return 1
+        logged confidence-host-tests python -m pytest --noconftest -q -ra tests/ut/test_dspark_confidence_acceptance.py \
+            --junitxml "$CONF_OUT/confidence-host-tests.xml" || return "$?"
+        logged confidence-host-check python - "$CONF_OUT/confidence-host-tests.xml" <<'PYTEST'
+import sys
+import xml.etree.ElementTree as ET
+cases = ET.parse(sys.argv[1]).getroot().findall('.//testcase')
+assert cases and not any(c.find(k) is not None for c in cases for k in ('failure', 'error', 'skipped'))
+print(f'Confidence host tests: {len(cases)} passed; no model initialized')
+PYTEST
+        test "$?" -eq 0 || return 1
+        logged confidence-preflight timeout --signal=TERM --kill-after=15s 1800s python -m tools.dspark.confidence_acceptance prepare \
+            --plugin-sha "$sha" --manifest "$manifest" --output-dir "$CONF_OUT" || return "$?"
+        logged confidence-run python -m tools.dspark.confidence_acceptance run \
+            --plugin-sha "$sha" --manifest "$manifest" --output-dir "$CONF_OUT"
+        return "$?"
+    fi
     if test -n "$coverage_phase"; then
         local baseline_archive=/workspace/dspark-results/dspark-large-batch.Ck6iA7rN-evidence.tar.gz
         if test "$coverage_phase" = b64-functional-2; then

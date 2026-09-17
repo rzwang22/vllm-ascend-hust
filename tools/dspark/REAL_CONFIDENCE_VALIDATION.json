@@ -1,0 +1,41 @@
+{
+  "local_environment": "macOS Python 3.12.13, Torch 2.10.0 CPU; no installed vLLM/torch_npu or NPU",
+  "new_host_tests": {
+    "passed": 32,
+    "failed": 0,
+    "skipped": 0
+  },
+  "related_host_regressions": {
+    "passed": 234,
+    "failed": 0,
+    "skipped": 3
+  },
+  "skipped": [
+    "installed vllm/Ascend real builder metadata runtime",
+    "installed confidence head projection",
+    "installed real Graph dispatch runtime"
+  ],
+  "related_test_files": [
+    "test_dspark_confidence_acceptance.py",
+    "test_dspark_confidence_verification.py",
+    "test_dspark_graph_replay.py",
+    "test_dspark_graph_rpc.py",
+    "test_dspark_profile_failure.py",
+    "test_dspark_profile_teardown.py",
+    "test_dspark_shutdown_policy.py",
+    "test_dspark_profile_request_ids.py",
+    "test_dspark_performance_delivery.py"
+  ],
+  "npu_confidence_closed_loop": "PENDING",
+  "npu_natural_exit_new_workload": "PENDING",
+  "frozen_cost_publication": "INDEPENDENT_CPU_AUDIT_PASSED",
+  "original_ten_and_synthetic_phases": "PREVIOUSLY_PASSED_UNCHANGED",
+  "performance_comparison": "NOT_RUN",
+  "changed_file_hooks": "PASSED",
+  "full_format_sh_ci": {
+    "returncode": 1,
+    "auto_modified_task_files": [],
+    "unrelated_auto_modified_files": 78,
+    "scope": "Executed in disposable staged-patch worktree; existing repository-wide lint/spelling/workflow/shell failures, no unrelated changes imported."
+  }
+}

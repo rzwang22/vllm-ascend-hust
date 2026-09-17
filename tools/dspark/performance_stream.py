@@ -50,10 +50,13 @@ async def stream_batch(
     progress=None,
     bounded_cancel=False,
     validate_progress=None,
+    request_ids=None,
 ):
     """Closed-loop admission in source order, or all-at-once when limit is None."""
     if outstanding is not None and outstanding <= 0:
         raise ValueError("client outstanding must be positive or None")
+    if request_ids is not None and (len(request_ids) != len(prompts) or len(set(request_ids)) != len(prompts)):
+        raise ValueError("Explicit request IDs must uniquely match prompts")
     semaphore = asyncio.Semaphore(outstanding or len(prompts))
     started = clock()
     records = [None] * len(prompts)
@@ -64,7 +67,7 @@ async def stream_batch(
         queued = clock()
         async with semaphore:
             record = {
-                "request_id": f"{batch_id}-{index}",
+                "request_id": request_ids[index] if request_ids is not None else f"{batch_id}-{index}",
                 "request_index": index,
                 "client_ready_monotonic": queued,
                 "submitted_monotonic": clock(),
@@ -286,7 +289,9 @@ class StreamingEngine:
     def get_metrics(self):
         return self.collector.metrics()
 
-    def generate(self, prompts, sampling_params, use_tqdm=False, *, profile_point=None):
+    def generate(self, prompts, sampling_params, use_tqdm=False, *, profile_point=None, request_ids=None):
+        if request_ids is not None and (len(request_ids) != len(prompts) or len(set(request_ids)) != len(prompts)):
+            raise ValueError("Explicit request IDs must uniquely match prompts")
         sampling = copy.copy(sampling_params)
         sampling.output_kind = self.delta_kind
         if profile_point is not None and profile_point == getattr(self, "write_timeline_point", None):
@@ -303,11 +308,15 @@ class StreamingEngine:
         batch_id = f"batch{self.batch_number}"
         if profile_point is None:
             self.last_batch = self.loop.run_until_complete(
-                stream_batch(self.engine, prompts, sampling, self.args.client_outstanding, batch_id)
+                stream_batch(
+                    self.engine, prompts, sampling, self.args.client_outstanding, batch_id, request_ids=request_ids
+                )
             )
         else:
             observer = RequestIdObserver(
-                self.engine, profile_point, {f"{batch_id}-{i}": i for i in range(len(prompts))}
+                self.engine,
+                profile_point,
+                {(request_ids[i] if request_ids is not None else f"{batch_id}-{i}"): i for i in range(len(prompts))},
             )
             self.last_batch = {}
             gate = getattr(self.profile_guard, "attention_validity", None)
@@ -329,6 +338,7 @@ class StreamingEngine:
                             progress=self.last_batch,
                             bounded_cancel=self.profile_guard is not None,
                             validate_progress=validate,
+                            request_ids=request_ids,
                         ),
                     )
             finally:

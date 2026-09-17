@@ -215,7 +215,14 @@ class DSparkBenchmarkWorkerExtension:
                 from vllm_ascend.diagnostics.dspark_cost_profile import IsolatedCostProfiler
 
                 runner._dspark_cost_profiler = IsolatedCostProfiler(runner)
-            observer = _FullReplayObserver(runner)
+            if (getattr(getattr(runner, "vllm_config", None), "additional_config", None) or {}).get(
+                "dspark_confidence_acceptance"
+            ):
+                from vllm_ascend.diagnostics.dspark_confidence_receipts import ConfidenceReceipts
+
+                observer = ConfidenceReceipts(runner)
+            else:
+                observer = _FullReplayObserver(runner)
             runner._dspark_benchmark_replay_observer = observer
         if diagnostic_phase is not None:
             if diagnostic_phase not in ("warmup", "measured", "complete") or observer.nan_diagnostic is None:

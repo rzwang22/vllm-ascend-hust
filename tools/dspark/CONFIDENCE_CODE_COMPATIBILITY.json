@@ -1,0 +1,12 @@
+{
+  "producer_plugin": "89cfb54d53b1443cb7df0b4c800196435b21e5ad",
+  "core": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+  "cost_sha256": "576188ba88fd839a00308179b91a951b3d30467b951b159954e57549f869029a",
+  "scope": "Only benchmark observation/admission changed; model, attention, SWA, confidence math/allocator/trimming/CostTable and custom ops unchanged. Runtime identity remains exact. Additional host logging/count clones invalidate performance comparisons, not the frozen calibration identity.",
+  "changed_runtime_files": {
+    "vllm_ascend/diagnostics/dspark_benchmark_worker.py": "15e5028ab23e2f256457fe49d30d90243bb70820f8a781b4f942c8ab56f44805",
+    "vllm_ascend/diagnostics/dspark_confidence_receipts.py": "a897432434bc1e23c5557eb997cf7158f0acf9ed32875fdb1705bdae6ea0b47d",
+    "vllm_ascend/diagnostics/dspark_profile_executor.py": "16b1e2158356923f96fcdaa2ad86d2bc5abce80b068062c1c1deafc886f3a69b",
+    "vllm_ascend/diagnostics/dspark_profile_worker.py": "f45e3744bf97e908d0a93462550246eb4dcbaf009ff9905bd7f368f541e4e8b4"
+  }
+}

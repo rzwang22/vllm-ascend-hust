@@ -50,3 +50,16 @@ def child_command(name, command):
     # Fresh child sees the existing Core setting before importing/caching envs.
     # The invoking shell and unrelated processes keep their own defaults.
     return ["env", f"{CORE_WORKER_ENV}={selected['worker_seconds']}", *command]
+
+
+def confidence_acceptance_enabled(additional):
+    """Explicit workload gate, independent of installed device modules."""
+    options = additional.get("dspark_confidence_verification", {})
+    return (
+        additional.get("dspark_confidence_acceptance") is True
+        and additional.get("dspark_profile_worker_exit") is True
+        and additional.get("dspark_profile_shutdown_policy") == POLICY_NAME
+        and not additional.get("dspark_profile_exit_observation")
+        and options.get("mode") == "confidence"
+        and options.get("profile") is False
+    )
