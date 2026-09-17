@@ -237,6 +237,41 @@ class DSparkBenchmarkWorkerExtension:
             result["cost_profile"] = profiler.snapshot()
         return result
 
+    def dspark_benchmark_capacity(self) -> dict:
+        """Quiescent host descriptors only; no device values or tensor reductions."""
+        runner = self.model_runner
+        config = runner.kv_cache_config
+        return {
+            "rank": _host_count(self.rank),
+            "max_requests": _host_count(runner.max_num_reqs),
+            "max_tokens": _host_count(runner.max_num_tokens),
+            "draft_max_requests": _host_count(runner.speculator.max_num_reqs),
+            "capture_sizes": self.dspark_benchmark_graph_runtime()["observed_capture_sizes"],
+            "kv_num_blocks": _host_count(config.num_blocks),
+            "kv_bytes": sum(_host_count(t.size) for t in config.kv_cache_tensors),
+            "groups": [
+                {
+                    "group": i,
+                    "type": type(g.kv_cache_spec).__name__,
+                    "block_size": _host_count(g.kv_cache_spec.block_size),
+                    "page_bytes": _host_count(g.kv_cache_spec.page_size_bytes),
+                    "layers": list(g.layer_names),
+                    "draft": g.is_eagle_group,
+                }
+                for i, g in enumerate(config.kv_cache_groups)
+            ],
+            "tensors": [
+                {
+                    "bytes": _host_count(t.size),
+                    "shared_by": list(t.shared_by),
+                    "offset": _host_count(t.offset),
+                    "block_stride": _host_count(t.block_stride),
+                }
+                for t in config.kv_cache_tensors
+            ],
+            "scope": "allocation descriptors, not proof that all client requests executed together",
+        }
+
     def dspark_benchmark_profile_point(self, point: str, lengths: list[int]) -> dict:
         profiler = getattr(self.model_runner, "_dspark_cost_profiler", None)
         if profiler is None:

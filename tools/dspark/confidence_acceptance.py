@@ -37,27 +37,27 @@ def read(path):
     return formal.read(path)
 
 
-def plan():
+def plan(batch=64):
     return {
-        "name": NAME,
+        "name": f"b{batch}-gsm8k-confidence-v1",
         "mode": "confidence",
         "profile": False,
         "performance_eligible": False,
-        "inputs": read(Path(__file__).with_name("B64_REAL_TEXT_PLAN.json")),
-        "request_count": 64,
+        "inputs": formal.workload_contract(batch),
+        "request_count": batch,
         "model_initializations": 1,
         "max_output_tokens": 256,
-        "max_total_output_tokens": 16384,
+        "max_total_output_tokens": batch * 256,
         "natural_eos": True,
         "context_range": [0, 640],
-        "actual_decode_requests": [1, 64],
-        "capture_sizes": list(formal.coverage.CAPTURES),
+        "actual_decode_requests": [1, batch],
+        "capture_sizes": formal.captures(batch),
         "max_runtime_seconds": RUNTIME_SECONDS,
         "shutdown_budget": shutdown_policy.budget(shutdown_policy.POLICY_NAME),
         "prefill": "ordinary prefill; no cost lookup or FULL requirement",
         "decode": "real confidence selection, current owner epochs, actual FULL consumption",
         "calibration": "uncalibrated",
-        "cost_sha256": TABLE_SHA,
+        "cost_sha256": TABLE_SHA if batch == 64 else "new same-commit tier publication; SHA pinned in preflight",
         "original_budget_acceptance": "NOT_EVALUATED",
     }
 
@@ -81,30 +81,36 @@ def verify_code(plugin):
     return contract
 
 
-def publication(directory):
+def publication(directory, batch=64, plugin_sha=None):
     table = read(directory / "cost-profile.json")
     proof = read(directory / "cost-publication.json")
     if (
-        formal.sha(directory / "cost-profile.json") != TABLE_SHA
-        or proof.get("table_sha256") != TABLE_SHA
+        formal.sha(directory / "cost-profile.json") != proof.get("table_sha256")
+        or (batch == 64 and proof.get("table_sha256") != TABLE_SHA)
         or proof.get("status") != "PASSED"
         or proof.get("cost_table_usable") is not True
         or table.get("publication", {}).get("status") != "PASSED"
-        or table.get("plugin_sha") != PRODUCER
+        or table.get("plugin_sha") != (PRODUCER if batch == 64 else plugin_sha)
         or table.get("core_sha") != suite.CORE_SHA
-        or table.get("future_workload") != plan()["inputs"]
+        or table.get("future_workload") != plan(batch)["inputs"]
     ):
         raise ValueError("Frozen cost publication/producer/workload mismatch")
-    formal.validate_identity(table["identity"])
+    formal.validate_identity(table["identity"], batch)
     return table, proof
 
 
 def prepare(args):
-    print(json.dumps(plan(), indent=2), flush=True)  # before weights or model load
+    batch = getattr(args, "batch", 64)
+    cost_directory = COST_DIRECTORY if batch == 64 else args.cost_directory
+    print(json.dumps(plan(batch), indent=2), flush=True)  # before weights or model load
     suite.source_gate(args)
-    compatibility = verify_code(args.plugin)
-    table, proof = publication(COST_DIRECTORY)
-    if formal.real_text_contract(args.manifest) != plan()["inputs"]:
+    compatibility = (
+        verify_code(args.plugin)
+        if batch == 64
+        else {"policy": "exact same producer/consumer commit", "plugin_sha": args.plugin_sha}
+    )
+    table, proof = publication(cost_directory, batch, args.plugin_sha)
+    if formal.real_text_contract(args.manifest) != formal.workload_contract():
         raise ValueError("Frozen GSM8K manifest/IDs/tokens/source changed")
     weights = formal.weight_identity(args.model)
     if weights != table["weight_provenance"]:
@@ -113,14 +119,15 @@ def prepare(args):
     assets = args.output_dir / "assets"
     assets.mkdir(exist_ok=False)
     for name in ("cost-profile.json", "cost-publication.json"):
-        shutil.copyfile(COST_DIRECTORY / name, assets / name)
+        shutil.copyfile(cost_directory / name, assets / name)
     copy_manifest_assets(args.manifest, args.output_dir / "input")
-    _, records, _ = read_manifest(args.manifest, 64)
+    _, base_records, _ = read_manifest(args.manifest, 64)
+    records = base_records * (batch // 64)
     (args.output_dir / "input.jsonl").write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records))
     write(
         args.output_dir / "preflight.json",
         {
-            "plan": plan(),
+            "plan": plan(batch),
             "plugin_sha": args.plugin_sha,
             "core_sha": suite.CORE_SHA,
             "weights": weights,
@@ -131,16 +138,16 @@ def prepare(args):
     )
 
 
-def validate_receipts(ranks, stream, table):
+def validate_receipts(ranks, stream, table, batch=64):
     """Fail closed on every recorded selection/consumption, not histograms alone."""
     mapping = stream.get("request_id_mapping") or {}
     pairs = mapping.get("mappings", [])
-    expected = [r["request_id"] for r in plan()["inputs"]["records"]]
+    expected = [r["request_id"] for r in plan(batch)["inputs"]["records"]]
     if (
         mapping.get("errors") != []
         or mapping.get("hook_restored") is not True
         or sorted(p["external_id"] for p in pairs) != sorted(expected)
-        or len({p["internal_id"] for p in pairs}) != 64
+        or len({p["internal_id"] for p in pairs}) != batch
         or sorted(r["rank"] for r in ranks) != list(range(8))
     ):
         raise ValueError("Request/rank mapping unavailable or inconsistent")
@@ -169,7 +176,7 @@ def validate_receipts(ranks, stream, table):
             ids, queries = target.get("request_ids", []), target.get("query_lengths", [])
             if (
                 row["execution"] != i
-                or not 1 <= len(ids) <= 64
+                or not 1 <= len(ids) <= batch
                 or len(set(ids)) != len(ids)
                 or not set(ids) <= internal
                 or len(ids) != len(queries)
@@ -259,6 +266,21 @@ def validate_receipts(ranks, stream, table):
         reference = comparable
     if not confidence_calls:
         raise ValueError("No actual confidence FULL consumption")
+    witnesses = [
+        {
+            "execution": r["execution"],
+            "requests": len(r["target"]["request_ids"]),
+            "target_query_tokens": r["target"]["valid_tokens"],
+            "graph_capacity": r["target"]["capacity"],
+        }
+        for r in reference
+        if r["selection"]
+        and r["selection"]["policy"] == "current_epoch_survival_cost"
+        and len(r["target"]["request_ids"]) == batch
+        and r["target"]["full_replay"]
+    ]
+    if batch > 64 and not witnesses:
+        raise ValueError("Actual target concurrency coverage incomplete")
     per_request = []
     for pair in pairs:
         key = pair["internal_id"]
@@ -278,6 +300,9 @@ def validate_receipts(ranks, stream, table):
         )
     return {
         "status": "PASSED_THIS_RUN",
+        **(
+            {"capacity_coverage": witnesses, "distinct_questions": 64, "request_instances": batch} if batch > 64 else {}
+        ),
         "per_request": per_request,
         "confidence_length_histogram": dict(
             Counter(
@@ -300,12 +325,12 @@ def validate_receipts(ranks, stream, table):
     }
 
 
-def validate_stream(stream, records):
+def validate_stream(stream, records, batch=64):
     rows = stream.get("requests", [])
-    frozen = plan()["inputs"]["records"]
+    frozen = plan(batch)["inputs"]["records"]
     if (
-        len(rows) != 64
-        or len(records) != 64
+        len(rows) != batch
+        or len(records) != batch
         or stream.get("error")
         or stream.get("scheduler", {}).get("corrupted_requests")
     ):
@@ -325,6 +350,7 @@ def validate_stream(stream, records):
 
 
 def engine_config(args, root):
+    batch = getattr(args, "batch", 64)
     config = root / "verification.json"
     write(
         config,
@@ -336,15 +362,15 @@ def engine_config(args, root):
     )
     local = argparse.Namespace(
         **vars(args),
-        max_num_seqs=[64],
+        max_num_seqs=[batch],
         repeats=1,
         modes=["dspark_confidence_graph"],
-        capture_dspark=list(formal.coverage.CAPTURES),
+        capture_dspark=formal.captures(batch),
         capture_target=None,
         confidence_verification=config,
-        num_prompts=64,
+        num_prompts=batch,
         warmup_prompts=0,
-        client_outstanding=64,
+        client_outstanding=batch,
         output_len=256,
         max_model_len=8192,
         max_num_batched_tokens=8192,
@@ -355,7 +381,7 @@ def engine_config(args, root):
         root / "plan.json",
         {
             **execution_plan,
-            "contract": plan(),
+            "contract": plan(batch),
             "performance_eligible": False,
             "exit_observation": False,
             "shutdown_policy": shutdown_policy.POLICY_NAME,
@@ -375,17 +401,20 @@ def engine_config(args, root):
 
 
 def model_run(args):
+    batch = getattr(args, "batch", 64)
     suite.source_gate(args)
-    root = args.output_dir / "runs/b64"
+    root = args.output_dir / f"runs/b{batch}"
     root.mkdir(parents=True, exist_ok=False)
     preflight = read(args.output_dir / "preflight.json")
     if (
-        preflight["plan"] != plan()
+        preflight["plan"] != plan(batch)
         or preflight["plugin_sha"] != args.plugin_sha
         or formal.sha(args.output_dir / "input.jsonl") != preflight["input_sha256"]
     ):
         raise ValueError("Preflight/inputs changed before model initialization")
-    table, _ = publication(args.output_dir / "assets")
+    table, proof = publication(args.output_dir / "assets", batch, args.plugin_sha)
+    if proof != preflight["publication"]:
+        raise ValueError("Published costs changed after preflight")
     records = [json.loads(line) for line in (args.output_dir / "input.jsonl").read_text().splitlines()]
     parsed, kwargs = engine_config(args, root)
     from tools.dspark.performance_stream import StreamingEngine
@@ -396,6 +425,12 @@ def model_run(args):
         engine = StreamingEngine(kwargs, parsed)
         result["engine_initializations"] = 1
         write(root / "capture.json", benchmark._collect_worker_graph_runtime(engine, parsed))
+        if batch > 64:
+            from tools.dspark.batch_expansion import capacity_check
+
+            allocated = engine.collective_rpc("dspark_benchmark_capacity")
+            write(root / "capacity.json", allocated)
+            capacity_check(allocated, batch)
         before = engine.collective_rpc("dspark_benchmark_replay_snapshot")
         write(root / "before.json", before)
         # Runtime CostTable.load above checks the full actual runtime identity.
@@ -405,14 +440,14 @@ def model_run(args):
         engine.generate(
             [{"prompt_token_ids": r["prompt_token_ids"]} for r in records],
             benchmark._sampling_params(parsed),
-            profile_point=NAME,
-            request_ids=[r["request_id"] for r in plan()["inputs"]["records"]],
+            profile_point=plan(batch)["name"],
+            request_ids=[r["request_id"] for r in plan(batch)["inputs"]["records"]],
         )
         after = engine.collective_rpc("dspark_benchmark_replay_snapshot")
         write(root / "after.json", after)
         write(root / "stream.json", engine.last_batch)
-        validate_stream(engine.last_batch, records)
-        result["execution_acceptance"] = validate_receipts(after, engine.last_batch, table)
+        validate_stream(engine.last_batch, records, batch)
+        result["execution_acceptance"] = validate_receipts(after, engine.last_batch, table, batch)
         result["verification"] = summarize_verification(before, after, 8)
         for initial, final in zip(sorted(before, key=lambda r: r["rank"]), sorted(after, key=lambda r: r["rank"])):
             records_for_rank = final["confidence_execution_receipts"]["records"]
@@ -450,7 +485,8 @@ def model_run(args):
 
 
 def supervise(args):
-    root = args.output_dir / "runs/b64"
+    batch = getattr(args, "batch", 64)
+    root = args.output_dir / f"runs/b{batch}"
     root.parent.mkdir(parents=True, exist_ok=True)
     cmd = [sys.executable, "-m", "tools.dspark.confidence_acceptance", "model", *sys.argv[2:]]
     guarded = [
@@ -460,7 +496,7 @@ def supervise(args):
         "--directory",
         str(root),
         "--receipt",
-        str(root.parent / "b64-supervisor.json"),
+        str(root.parent / f"b{batch}-supervisor.json"),
         "--max-runtime-seconds",
         str(RUNTIME_SECONDS),
         "--stop-file",
@@ -474,10 +510,10 @@ def supervise(args):
     report = {"overall_pass": False, "performance_eligible": False, "error": None}
     residual = {"success": False, "error": None}
     try:
-        suite.resources_idle(root.parent / "b64-npu-before.log")
-        row["rc"] = suite.logged(guarded, root.parent / "b64.log")
+        suite.resources_idle(root.parent / f"b{batch}-npu-before.log")
+        row["rc"] = suite.logged(guarded, root.parent / f"b{batch}.log")
         try:
-            scan(root.parent / "b64.log")
+            scan(root.parent / f"b{batch}.log")
             row["log_scan_rc"] = 0
         except Exception as error:
             row.update(log_scan_rc=1, log_scan_error=str(error))
@@ -487,12 +523,12 @@ def supervise(args):
         report["error"] = f"{type(error).__name__}: {error}"
     finally:
         try:
-            suite.resources_idle(root.parent / "b64-npu-after.log")
+            suite.resources_idle(root.parent / f"b{batch}-npu-after.log")
             residual["success"] = True
         except Exception as error:
             residual["error"] = str(error)
-        write(root.parent / "b64-command.json", row)
-        write(root.parent / "b64-residual.json", residual)
+        write(root.parent / f"b{batch}-command.json", row)
+        write(root.parent / f"b{batch}-residual.json", residual)
     report["shutdown"] = shutdown_acceptance.check(root, shutdown_policy.POLICY_NAME)
     try:
         result = read(root / "generation-result.json")
@@ -526,6 +562,8 @@ def main():
     parser.add_argument("--plugin", type=Path, default=Path("/workspace/vllm-ascend-hust"))
     parser.add_argument("--core", type=Path, default=Path("/workspace/vllm-hust"))
     parser.add_argument("--model", type=Path, default=Path("/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8"))
+    parser.add_argument("--batch", type=int, choices=(64, 128, 256), default=64)
+    parser.add_argument("--cost-directory", type=Path)
     parser.add_argument("--plugin-sha", required=True)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)

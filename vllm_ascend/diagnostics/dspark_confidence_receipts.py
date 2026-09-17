@@ -18,6 +18,11 @@ class ConfidenceReceipts(_FullReplayObserver):
     def __init__(self, runner):
         if not confidence_acceptance_enabled(runner.vllm_config.additional_config):
             raise ValueError("Confidence receipts require explicit confidence/profile=false acceptance")
+        self.max_requests = getattr(getattr(runner.vllm_config, "scheduler_config", None), "max_num_seqs", 64)
+        if self.max_requests not in (64, 128, 256):
+            raise ValueError("Unsupported confidence acceptance tier")
+        self.max_request_rows = MAX_REQUEST_ROWS * (self.max_requests // 64)
+        self.max_log_bytes = MAX_LOG_BYTES * (self.max_requests // 64)
         super().__init__(runner)
         self.adaptive = runner.speculator.confidence_verification
         self.original_select = self.adaptive.select
@@ -38,7 +43,7 @@ class ConfidenceReceipts(_FullReplayObserver):
     def persist(self, record, phase):
         payload = json.dumps({"phase": phase, **record}, allow_nan=False) + "\n"
         self.log_bytes += len(payload.encode())
-        if self.log_bytes > MAX_LOG_BYTES:
+        if self.log_bytes > self.max_log_bytes:
             raise ValueError("Confidence receipt log byte bound exceeded")
         with self.path.open("a") as out:
             out.write(payload)
@@ -51,12 +56,12 @@ class ConfidenceReceipts(_FullReplayObserver):
         if not output.total_num_scheduled_tokens:
             return self.original_select(runner, output)
         contexts = current_host_contexts(runner.req_states, output)
-        if len(output.num_scheduled_tokens) > 64 or max(contexts.values(), default=0) > 640:
+        if len(output.num_scheduled_tokens) > self.max_requests or max(contexts.values(), default=0) > 640:
             raise ValueError("Confidence acceptance exceeds frozen request/context coverage")
         result = self.original_select(runner, output)
         selection = copy.deepcopy(self.adaptive.last_selection)
         self.request_rows += len(result.num_scheduled_tokens)
-        if self.request_rows > MAX_REQUEST_ROWS:
+        if self.request_rows > self.max_request_rows:
             raise ValueError("Confidence request receipt bound exceeded")
         record = {
             "execution": len(self.records) + 1,
@@ -158,7 +163,9 @@ class ConfidenceReceipts(_FullReplayObserver):
             "records": copy.deepcopy(self.records),
             "truncated": False,
             "max_executions": MAX_EXECUTIONS,
-            "max_request_rows": MAX_REQUEST_ROWS,
+            "max_request_rows": self.max_request_rows,
+            "max_log_bytes": self.max_log_bytes,
+            "max_requests": self.max_requests,
             "sampled_counts": sum(t.numel() for _, t in self.sampled),
             "device_snapshot_bytes": sum(t.numel() * t.element_size() for _, t in self.sampled),
             "log_bytes": self.log_bytes,

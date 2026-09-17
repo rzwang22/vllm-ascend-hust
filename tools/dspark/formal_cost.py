@@ -25,17 +25,27 @@ ACCEPTED_PLUGIN = "fe6b29be454ea6eec4e37f4c2989a9c5440f951f"
 ACCEPTED_SHA = "3ddf1943036b083a994e97ef106f6d1e8d57ac7d34171d82bc083bcd74c7b848"
 
 
-def plan():
-    _, matrix = profile.grid(64, list(coverage.CAPTURES), [128], 512)
-    points = [p for p in matrix if p["requests"] in REQUEST_GRID]
+def captures(batch=64):
+    if batch not in (64, 128, 256):
+        raise ValueError("Unsupported bounded engine tier")
+    return [6 * 2**i for i in range(batch.bit_length())]
+
+
+def request_grid(batch=64):
+    return sorted({1, batch, *(c for c in captures(batch) if c <= batch)})
+
+
+def plan(batch=64):
+    _, matrix = profile.grid(batch, captures(batch), [128], 512)
+    points = [p for p in matrix if p["requests"] in request_grid(batch)]
     return {
-        "name": NAME,
+        "name": f"b{batch}-confidence-cost-v1",
         "purpose": "NPU cost calibration only; not synthetic functional phase3 or performance",
         "performance_eligible": False,
         "model_initializations": 1,
-        "request_grid": list(REQUEST_GRID),
+        "request_grid": request_grid(batch),
         "context_ceilings": [640],
-        "capture_sizes": list(coverage.CAPTURES),
+        "capture_sizes": captures(batch),
         "points": points,
         "point_count": len(points),
         "total_requests": sum(p["requests"] for p in points),
@@ -44,8 +54,8 @@ def plan():
         "samples": 5,
         "max_runtime_seconds": RUNTIME_SECONDS,
         "future_workload": {
-            "engine_max_num_seqs": 64,
-            "actual_decode_requests": [1, 64],
+            "engine_max_num_seqs": batch,
+            "actual_decode_requests": [1, batch],
             "prompt_tokens_max": 116,
             "max_new_tokens": 256,
             "scheduler_pre_query_upper_bound_max": 640,
@@ -63,16 +73,17 @@ def plan():
 def validate_args(args):
     if not getattr(args, "formal_cost_plan", None):
         return
+    batch = getattr(args, "batch", getattr(args, "batches", [64])[0])
     if (
-        args.formal_cost_plan != NAME
+        args.formal_cost_plan != plan(batch)["name"]
         or args.stage != "profile"
-        or getattr(args, "batch", 64) != 64
-        or getattr(args, "batches", [64]) != [64]
+        or getattr(args, "batch", batch) != batch
+        or getattr(args, "batches", [batch]) != [batch]
         or args.profile_contexts != [128]
         or args.profile_output_tokens != 512
         or args.profile_warmup != 2
         or args.profile_samples != 5
-        or (getattr(args, "capture_sizes", None) or getattr(args, "capture", None)) != list(coverage.CAPTURES)
+        or (getattr(args, "capture_sizes", None) or getattr(args, "capture", None)) != captures(batch)
         or args.max_model_len != 8192
         or args.max_num_batched_tokens != 8192
         or args.gpu_memory_utilization != 0.9
@@ -95,7 +106,7 @@ def validate_args(args):
         )
     ):
         raise ValueError(
-            "Formal costs require the frozen B64 plan and named exit receipts, without numerical diagnostics"
+            "Formal costs require the frozen tier plan and named exit receipts, without numerical diagnostics"
         )
 
 
@@ -189,6 +200,32 @@ def real_text_contract(manifest):
     }
 
 
+CONFIDENCE_BASELINE_SHA = "a76a927b2d5f354f9f8e7f6e223fe15722091f35733c213aa2616d6f6e27e118"
+
+
+def workload_contract(batch=64):
+    base = read(Path(__file__).with_name("B64_REAL_TEXT_PLAN.json"))
+    if batch == 64:
+        return base
+    captures(batch)  # reject unsupported tiers
+    return {
+        **base,
+        "engine_max_num_seqs": batch,
+        "client_outstanding": batch,
+        "distinct_questions": 64,
+        "instances_per_question": batch // 64,
+        "records": [
+            {
+                **row,
+                "original_request_id": row["request_id"],
+                "request_id": f"{row['request_id']}:b{batch}:instance{replica}",
+            }
+            for replica in range(batch // 64)
+            for row in base["records"]
+        ],
+    }
+
+
 def prepare(model, archive, output, plugin_sha, manifest):
     print(json.dumps(plan(), indent=2), flush=True)  # Before hashing or loading any model.
     workload = real_text_contract(manifest)
@@ -215,12 +252,12 @@ def prepare(model, archive, output, plugin_sha, manifest):
     return result
 
 
-def validate_identity(identity):
+def validate_identity(identity, batch=64):
     expected = {
-        "max_num_seqs": 64,
+        "max_num_seqs": batch,
         "max_num_batched_tokens": 8192,
         "max_model_len": 8192,
-        "capture_sizes": list(coverage.CAPTURES),
+        "capture_sizes": captures(batch),
         "tp": 8,
         "ep": True,
         "K": 5,
@@ -250,7 +287,7 @@ def validate_identity(identity):
             raise ValueError(f"Missing runtime identity: {key}")
 
 
-def publish(root, raw_rc, plugin_sha):
+def publish(root, raw_rc, plugin_sha, batch=64):
     """Rebuild from raw records only after parent log/resource/exit gates complete."""
     target = root / "cost-profile.json"
     if target.exists():
@@ -274,10 +311,14 @@ def publish(root, raw_rc, plugin_sha):
             or sorted((w["rank"], w["raw_exitcode"]) for w in workers["workers"]) != [(r, 0) for r in range(8)]
         ):
             raise ValueError("Workers did not all exit naturally")
+        if batch > 64:
+            from tools.dspark.batch_expansion import capacity_check
+
+            capacity_check(read(root / "capacity.json"), batch)
         saved_plan = read(root / "plan.json")
         if (
-            saved_plan.get("formal_cost") != plan()
-            or saved_plan.get("points") != plan()["points"]
+            saved_plan.get("formal_cost") != plan(batch)
+            or saved_plan.get("points") != plan(batch)["points"]
             or saved_plan.get("plugin_sha") != plugin_sha
             or saved_plan.get("core_sha") != profile.suite.CORE_SHA
         ):
@@ -287,13 +328,13 @@ def publish(root, raw_rc, plugin_sha):
             raise ValueError("Incomplete model lifecycle")
         provenance = read(root.parent.parent / "formal-cost-preflight.json")
         if (
-            provenance["plan"] != plan()
+            provenance["plan"] != plan(batch)
             or provenance["plugin_sha"] != plugin_sha
             or provenance["core_sha"] != profile.suite.CORE_SHA
-            or provenance["baseline"]["archive_sha256"] != ACCEPTED_SHA
+            or provenance["baseline"]["archive_sha256"] != (ACCEPTED_SHA if batch == 64 else CONFIDENCE_BASELINE_SHA)
         ):
             raise ValueError("Preflight provenance mismatch")
-        if provenance.get("future_workload") != read(Path(__file__).with_name("B64_REAL_TEXT_PLAN.json")):
+        if provenance.get("future_workload") != workload_contract(batch):
             raise ValueError("Future workload contract changed")
         if weight_identity(Path(provenance["weights"]["model"])) != provenance["weights"]:
             raise ValueError("Checkpoint bytes changed during collection")
@@ -301,21 +342,21 @@ def publish(root, raw_rc, plugin_sha):
             raise ValueError("Checkpoint preflight changed")
         capture = read(root / "capture.json")
         if (
-            capture.get("configured_capture_sizes") != list(coverage.CAPTURES)
-            or capture.get("observed_capture_sizes") != list(coverage.CAPTURES)
+            capture.get("configured_capture_sizes") != captures(batch)
+            or capture.get("observed_capture_sizes") != captures(batch)
             or capture.get("npugraph_ex_enabled") is not True
             or len(capture.get("workers", [])) != 8
             or {w["rank"] for w in capture["workers"]} != set(range(8))
             or any(
                 w.get("target_cudagraph_mode") != "FULL_DECODE_ONLY"
                 or w.get("dspark_cudagraph_mode") != "NONE"
-                or w.get("observed_capture_sizes") != list(coverage.CAPTURES)
+                or w.get("observed_capture_sizes") != captures(batch)
                 for w in capture["workers"]
             )
         ):
             raise ValueError("Actual target/draft Graph capture configuration mismatch")
         saved = read(root / "retained.json")
-        if [r["point"] for r in saved] != plan()["points"]:
+        if [r["point"] for r in saved] != plan(batch)["points"]:
             raise ValueError("Missing/duplicate calibration points")
         rebuilt, identity, loaded_weights = [], None, None
         for record in saved:
@@ -331,7 +372,7 @@ def publish(root, raw_rc, plugin_sha):
                 raise ValueError("Retained samples differ from raw reconstruction")
             for rank in raw["ranks"]:
                 current = rank["cost_profile"]["identity"]
-                validate_identity(current)
+                validate_identity(current, batch)
                 if current["model"] != provenance["weights"]["model"]:
                     raise ValueError("Runtime model path differs from hashed weights")
                 weights = rank["confidence_verification"]["weights"]
@@ -359,7 +400,7 @@ def publish(root, raw_rc, plugin_sha):
         table = profile.compile_startup(
             rebuilt,
             identity,
-            list(REQUEST_GRID),
+            request_grid(batch),
             checkpoint=read(root / "checkpoint.json"),
             plugin_sha=plugin_sha,
             raw_hashes=[r["raw_sha256"] for r in rebuilt],
@@ -369,12 +410,17 @@ def publish(root, raw_rc, plugin_sha):
             raise ValueError("Candidate differs from recomputed NPU samples")
         costs = CostTable.load_startup(table, identity)
         lookups = 0
-        for n in range(1, 65):
+        for n in range(1, batch + 1):
             for tokens in range(n, 6 * n + 1):
                 costs.cost(n, tokens, 640)
                 lookups += 1
         table.update(
-            publication={"status": "PASSED", "plan": NAME, "shutdown": status, "validated_candidate_lookups": lookups},
+            publication={
+                "status": "PASSED",
+                "plan": plan(batch)["name"],
+                "shutdown": status,
+                "validated_candidate_lookups": lookups,
+            },
             weight_provenance=provenance["weights"],
             loaded_confidence_weights=loaded_weights,
             scheduler_measurements_sha256=sha(root / "scheduler-overhead.json"),
@@ -414,11 +460,12 @@ def main():
     p.add_argument("root", type=Path)
     p.add_argument("raw_rc", type=int)
     p.add_argument("plugin_sha")
+    p.add_argument("--batch", type=int, choices=(64, 128, 256), default=64)
     args = parser.parse_args()
     if args.action == "prepare":
         prepare(args.model, args.archive, args.output, args.plugin_sha, args.manifest)
     else:
-        print(json.dumps(publish(args.root, args.raw_rc, args.plugin_sha), indent=2))
+        print(json.dumps(publish(args.root, args.raw_rc, args.plugin_sha, args.batch), indent=2))
 
 
 if __name__ == "__main__":

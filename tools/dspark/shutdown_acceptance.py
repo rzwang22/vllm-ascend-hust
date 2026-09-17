@@ -20,9 +20,9 @@ def check(root, name):
 
     cleanup = read(root / "cleanup.json")
     workers = read(root / "worker-cleanup.json")
-    supervisor = read(root.parent / "b64-supervisor.json")
-    command = read(root.parent / "b64-command.json")
-    residual = read(root.parent / "b64-residual.json")
+    supervisor = read(root.parent / f"{root.name}-supervisor.json")
+    command = read(root.parent / f"{root.name}-command.json")
+    residual = read(root.parent / f"{root.name}-residual.json")
     drain = read(root / "output-handler-shutdown.json")
     plan = read(root / "plan.json")
     for label, receipt in (("frontend", cleanup), ("workers", workers), ("supervisor", supervisor)):

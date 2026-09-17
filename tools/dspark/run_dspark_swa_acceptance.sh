@@ -11,6 +11,8 @@ acceptance=(--swa-acceptance-archive /workspace/dspark-results/dspark-swa-lifecy
 contexts=(128 2048)
 if test "$#" -eq 4; then
     case "$4" in
+        --batch-expansion)
+            exec bash /workspace/vllm-ascend-hust/tools/dspark/run_dspark_large_batch.sh "$sha" "$manifest" --core-remote "$core_remote" --batch-expansion ;;
         --confidence-acceptance)
             exec bash /workspace/vllm-ascend-hust/tools/dspark/run_dspark_large_batch.sh "$sha" "$manifest" --core-remote "$core_remote" --confidence-acceptance ;;
         --formal-cost=b64-confidence-cost-v1)

@@ -566,7 +566,7 @@ def run(args):
     benchmark._atomic_write_json(root / "checkpoint.json", checkpoint)
     counts, points = grid(args.batch, args.capture, args.profile_contexts, args.profile_output_tokens)
     if formal:
-        contract = formal_cost.plan()
+        contract = formal_cost.plan(args.batch)
         counts, points = contract["request_grid"], contract["points"]
         print(json.dumps(contract, indent=2), flush=True)
     diagnostic = getattr(args, "profile_nan_diagnostic", False)
@@ -620,7 +620,7 @@ def run(args):
         {
             **plan,
             "points": points,
-            **({"formal_cost": formal_cost.plan()} if formal else {}),
+            **({"formal_cost": formal_cost.plan(args.batch)} if formal else {}),
             **({"functional_coverage": coverage.plan(phase)} if phase else {}),
             "performance_eligible": False,
             "exit_observation": getattr(args, "profile_exit_observation", False),
@@ -674,6 +674,12 @@ def run(args):
         try:
             runtime = benchmark._collect_worker_graph_runtime(engine, parsed)
             benchmark._atomic_write_json(root / "capture.json", runtime)
+            if formal and args.batch > 64:
+                from tools.dspark.batch_expansion import capacity_check
+
+                allocated = engine.collective_rpc("dspark_benchmark_capacity")
+                benchmark._atomic_write_json(root / "capacity.json", allocated)
+                capacity_check(allocated, args.batch)
         except BaseException as error:
             guard = getattr(engine, "profile_guard", None)
             if guard is not None:

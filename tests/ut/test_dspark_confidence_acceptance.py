@@ -413,10 +413,15 @@ def test_model_error_preserved_and_shutdown_runs_even_when_partial_save_fails(tm
     (tmp_path / "input.jsonl").write_text(json.dumps({"prompt_token_ids": [1]}) + "\n")
     task.write(
         tmp_path / "preflight.json",
-        dict(plan=task.plan(), plugin_sha=task.PRODUCER, input_sha256=task.formal.sha(tmp_path / "input.jsonl")),
+        dict(
+            plan=task.plan(),
+            publication={},
+            plugin_sha=task.PRODUCER,
+            input_sha256=task.formal.sha(tmp_path / "input.jsonl"),
+        ),
     )
     monkeypatch.setattr(task.suite, "source_gate", lambda args: None)
-    monkeypatch.setattr(task, "publication", lambda path: ({}, {}))
+    monkeypatch.setattr(task, "publication", lambda *args: ({}, {}))
 
     def fail_capture(*args):
         raise RuntimeError("original capture failure")

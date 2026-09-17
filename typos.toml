@@ -190,6 +190,6 @@ windo = "windo"
 [type.vimscript.extend-words]
 
 [type.dspark_real_text]
-extend-glob = ["B64_REAL_TEXT_PLAN.json"]
+extend-glob = ["B64_REAL_TEXT_PLAN.json", "B128_B256_EXPANSION_PLAN.json"]
 # Immutable dataset case IDs contain truncated content hashes, not prose.
-extend-ignore-re = ['"source_case_id": "gsm8k:[0-9a-f]{24}"']
+extend-ignore-re = ['"source_case_id":\s*"gsm8k:[0-9a-f]{24}"']

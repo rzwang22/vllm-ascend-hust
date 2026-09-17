@@ -200,7 +200,7 @@ def main(argv=None):
     )
     parser.add_argument("--profile-shutdown-policy", choices=("dspark-profile-25s-v1",))
     parser.add_argument("--profile-coverage-phase", choices=coverage.PHASES)
-    parser.add_argument("--formal-cost-plan", choices=(formal_cost.NAME,))
+    parser.add_argument("--formal-cost-plan", choices=tuple(formal_cost.plan(b)["name"] for b in (64, 128, 256)))
     args = parser.parse_args(argv)
     try:
         coverage.validate_args(args)
