@@ -1,0 +1,130 @@
+{
+  "archive": "dspark-batch-expansion.DKPzjeew-evidence.tar.gz",
+  "sha256": "367034e86d5b1d678f1cce950c23aaa1f1b717ecb1f93bb84ea61e81121f2adb",
+  "embedded_sha256": "05d43efefeadfa71823a6fd5679fcf075cebf8a6d64bf106d41634e4176b9d72",
+  "plugin": "008884b24320c75ddb8b52205335e3f171fb0690",
+  "core": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+  "scope": "independent raw JSON/log audit; no new model run",
+  "anchors": {
+    "dspark-large-batch.VOVMAID3/b128/cost/runs/b128/capture.json": "ac8ba1fcb203c1c3ac9bc0878e564fff83d289653afda508e9d958674497fa29",
+    "dspark-large-batch.VOVMAID3/b128/cost/runs/b128/plan.json": "6d13ebeec3d1b8b7ff7462282e5f2eea697876595684f0c7d652bba7d3b37db6",
+    "dspark-large-batch.VOVMAID3/b128/cost/runs/b128/lifecycle.json": "ae775c262b29081a5128f859b5401e6b8e2c9a0c7f51cc909ed5c440e2629e33",
+    "dspark-large-batch.VOVMAID3/b128/cost/runs/b128/engine-failure.json": "0743887b4a75e1e1a46b14ff5f7ffd57786671dc2ae237908745bca9596c3136",
+    "dspark-large-batch.VOVMAID3/b128/cost/runs/b128/cleanup.json": "27323bb7783d6f456e85ed49071de224da95263f5edadbee8cb8c969be2fa7dd",
+    "dspark-large-batch.VOVMAID3/b128/cost/runs/b128/worker-cleanup.json": "3dfd4e4332ff8648d5bcb36407831c0bde2fdf3fba6b9b9460861df4c2fe0975",
+    "dspark-large-batch.VOVMAID3/b128/cost/runs/b128/output-handler-shutdown.json": "9a1e6b55eac4f354a06b4dbbe1dcf1ed5e8a8d51e5ecbf5e506a2dd82a0ca544",
+    "dspark-large-batch.VOVMAID3/expansion-report.json": "eb67e8b6ad08583e21bcfd91adb34f6030a8c94de5b5786180885b6179675c6d",
+    "dspark-large-batch.VOVMAID3/core-source.json": "1ae45f0125b797468176fd330789470fb11bf13a6618516b9c197cfdfe976882",
+    "dspark-large-batch.VOVMAID3/b128/cost/runs/b128-supervisor.json": "962c84b1a4c1610363c582817d80a2bdf59131cdfd4fd9e22b6ca9e009a758cf"
+  },
+  "capture": {
+    "ranks": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "observed_sizes": [
+      6,
+      12,
+      24,
+      48,
+      96,
+      192,
+      384,
+      768
+    ],
+    "target": "FULL_DECODE_ONLY",
+    "draft": "NONE"
+  },
+  "first_error": {
+    "schema_version": 1,
+    "phase": "runtime",
+    "performance_eligible": false,
+    "observed_utc": "2026-09-22T04:21:19.435518+00:00",
+    "point": null,
+    "pending_operation": {
+      "name": "collective_rpc:dspark_benchmark_capacity",
+      "point": null,
+      "started_utc": "2026-09-22T04:21:19.421777+00:00"
+    },
+    "error": "Exception: Call to collective_rpc method failed: Worker failed with error ''AscendDSparkSpeculator' object has no attribute 'max_num_reqs'', please check the stack trace above for the root cause",
+    "observed_frontend_error": "Exception: Call to collective_rpc method failed: Worker failed with error ''AscendDSparkSpeculator' object has no attribute 'max_num_reqs'', please check the stack trace above for the root cause"
+  },
+  "sampling_points_started": 0,
+  "new_cost_tables": 0,
+  "later_stages": "NOT_RUN",
+  "workers": {
+    "elapsed_seconds": 12.720113158226013,
+    "raw_exitcodes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "all_reaped": true,
+    "force_events": []
+  },
+  "frontend": {
+    "status": "forced_cleanup",
+    "engine_elapsed_seconds": 36.04097536019981,
+    "elapsed_seconds": 36.07108209840953,
+    "timed_out": false,
+    "success": false,
+    "force_events": [
+      {
+        "observed_utc": "2026-09-22T04:21:55.472545+00:00",
+        "message": "[shutdown] Process manager: force killing remaining processes count=1"
+      }
+    ],
+    "engine_returned": true,
+    "thread_completed": true,
+    "event_loop": "closed"
+  },
+  "output_handler": {
+    "status": "drained",
+    "success": false,
+    "error": null,
+    "unfinished_requests": 0,
+    "cancelled": true,
+    "elapsed_seconds": 0.00014680251479148865
+  },
+  "output_handler_interpretation": "Drained successfully as an operation; success=false preserves the prior capacity RPC error, not a new cancellation error.",
+  "cleanup_cause": "UNKNOWN after executor.shutdown returned; no direct EngineCore post-executor stack in archive",
+  "pipestatus": {
+    "dspark-batch-expansion.DKPzjeew/fetch.pipestatus": "0 0",
+    "dspark-batch-expansion.DKPzjeew/checkout.pipestatus": "0 0",
+    "dspark-batch-expansion.DKPzjeew/driver.pipestatus": "1 0",
+    "dspark-large-batch.VOVMAID3/b128-cost.pipestatus": "1 0",
+    "dspark-large-batch.VOVMAID3/baseline.pipestatus": "0 0",
+    "dspark-large-batch.VOVMAID3/core-source.pipestatus": "0 0",
+    "dspark-large-batch.VOVMAID3/source.pipestatus": "0 0",
+    "dspark-large-batch.VOVMAID3/b128-cost-prepare.pipestatus": "0 0",
+    "dspark-large-batch.VOVMAID3/host.pipestatus": "0 0",
+    "dspark-large-batch.VOVMAID3/batch-expansion.pipestatus": "1 0",
+    "dspark-large-batch.VOVMAID3/b128/cost/runs/b128.pipestatus": "1 0"
+  },
+  "core_source": {
+    "expected_head": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+    "selected_remote": "rzwang",
+    "status": "verified",
+    "head_before": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+    "remote_url": "https://github.com/rzwang22/vllm-hust.git",
+    "source_transport": "network_remote",
+    "verification_scope": "Exact HEAD through selected remote URL; remote name alone does not verify GitHub provenance",
+    "origin_url_before": "https://github.com/vLLM-HUST/vllm-hust.git",
+    "fetched_head": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+    "actual_head": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970"
+  },
+  "production_model_core_changes": false,
+  "b64_frozen": true,
+  "overall_pass": false
+}

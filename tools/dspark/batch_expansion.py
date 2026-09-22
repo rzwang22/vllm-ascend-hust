@@ -167,7 +167,20 @@ def capacity_check(rows, batch):
     require(sorted(r["rank"] for r in rows) == list(range(8)), "Missing capacity ranks")
     for r in rows:
         require(r["max_requests"] == batch and r["max_tokens"] >= 6 * batch, "Runner buffer capacity mismatch")
-        require(r["draft_max_requests"] == batch, "Draft buffer capacity mismatch")
+        require(
+            r["draft_max_requests"] == batch and r["draft_max_tokens"] >= 6 * batch, "Draft buffer capacity mismatch"
+        )
+        source = r["draft_capacity_source"]
+        require(
+            source["kind"] == "allocated_shared_block_tables" and source["shared_with_target"] is True,
+            "Missing actual draft allocation source",
+        )
+        require(
+            source["groups"]
+            and all(g["stored_shape"][0] == batch and g["input_shape"][0] == batch for g in source["groups"])
+            and source["slot_mapping_shape"][1] == r["draft_max_tokens"],
+            "Draft allocation receipt disagrees with capacities",
+        )
         require(r["kv_num_blocks"] > 0 and r["kv_bytes"] > 0 and r["groups"], "Missing allocated KV evidence")
         require(r["capture_sizes"] == formal.captures(batch), "Actual captured capacity mismatch")
     return {
@@ -285,7 +298,10 @@ def run(args):
             [
                 sys.executable,
                 "-m",
-                "pytest",
+                "tools.dspark.capacity_preflight",
+                "--output",
+                str(args.output_dir / "capacity-interface.json"),
+                "--",
                 "--noconftest",
                 "-q",
                 "-ra",

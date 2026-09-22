@@ -45,9 +45,11 @@ Source audit found no 64-request constant in the relevant production allocations
 
 - Ascend `worker/v2/model_runner.py` obtains request/input-state capacity from
   `max_num_reqs`; its query-start host array has `max_num_reqs + 2` entries.
-- Frozen Core `v1/worker/gpu/spec_decode/speculator.py` derives request and token
-  buffers from scheduler configuration; its DSpark subclass allocates persistent
-  anchors and logits using those dimensions.
+- Ascend DSpark inherits Core `BaseSpeculator`, **not** `DraftModelSpeculator`.
+  It has no `max_num_reqs` member. The previous reference to Core's separate
+  drafter allocation path did not establish Ascend's interface and is corrected.
+  Ascend `set_attn()` binds the runner's actual `BlockTables` and `KVCacheConfig`;
+  proposal tensors are created for the current execution.
 - Frozen Core `v1/worker/gpu/block_table.py` allocates per-group tables with
   `max_num_reqs` rows. Ascend DSpark validates shared cache views, group mappings,
   and slot-buffer lengths in `speculator.py`; the SWA lifecycle fix is retained.
@@ -59,6 +61,10 @@ This is a source/capacity-contract audit, not proof of NPU memory fit or kernel
 correctness at the larger sizes. Actual per-rank KV bytes, blocks, groups,
 page sizes, tensor sharing, runner capacity and captured sizes are saved by one
 host-descriptor RPC after initialization and checked before sampling/generation.
+Draft request capacity is the minimum allocated row dimension of its active KV
+groups' stored and input block tables; token capacity is the allocated slot-map
+width. The receipt records each shape and checks the shared target binding.
+No expected tier, configuration fallback or invented drafter attribute is used.
 No tensor reduction, D2H or synchronization is added by this RPC. `npu-smi`
 receipts preserve actual device usage. Weights, persistent tensors, graph pools,
 KV and workspaces must fit the configured 90% memory allowance; no unsupported
@@ -196,3 +202,104 @@ was run in a disposable checkout: exit 1 from pre-existing repository-wide lint,
 format, spelling, workflow, shell and forbidden-import issues; 78 unrelated
 files would be auto-modified, zero task files. Those unrelated edits were not
 imported. This is not a claim that the full repository CI passed.
+
+## Capacity RPC failure and correction (DKPzjeew)
+
+`B128_CAPACITY_FAILURE_AUDIT.json` preserves independently read evidence anchors
+and hashes. Outer SHA is
+`367034e86d5b1d678f1cce950c23aaa1f1b717ecb1f93bb84ea61e81121f2adb`;
+embedded SHA is
+`05d43efefeadfa71823a6fd5679fcf075cebf8a6d64bf106d41634e4176b9d72`.
+Plugin `008884b24320c75ddb8b52205335e3f171fb0690` and Core
+`71d2c1c436eba894a8e9eeb2c5af17e05cb42970` match the archived plan/source receipt.
+All eight ranks captured 6 through 768 tokens. The capacity RPC then failed on
+`runner.speculator.max_num_reqs`. No sampling point started, retained samples
+or new cost tables exist; B128 confidence and both B256 stages did not run.
+The lifecycle counter increments only after the capacity gate, so its zero
+completed initializations does not contradict the recorded model/capture work.
+
+Root cause is an interface error in the benchmark extension. Ascend's direct
+base class has no request-capacity member; only Core's different
+`DraftModelSpeculator` constructor creates that member. The old host fixture
+invented `speculator=NS(max_num_reqs=256)` and therefore masked this mistake.
+The corrected RPC measures `draft.block_tables.block_tables[g].gpu.shape[0]`,
+`input_block_tables[g].shape[0]` and `slot_mappings.shape[1]` after `set_attn()`.
+The runner/config bindings must be identical, groups valid and buffers nonempty.
+The publication and confidence gates still reject undersized allocations.
+
+Other RPC fields were checked against the fixed sources: Core GPUModelRunner
+initializes `max_num_reqs/max_num_tokens`; `KVCacheConfig` defines
+`num_blocks/kv_cache_tensors/kv_cache_groups`; `KVCacheTensor` defines
+`size/shared_by/offset/block_stride`; `KVCacheGroupSpec` defines
+`layer_names/kv_cache_spec/is_eagle_group`. The allocator already consumes the
+spec's `block_size/page_size_bytes` contract. The graph-runtime RPC itself
+completed for all eight real ranks in this archive. These descriptors are
+capacity evidence, not proof of kernel correctness or actual concurrency.
+
+Before loading weights, the existing host stage now first runs
+`tools.dspark.capacity_preflight` in a fresh process. It imports and constructs
+the installed Ascend class, records its MRO and source hashes, and calls the
+**complete** capacity RPC using actual Core schema/container types with small
+synthetic CPU bindings. It covers 128/256 rows and an undersized input table.
+No class attribute is supplied to imitate `max_num_reqs`. Hardware/UVA allocation
+is not exercised by that interface test, and its result is explicitly not NPU
+fit evidence. Real allocation/capture/concurrency checks still run afterward.
+Import/constructor/RPC failures stop before pytest or weights and are saved to
+`capacity-interface.json`; pytest runs afterward in a separate process to avoid
+mock fixture pollution. Both share the original 600-second host-stage deadline.
+
+### Independent cleanup finding
+
+At 04:21:19.435518 UTC the capacity RPC was recorded as the first error.
+The output handler was cancelled/drained in 0.000147 s with zero unfinished
+requests and no cancellation exception; its `success=false` preserves that
+prior RPC error and must not be interpreted as another observed cancellation
+failure. All eight workers exited with actual code 0 and were reaped by
+04:21:32.159 (worker cleanup 12.720 s, no worker force events).
+At 04:21:55.472545 the frontend process manager force-killed one remaining
+managed process; frontend cleanup took 36.071 s. `timed_out=false` describes
+the outer cleanup thread, while `forced_cleanup=true/success=false` correctly
+records the inner process-manager failure. The supervisor sent no signals.
+The generation, batch-expansion and outer driver PIPESTATUS are all `1 0`.
+
+The frozen Core utility RPC catches the worker exception and returns a failed
+utility response. The frontend records it and invokes shutdown. The executor's
+complete shutdown method returned, including worker and queue cleanup. Core's
+remaining path includes scheduler shutdown, distributed/memory cleanup and
+interpreter finalization. This archive does not identify which later operation
+kept EngineCore alive. No post-executor native stack proves a specific resource,
+reference cycle, queue or GC cause. The one forced process is not evidence that
+any worker failed to exit. Cleanup remains an independent **unresolved failure**;
+this patch changes neither cleanup order nor budget and does not declare it
+fixed. The next existing expansion task must still pass natural-exit checks.
+
+This correction changes telemetry, preload interface checking, tests and these
+documents only. Core/SWA, model computation, confidence policy, capture lists,
+inputs, cost sampling plans, timeouts and frozen B64 results are unchanged.
+There is no usable new table to resume: the next task starts B128 cost sampling,
+then B128 confidence, B256 costs and B256 confidence, with failure stopping it.
+Use the single server command above with the new delivery SHA. Return the new
+outer `dspark-batch-expansion.*-evidence.tar.gz` and its SHA256; it includes the
+installed interface report, JUnit, capacity shapes, costs, real execution
+receipts, first error, separate cleanup receipts and all PIPESTATUS files.
+
+### Validation of this correction
+
+Local Python 3.12.13 / Torch 2.10.0 CPU: **169 passed, zero skipped** across
+batch expansion (33), confidence acceptance, formal costs, profile failure,
+shutdown policy and startup cost regressions. This includes executing the actual
+Ascend constructor body in an isolated CPU fixture (the old member access fails),
+real allocated tensor dimensions, undersized/malformed bindings, frozen Core
+KV dataclass bodies, JSON-safe complete RPC results, and preload failure stopping
+all later stages. Cleanup regressions retain the original error and reject
+forced or incomplete cleanup. No new NPU execution was performed.
+
+The installed-class preload check requires the server's vLLM/Ascend environment
+and remains PENDING locally; source-body/CPU tests do not replace that check.
+B128 sampling/confidence, B256 sampling/confidence, actual concurrency, memory
+fit and frontend natural exit all remain PENDING. No B64 model is rerun.
+
+Changed-file lint/manual hooks pass after formatting. Required repository-wide
+`bash format.sh ci` was executed in a disposable checkout and returned 1 for
+existing lint/format/spelling/workflow/shell/forbidden-import issues. Unrelated
+auto-format edits were discarded. This does not claim full repository CI success.

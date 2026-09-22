@@ -29,6 +29,45 @@ def _host_count(value: Any) -> int:
     return int(value)
 
 
+def _draft_buffer_capacity(runner: Any) -> dict:
+    """Measure the tables DSpark actually binds, not a different Core drafter's API."""
+    draft = runner.speculator
+    tables = draft.block_tables
+    if tables is None or tables is not runner.block_tables or draft.kv_cache_config is not runner.kv_cache_config:
+        raise ValueError("DSpark capacity requires the initialized shared KV binding.")
+    groups = tuple(_host_count(g) for g in draft.draft_kv_cache_group_ids)
+    count = len(runner.kv_cache_config.kv_cache_groups)
+    if not groups or len(set(groups)) != len(groups) or any(g >= count for g in groups):
+        raise ValueError("DSpark capacity has missing/invalid draft KV groups.")
+
+    def shape(tensor):
+        dims = [_host_count(d) for d in tensor.shape]
+        if len(dims) != 2 or min(dims) <= 0:
+            raise ValueError("DSpark capacity requires nonempty allocated two-dimensional buffers.")
+        return dims
+
+    slots = shape(tables.slot_mappings)
+    if len(tables.block_tables) != count or len(tables.input_block_tables) != count or slots[0] != count:
+        raise ValueError("DSpark KV group/buffer dimensions disagree.")
+    allocated = []
+    for group in groups:
+        stored = shape(tables.block_tables[group].gpu)
+        inputs = shape(tables.input_block_tables[group])
+        allocated.append({"group": group, "stored_shape": stored, "input_shape": inputs})
+    return {
+        "draft_max_requests": min(min(g["stored_shape"][0], g["input_shape"][0]) for g in allocated),
+        "draft_max_tokens": slots[1],
+        "draft_capacity_source": {
+            "kind": "allocated_shared_block_tables",
+            "shared_with_target": True,
+            "request_dimensions": "min(block_tables[g].gpu.shape[0], input_block_tables[g].shape[0])",
+            "token_dimension": "slot_mappings.shape[1]",
+            "groups": allocated,
+            "slot_mapping_shape": slots,
+        },
+    }
+
+
 class _FullReplayObserver:
     """Benchmark-local wrappers; delegate each call once, preserve its return/exception.
 
@@ -245,7 +284,8 @@ class DSparkBenchmarkWorkerExtension:
             "rank": _host_count(self.rank),
             "max_requests": _host_count(runner.max_num_reqs),
             "max_tokens": _host_count(runner.max_num_tokens),
-            "draft_max_requests": _host_count(runner.speculator.max_num_reqs),
+            **_draft_buffer_capacity(runner),
+            "runner_capacity_source": ["runner.max_num_reqs", "runner.max_num_tokens"],
             "capture_sizes": self.dspark_benchmark_graph_runtime()["observed_capture_sizes"],
             "kv_num_blocks": _host_count(config.num_blocks),
             "kv_bytes": sum(_host_count(t.size) for t in config.kv_cache_tensors),
