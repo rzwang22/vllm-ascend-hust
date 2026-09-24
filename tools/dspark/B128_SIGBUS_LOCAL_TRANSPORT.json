@@ -1,0 +1,235 @@
+{
+  "status": "PASSED_TRANSPORT_ONLY",
+  "source_adapter": true,
+  "queue_chunk_bytes": 1048576,
+  "queue_chunks": 2,
+  "reserved_bytes": 16908338,
+  "production_defaults_allocated": false,
+  "original_sigbus_cause": "UNKNOWN",
+  "consumed_slots_retain_data": true,
+  "exitcodes": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "owned_shm_remaining": [],
+  "queue_source_sha256": "7ff67c2ef6b8a33a13b11aa3cb202da7887d1d44eed27c6a02d817ea24807d61",
+  "boundary_payload_bytes": [
+    1048466,
+    1048467,
+    1048468
+  ],
+  "utility_serialization": {
+    "status": "NOT_RUN_LOCAL_SOURCE_ADAPTER"
+  },
+  "input_snapshot_sha256": "b589b39d1ecdc379879af8e9332163849020206c22023fcffcad41a36e961fe2",
+  "phases": 15,
+  "reconstructed_rank_responses": 24,
+  "per_rank_measurements": [
+    {
+      "rank": 0,
+      "original_pickle_bytes": [
+        3448341,
+        3448341,
+        3448341
+      ],
+      "receipt_pickle_bytes": [
+        325,
+        325,
+        325
+      ],
+      "boundary_threshold_bytes": [
+        1048575,
+        1048576,
+        1048577,
+        1048575,
+        1048576,
+        1048577,
+        1048575,
+        1048576,
+        1048577
+      ],
+      "max_rss_bytes": 229818368
+    },
+    {
+      "rank": 1,
+      "original_pickle_bytes": [
+        3448341,
+        3448341,
+        3448341
+      ],
+      "receipt_pickle_bytes": [
+        325,
+        325,
+        325
+      ],
+      "boundary_threshold_bytes": [
+        1048575,
+        1048576,
+        1048577,
+        1048575,
+        1048576,
+        1048577,
+        1048575,
+        1048576,
+        1048577
+      ],
+      "max_rss_bytes": 234487808
+    },
+    {
+      "rank": 2,
+      "original_pickle_bytes": [
+        3448341,
+        3448341,
+        3448341
+      ],
+      "receipt_pickle_bytes": [
+        325,
+        325,
+        325
+      ],
+      "boundary_threshold_bytes": [
+        1048575,
+        1048576,
+        1048577,
+        1048575,
+        1048576,
+        1048577,
+        1048575,
+        1048576,
+        1048577
+      ],
+      "max_rss_bytes": 231194624
+    },
+    {
+      "rank": 3,
+      "original_pickle_bytes": [
+        3448341,
+        3448341,
+        3448341
+      ],
+      "receipt_pickle_bytes": [
+        325,
+        325,
+        325
+      ],
+      "boundary_threshold_bytes": [
+        1048575,
+        1048576,
+        1048577,
+        1048575,
+        1048576,
+        1048577,
+        1048575,
+        1048576,
+        1048577
+      ],
+      "max_rss_bytes": 229982208
+    },
+    {
+      "rank": 4,
+      "original_pickle_bytes": [
+        3448341,
+        3448341,
+        3448341
+      ],
+      "receipt_pickle_bytes": [
+        325,
+        325,
+        325
+      ],
+      "boundary_threshold_bytes": [
+        1048575,
+        1048576,
+        1048577,
+        1048575,
+        1048576,
+        1048577,
+        1048575,
+        1048576,
+        1048577
+      ],
+      "max_rss_bytes": 227753984
+    },
+    {
+      "rank": 5,
+      "original_pickle_bytes": [
+        3448341,
+        3448341,
+        3448341
+      ],
+      "receipt_pickle_bytes": [
+        325,
+        325,
+        325
+      ],
+      "boundary_threshold_bytes": [
+        1048575,
+        1048576,
+        1048577,
+        1048575,
+        1048576,
+        1048577,
+        1048575,
+        1048576,
+        1048577
+      ],
+      "max_rss_bytes": 230653952
+    },
+    {
+      "rank": 6,
+      "original_pickle_bytes": [
+        3448341,
+        3448341,
+        3448341
+      ],
+      "receipt_pickle_bytes": [
+        325,
+        325,
+        325
+      ],
+      "boundary_threshold_bytes": [
+        1048575,
+        1048576,
+        1048577,
+        1048575,
+        1048576,
+        1048577,
+        1048575,
+        1048576,
+        1048577
+      ],
+      "max_rss_bytes": 231112704
+    },
+    {
+      "rank": 7,
+      "original_pickle_bytes": [
+        3448341,
+        3448341,
+        3448341
+      ],
+      "receipt_pickle_bytes": [
+        325,
+        325,
+        325
+      ],
+      "boundary_threshold_bytes": [
+        1048575,
+        1048576,
+        1048577,
+        1048575,
+        1048576,
+        1048577,
+        1048575,
+        1048576,
+        1048577
+      ],
+      "max_rss_bytes": 230719488
+    }
+  ]
+}

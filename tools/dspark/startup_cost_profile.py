@@ -284,6 +284,7 @@ def collect(
     ranks=8,
     require_numerical=False,
     require_completion=False,
+    snapshot_files=False,
 ):
     """Injected factory for CPU lifecycle tests; one construction, unconditional shutdown."""
     lifecycle = {"engine_initialization_attempts": 1, "engine_initializations": 0, "shutdown": False}
@@ -303,9 +304,17 @@ def collect(
         "planned_points": len(points),
         "completed_points": [],
     }
+
+    def fetch_snapshot():
+        if snapshot_files:
+            from vllm_ascend.diagnostics.dspark_snapshot_transport import fetch
+
+            return fetch(engine, directory, point["id"] if point is not None else None, ranks)
+        return engine.collective_rpc("dspark_benchmark_replay_snapshot")
+
     try:
         benchmark._atomic_write_json(directory / "point-completion.json", progress)
-        engine.collective_rpc("dspark_benchmark_replay_snapshot")  # install after capture
+        fetch_snapshot()  # install after capture
         token = engine.get_tokenizer().encode("x", add_special_tokens=False)[0]
         for point in points:
             raw = None
@@ -316,7 +325,7 @@ def collect(
             # generate drains all requests. StreamingEngine gives each call a
             # fresh batch namespace; scheduler retires proposals on next admission.
             outputs = engine.generate(prompts, sampling, use_tqdm=False, profile_point=point["id"])
-            snapshots = engine.collective_rpc("dspark_benchmark_replay_snapshot")
+            snapshots = fetch_snapshot()
             raw = {"point": point, "ranks": snapshots, "streaming": engine.last_batch, "performance_eligible": False}
             path = directory / f"{point['id']}.json"
             benchmark._atomic_write_json(path, raw)  # keep raw evidence before acceptance
@@ -377,7 +386,7 @@ def collect(
                 try:
                     if getattr(getattr(engine, "profile_guard", None), "first", None) is not None:
                         raise RuntimeError("Engine failed; post-mortem RPC not retried")
-                    raw["ranks"] = engine.collective_rpc("dspark_benchmark_replay_snapshot")
+                    raw["ranks"] = fetch_snapshot()
                 except Exception as snapshot_error:
                     raw["snapshot_error"] = f"{type(snapshot_error).__name__}: {snapshot_error}"
             raw["request_identity_failure"] = getattr(error, "evidence", None)
@@ -708,6 +717,7 @@ def run(args):
             samples=args.profile_samples,
             require_numerical=bool(phase),
             require_completion=formal,
+            snapshot_files=formal and args.batch > 64,
         )
     except BaseException as error:
         if isolated:

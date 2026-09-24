@@ -1,0 +1,937 @@
+{
+  "archive_sha256": "ffe56dd4d67c6d1f45b1e3f6a7f2256bd37f078d9b42cdeb1f95e8043df9110f",
+  "embedded_sha256": "b0bdc8737e9a01d4d05a300e2e6ad47d2a0f34aaecf3da46fd1911018c8b6b8a",
+  "plugin": "3d242eb3a80f942febb64acb52c40051e13bb492",
+  "core": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+  "host_tests": 92,
+  "capacity_ranks": [
+    {
+      "rank": 0,
+      "draft_max_requests": 128,
+      "draft_max_tokens": 8192,
+      "capture_sizes": [
+        6,
+        12,
+        24,
+        48,
+        96,
+        192,
+        384,
+        768
+      ],
+      "kv_bytes": 14783717760
+    },
+    {
+      "rank": 1,
+      "draft_max_requests": 128,
+      "draft_max_tokens": 8192,
+      "capture_sizes": [
+        6,
+        12,
+        24,
+        48,
+        96,
+        192,
+        384,
+        768
+      ],
+      "kv_bytes": 14783717760
+    },
+    {
+      "rank": 2,
+      "draft_max_requests": 128,
+      "draft_max_tokens": 8192,
+      "capture_sizes": [
+        6,
+        12,
+        24,
+        48,
+        96,
+        192,
+        384,
+        768
+      ],
+      "kv_bytes": 14783717760
+    },
+    {
+      "rank": 3,
+      "draft_max_requests": 128,
+      "draft_max_tokens": 8192,
+      "capture_sizes": [
+        6,
+        12,
+        24,
+        48,
+        96,
+        192,
+        384,
+        768
+      ],
+      "kv_bytes": 14783717760
+    },
+    {
+      "rank": 4,
+      "draft_max_requests": 128,
+      "draft_max_tokens": 8192,
+      "capture_sizes": [
+        6,
+        12,
+        24,
+        48,
+        96,
+        192,
+        384,
+        768
+      ],
+      "kv_bytes": 14783717760
+    },
+    {
+      "rank": 5,
+      "draft_max_requests": 128,
+      "draft_max_tokens": 8192,
+      "capture_sizes": [
+        6,
+        12,
+        24,
+        48,
+        96,
+        192,
+        384,
+        768
+      ],
+      "kv_bytes": 14783717760
+    },
+    {
+      "rank": 6,
+      "draft_max_requests": 128,
+      "draft_max_tokens": 8192,
+      "capture_sizes": [
+        6,
+        12,
+        24,
+        48,
+        96,
+        192,
+        384,
+        768
+      ],
+      "kv_bytes": 14783717760
+    },
+    {
+      "rank": 7,
+      "draft_max_requests": 128,
+      "draft_max_tokens": 8192,
+      "capture_sizes": [
+        6,
+        12,
+        24,
+        48,
+        96,
+        192,
+        384,
+        768
+      ],
+      "kv_bytes": 14783717760
+    }
+  ],
+  "completed_points": [
+    {
+      "point": "ctx128-n1-t6-balanced",
+      "raw_sha256": "98c55872c4d001d506ae6e8a8d6104b805a88dd6c403429b949c87326f42fae7",
+      "file_bytes": 904272,
+      "rank_measurements": [
+        175,
+        175,
+        175,
+        175,
+        175,
+        175,
+        175,
+        175
+      ]
+    },
+    {
+      "point": "ctx128-n1-t6-skewed",
+      "raw_sha256": "fb5bc9f1275f631d223b0fbf56ca3e1fde916130336578da34080034939bf119",
+      "file_bytes": 901645,
+      "rank_measurements": [
+        175,
+        175,
+        175,
+        175,
+        175,
+        175,
+        175,
+        175
+      ]
+    },
+    {
+      "point": "ctx128-n6-t6-balanced",
+      "raw_sha256": "cb7750a5748915d550214231c56b0f4b5881c7c64def10695caba780c41ed3a5",
+      "file_bytes": 6759200,
+      "rank_measurements": [
+        1025,
+        1025,
+        1025,
+        1025,
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "point": "ctx128-n6-t6-skewed",
+      "raw_sha256": "86f2cd323ec96d318d7c281f4bb4b214e060104981ab6d49db015791057f2490",
+      "file_bytes": 6745550,
+      "rank_measurements": [
+        1025,
+        1025,
+        1025,
+        1025,
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "point": "ctx128-n6-t12-balanced",
+      "raw_sha256": "25c05c6888e4c1965605f71cba3e063b73ca97246736018f156e1eff6d1f20a8",
+      "file_bytes": 3450065,
+      "rank_measurements": [
+        517,
+        517,
+        517,
+        517,
+        517,
+        517,
+        517,
+        517
+      ]
+    },
+    {
+      "point": "ctx128-n6-t12-skewed",
+      "raw_sha256": "6f188717cea326eee5cf2f0314a75e2c0d9bc1e3237bb5f2f9d514c818e43226",
+      "file_bytes": 3881934,
+      "rank_measurements": [
+        629,
+        629,
+        629,
+        629,
+        629,
+        629,
+        629,
+        629
+      ]
+    },
+    {
+      "point": "ctx128-n6-t24-balanced",
+      "raw_sha256": "53f60e8240128f6e492363a6159dc6f782d5a35b7fb4aa61842a006928b9284f",
+      "file_bytes": 1795541,
+      "rank_measurements": [
+        265,
+        265,
+        265,
+        265,
+        265,
+        265,
+        265,
+        265
+      ]
+    },
+    {
+      "point": "ctx128-n6-t24-skewed",
+      "raw_sha256": "1bbb001bb86c240fa2f1acde84b07caa865a509f155dcf266a3178490eccbbc7",
+      "file_bytes": 2021222,
+      "rank_measurements": [
+        319,
+        319,
+        319,
+        319,
+        319,
+        319,
+        319,
+        319
+      ]
+    },
+    {
+      "point": "ctx128-n6-t48-balanced",
+      "raw_sha256": "4497a80a8a6349fcf001a86d93d4a9d06bced9ad53746543b0512184d3d03777",
+      "file_bytes": 1226771,
+      "rank_measurements": [
+        177,
+        177,
+        177,
+        177,
+        177,
+        177,
+        177,
+        177
+      ]
+    },
+    {
+      "point": "ctx128-n6-t48-skewed",
+      "raw_sha256": "2addb361b52f3b68fe0876a0a48c2c5b96cd2cdacb3ef722f12330d1aa7a0e3f",
+      "file_bytes": 1255341,
+      "rank_measurements": [
+        181,
+        181,
+        181,
+        181,
+        181,
+        181,
+        181,
+        181
+      ]
+    },
+    {
+      "point": "ctx128-n12-t12-balanced",
+      "raw_sha256": "4d739a8a94188599fda504aa05ec6f357cc604bc752e26b99d7221839e426551",
+      "file_bytes": 8848526,
+      "rank_measurements": [
+        1025,
+        1025,
+        1025,
+        1025,
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "point": "ctx128-n12-t12-skewed",
+      "raw_sha256": "ea690c1f19bce62f9423468e5ee0b069a16febc48bf0fd9c21b50c3e51c21beb",
+      "file_bytes": 8830413,
+      "rank_measurements": [
+        1025,
+        1025,
+        1025,
+        1025,
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "point": "ctx128-n12-t24-balanced",
+      "raw_sha256": "9b84283d55b6e85dd4aa976889df449ddede54348273ed0075ce31c8f26d5c57",
+      "file_bytes": 4501757,
+      "rank_measurements": [
+        517,
+        517,
+        517,
+        517,
+        517,
+        517,
+        517,
+        517
+      ]
+    },
+    {
+      "point": "ctx128-n12-t24-skewed",
+      "raw_sha256": "05ce08745e293cb25a1c4ffacb8bc11b231644623a0303f9c4c71c4a4dfad5cc",
+      "file_bytes": 4825944,
+      "rank_measurements": [
+        645,
+        645,
+        645,
+        645,
+        645,
+        645,
+        645,
+        645
+      ]
+    },
+    {
+      "point": "ctx128-n12-t48-balanced",
+      "raw_sha256": "f617e02264d4968806dde70f6abdf5f0eb9939d8a0db3eafd3c4f7f2c8fdd8db",
+      "file_bytes": 2348970,
+      "rank_measurements": [
+        265,
+        265,
+        265,
+        265,
+        265,
+        265,
+        265,
+        265
+      ]
+    },
+    {
+      "point": "ctx128-n12-t48-skewed",
+      "raw_sha256": "84fdc7c6005dab3c121fd29b352abb97a4f812069702608d26311a52ef26fef2",
+      "file_bytes": 2528123,
+      "rank_measurements": [
+        321,
+        321,
+        321,
+        321,
+        321,
+        321,
+        321,
+        321
+      ]
+    },
+    {
+      "point": "ctx128-n12-t96-balanced",
+      "raw_sha256": "ff62d2d92d5db2f6c7a8d2e1855f7405820f05c7887531a47641f0056b42e35b",
+      "file_bytes": 1636117,
+      "rank_measurements": [
+        181,
+        181,
+        181,
+        181,
+        181,
+        181,
+        181,
+        181
+      ]
+    },
+    {
+      "point": "ctx128-n12-t96-skewed",
+      "raw_sha256": "05472596d84fe28b6727284e1c686f2aa5805bfca49a4d52e24ca5d55bb4fcae",
+      "file_bytes": 1630831,
+      "rank_measurements": [
+        181,
+        181,
+        181,
+        181,
+        181,
+        181,
+        181,
+        181
+      ]
+    },
+    {
+      "point": "ctx128-n24-t24-balanced",
+      "raw_sha256": "73885c80292a7e01579fa18b8ce6ad0624316ffe8cb31a2a27f13af51eec98ca",
+      "file_bytes": 12859605,
+      "rank_measurements": [
+        1025,
+        1025,
+        1025,
+        1025,
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "point": "ctx128-n24-t24-skewed",
+      "raw_sha256": "b6c3f3f26a1c932d22d6f098731475e069224a6ce3a8436cbd3576433a652334",
+      "file_bytes": 12842810,
+      "rank_measurements": [
+        1025,
+        1025,
+        1025,
+        1025,
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "point": "ctx128-n24-t48-balanced",
+      "raw_sha256": "4082fea8afb7ba9a37ee840a0ca7679559761789e7c38eea48c10ec658fb92f0",
+      "file_bytes": 6543035,
+      "rank_measurements": [
+        517,
+        517,
+        517,
+        517,
+        517,
+        517,
+        517,
+        517
+      ]
+    },
+    {
+      "point": "ctx128-n24-t48-skewed",
+      "raw_sha256": "5b0ff5cc902d14ce6cacdb878e98e62acd9b1cb17c0515dac5ead7130547541c",
+      "file_bytes": 6513946,
+      "rank_measurements": [
+        643,
+        643,
+        643,
+        643,
+        643,
+        643,
+        643,
+        643
+      ]
+    },
+    {
+      "point": "ctx128-n24-t96-balanced",
+      "raw_sha256": "be59c41da815b05b5d11055a9ddf0d4a78dea45bc3ff539095e75ecdb74f8764",
+      "file_bytes": 3427074,
+      "rank_measurements": [
+        265,
+        265,
+        265,
+        265,
+        265,
+        265,
+        265,
+        265
+      ]
+    },
+    {
+      "point": "ctx128-n24-t96-skewed",
+      "raw_sha256": "52972b3cd3252ad23b36933b03bbdb256f2cbc3efa0ea76944a4b3fbfd250185",
+      "file_bytes": 3500173,
+      "rank_measurements": [
+        321,
+        321,
+        321,
+        321,
+        321,
+        321,
+        321,
+        321
+      ]
+    },
+    {
+      "point": "ctx128-n24-t192-balanced",
+      "raw_sha256": "a8ebbad7aa9fc75efbf6ae993c0b86ede8c664de69dd5cbc775a028399a86b10",
+      "file_bytes": 2401630,
+      "rank_measurements": [
+        181,
+        181,
+        181,
+        181,
+        181,
+        181,
+        181,
+        181
+      ]
+    },
+    {
+      "point": "ctx128-n24-t192-skewed",
+      "raw_sha256": "3070a1ab83e3b17e63848d30f5981aa5d0cf20e7f515f6f19a0d39663a50809e",
+      "file_bytes": 2396669,
+      "rank_measurements": [
+        181,
+        181,
+        181,
+        181,
+        181,
+        181,
+        181,
+        181
+      ]
+    },
+    {
+      "point": "ctx128-n48-t48-balanced",
+      "raw_sha256": "3920fbd329cad34b2c165e36a3727a3ab0f515f8b478a1e5866d23ca365b228f",
+      "file_bytes": 20825383,
+      "rank_measurements": [
+        1026,
+        1026,
+        1026,
+        1026,
+        1026,
+        1026,
+        1026,
+        1026
+      ]
+    },
+    {
+      "point": "ctx128-n48-t48-skewed",
+      "raw_sha256": "a4ee6e0eb67702fe524d0930dc147e6c001de2beae372f6fee8d789587db3014",
+      "file_bytes": 20856447,
+      "rank_measurements": [
+        1025,
+        1025,
+        1025,
+        1025,
+        1025,
+        1025,
+        1025,
+        1025
+      ]
+    },
+    {
+      "point": "ctx128-n48-t96-balanced",
+      "raw_sha256": "d9ab8883e14b49bd9e5c556adf75d6597359629f8e3827a2747da04aba03afc8",
+      "file_bytes": 10627362,
+      "rank_measurements": [
+        517,
+        517,
+        517,
+        517,
+        517,
+        517,
+        517,
+        517
+      ]
+    },
+    {
+      "point": "ctx128-n48-t96-skewed",
+      "raw_sha256": "baf550f4293d3a527ffe3eacd805c475bcf2e684a0dda4aa53bce541267f4df3",
+      "file_bytes": 9896615,
+      "rank_measurements": [
+        647,
+        647,
+        647,
+        647,
+        647,
+        647,
+        647,
+        647
+      ]
+    },
+    {
+      "point": "ctx128-n48-t192-balanced",
+      "raw_sha256": "1d1000e3dcfe6f6fd431932a13cd107a549f4b544b34a4691d920e1d5176968e",
+      "file_bytes": 5576292,
+      "rank_measurements": [
+        265,
+        265,
+        265,
+        265,
+        265,
+        265,
+        265,
+        265
+      ]
+    },
+    {
+      "point": "ctx128-n48-t192-skewed",
+      "raw_sha256": "0f177fc9b20655326d7878045df4a2cc5fae0be61dab3e4566becf3cee0ca5a9",
+      "file_bytes": 5449112,
+      "rank_measurements": [
+        321,
+        321,
+        321,
+        321,
+        321,
+        321,
+        321,
+        321
+      ]
+    },
+    {
+      "point": "ctx128-n48-t384-balanced",
+      "raw_sha256": "df391b0225662b0a8e3de6d141baaf62dee88e8e617abb7ff8827ce944c2942f",
+      "file_bytes": 3890363,
+      "rank_measurements": [
+        181,
+        181,
+        181,
+        181,
+        181,
+        181,
+        181,
+        181
+      ]
+    },
+    {
+      "point": "ctx128-n48-t384-skewed",
+      "raw_sha256": "a8b96653ebed4810a79fb975b72984a57512573a1d0800ef875a1ea845340098",
+      "file_bytes": 3900255,
+      "rank_measurements": [
+        182,
+        182,
+        182,
+        182,
+        182,
+        182,
+        182,
+        182
+      ]
+    },
+    {
+      "point": "ctx128-n96-t96-balanced",
+      "raw_sha256": "b589b39d1ecdc379879af8e9332163849020206c22023fcffcad41a36e961fe2",
+      "file_bytes": 36813028,
+      "rank_measurements": [
+        1026,
+        1026,
+        1026,
+        1026,
+        1026,
+        1026,
+        1026,
+        1026
+      ]
+    }
+  ],
+  "failed_point": {
+    "actual_tokens": 96,
+    "capacity": 96,
+    "context_ceiling": 640,
+    "id": "ctx128-n96-t96-skewed",
+    "layout": "skewed",
+    "lengths": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "prompt_tokens": 128,
+    "requests": 96
+  },
+  "failed_point_generation_complete": true,
+  "failed_point_snapshot_available": false,
+  "first_error": {
+    "schema_version": 1,
+    "phase": "runtime",
+    "performance_eligible": false,
+    "observed_utc": "2026-09-24T07:07:02.373734+00:00",
+    "point": "ctx128-n96-t96-skewed",
+    "pending_operation": {
+      "name": "collective_rpc:dspark_benchmark_replay_snapshot",
+      "point": "ctx128-n96-t96-skewed",
+      "started_utc": "2026-09-24T07:06:48.404057+00:00"
+    },
+    "error": "Worker process exited; see original parent exit receipt",
+    "observed_frontend_error": "Exception: Call to collective_rpc method failed: cancelled",
+    "worker_exit": {
+      "schema_version": 1,
+      "performance_eligible": false,
+      "source": "MultiprocWorkerMonitor -> shutdown; before cleanup signals",
+      "observed_utc": "2026-09-24T07:06:49.644828+00:00",
+      "shutdown_budget": {
+        "name": "dspark-profile-25s-v1",
+        "worker_seconds": 25,
+        "term_seconds": 4,
+        "shared_reap_seconds": 1,
+        "engine_seconds": 36,
+        "frontend_outer_seconds": 40,
+        "supervisor_seconds": 48,
+        "debugger_enabled": false,
+        "attachment_count": 0,
+        "observation_extra_wait_seconds": 0,
+        "effective_core_worker_seconds": 25
+      },
+      "parent_pid": 651281,
+      "point": "ctx128-n96-t96-skewed",
+      "pending_operation": {
+        "method": "dspark_benchmark_replay_snapshot",
+        "started_utc": "2026-09-24T07:06:48.405965+00:00",
+        "point": "ctx128-n96-t96-skewed",
+        "non_block": false
+      },
+      "workers": [
+        {
+          "pid": 651334,
+          "rank": 0,
+          "name": "VllmWorker-0",
+          "raw_exitcode": null,
+          "status_observed_utc": "2026-09-24T07:06:49.644905+00:00",
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "unavailable: not reaped/exited"
+        },
+        {
+          "pid": 651382,
+          "rank": 1,
+          "name": "VllmWorker-1",
+          "raw_exitcode": null,
+          "status_observed_utc": "2026-09-24T07:06:49.644925+00:00",
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "unavailable: not reaped/exited"
+        },
+        {
+          "pid": 651456,
+          "rank": 2,
+          "name": "VllmWorker-2",
+          "raw_exitcode": null,
+          "status_observed_utc": "2026-09-24T07:06:49.644937+00:00",
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "unavailable: not reaped/exited"
+        },
+        {
+          "pid": 651541,
+          "rank": 3,
+          "name": "VllmWorker-3",
+          "raw_exitcode": null,
+          "status_observed_utc": "2026-09-24T07:06:49.644947+00:00",
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "unavailable: not reaped/exited"
+        },
+        {
+          "pid": 651616,
+          "rank": 4,
+          "name": "VllmWorker-4",
+          "raw_exitcode": null,
+          "status_observed_utc": "2026-09-24T07:06:49.644957+00:00",
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "unavailable: not reaped/exited"
+        },
+        {
+          "pid": 651701,
+          "rank": 5,
+          "name": "VllmWorker-5",
+          "raw_exitcode": null,
+          "status_observed_utc": "2026-09-24T07:06:49.644966+00:00",
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "unavailable: not reaped/exited"
+        },
+        {
+          "pid": 651776,
+          "rank": 6,
+          "name": "VllmWorker-6",
+          "raw_exitcode": null,
+          "status_observed_utc": "2026-09-24T07:06:49.644976+00:00",
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "unavailable: not reaped/exited"
+        },
+        {
+          "pid": 651858,
+          "rank": 7,
+          "name": "VllmWorker-7",
+          "raw_exitcode": null,
+          "status_observed_utc": "2026-09-24T07:06:49.644986+00:00",
+          "signal": null,
+          "signal_name": null,
+          "exit_status": "unavailable: not reaped/exited"
+        }
+      ],
+      "cause": "unavailable; exit code/signal does not establish why the worker exited"
+    }
+  },
+  "raw_exitcodes": [
+    0,
+    -7,
+    -7,
+    -7,
+    -7,
+    -7,
+    -7,
+    -7
+  ],
+  "cleanup_status": "worker_cleanup_incomplete",
+  "forced_cleanup": false,
+  "timed_out": false,
+  "no_new_cost_table": true,
+  "later_stages": "NOT_RUN",
+  "original_sigbus_cause": "UNKNOWN",
+  "anchors": {
+    "b128/cost/runs/b128/plan.json": "bd65caeed42046fe39ea6e710b004471b5c35774ee6860bc58019890c5714b16",
+    "b128/cost/runs/b128/retained.json": "9c8b6bcb88efb415a36d97a4d379d80bf61ca78695d30ab272c8bb4363487bd6",
+    "b128/cost/runs/b128/capacity.json": "962d612fd771812d459e62245930faa9218b6f357326631d9698235b31954674",
+    "b128/cost/runs/b128/point-completion.json": "23735087bad0eb3cd206f824367b385bda31fe93013091256360ac102d11ccab",
+    "b128/cost/runs/b128/engine-failure.json": "ccb8ddd88b143fef454b1172c9dced68100742b1d493ecb2d0701e7940ed904a",
+    "b128/cost/runs/b128/worker-cleanup.json": "2884b06525e0373942f11e8bf5de49952545a7cc7ccf10d6501e16eecd3038e4",
+    "b128/cost/runs/b128/cleanup.json": "898a3ca140d0b8e4f6b5912ad7c15f4dc0fc632a7d22254081c340f7f11318b7"
+  },
+  "pipestatus": {
+    "dspark-large-batch.3eW01ldi/b128-cost.pipestatus": "1 0",
+    "dspark-large-batch.3eW01ldi/baseline.pipestatus": "0 0",
+    "dspark-large-batch.3eW01ldi/core-source.pipestatus": "0 0",
+    "dspark-large-batch.3eW01ldi/source.pipestatus": "0 0",
+    "dspark-large-batch.3eW01ldi/b128-cost-prepare.pipestatus": "0 0",
+    "dspark-large-batch.3eW01ldi/host.pipestatus": "0 0",
+    "dspark-large-batch.3eW01ldi/batch-expansion.pipestatus": "1 0",
+    "dspark-batch-expansion.qsQcxCRh/fetch.pipestatus": "0 0",
+    "dspark-batch-expansion.qsQcxCRh/checkout.pipestatus": "0 0",
+    "dspark-batch-expansion.qsQcxCRh/driver.pipestatus": "1 0",
+    "dspark-large-batch.3eW01ldi/b128/cost/runs/b128.pipestatus": "1 0"
+  },
+  "performance_eligible": false,
+  "overall_pass": false
+}

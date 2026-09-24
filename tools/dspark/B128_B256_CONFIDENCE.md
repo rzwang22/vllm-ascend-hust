@@ -303,3 +303,14 @@ Changed-file lint/manual hooks pass after formatting. Required repository-wide
 `bash format.sh ci` was executed in a disposable checkout and returned 1 for
 existing lint/format/spelling/workflow/shell/forbidden-import issues. Unrelated
 auto-format edits were discarded. This does not claim full repository CI success.
+
+## Subsequent SIGBUS transport correction
+
+The next run passed the installed capacity gate and completed 35 cost points
+before a snapshot-phase SIGBUS. See `B128_SIGBUS_TRANSPORT.md` and the frozen
+`B128_SIGBUS_AUDIT.json`; no new complete cost table exists. The same server
+command now includes a no-weight eight-worker communication precheck using
+`/workspace/dspark-results/dspark-batch-expansion.qsQcxCRh-evidence.tar.gz`
+(which must remain available), plus read-only system evidence. Expanded formal
+profiles use verified rank files and small RPC receipts. Core, model execution,
+point plans, deadlines, B64 status and natural-exit gates are unchanged.

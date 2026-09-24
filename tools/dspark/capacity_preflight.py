@@ -12,6 +12,7 @@ import inspect
 import json
 import subprocess
 import sys
+from contextlib import suppress
 from pathlib import Path
 from types import SimpleNamespace as NS
 
@@ -115,6 +116,8 @@ def installed_check():
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--core", type=Path)
+    parser.add_argument("--transport-evidence", type=Path)
     parser.add_argument("pytest_args", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     try:
@@ -124,6 +127,21 @@ def main(argv=None):
         args.output.write_text(json.dumps(report, indent=2) + "\n")
         raise
     args.output.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n")
+    if args.transport_evidence is not None:
+        from tools.dspark.snapshot_transport_check import preflight
+
+        if args.core is None:
+            raise ValueError("Transport preflight requires the frozen Core path")
+        try:
+            preflight(args.core, args.transport_evidence, args.output.parent / "transport-preflight")
+        except BaseException as exc:
+            # Preserve failures before queue construction as well as failures
+            # already recorded by the communication test. Never mask the first.
+            with suppress(Exception):
+                (args.output.parent / "transport-preflight-error.json").write_text(
+                    json.dumps({"status": "FAILED", "error": f"{type(exc).__name__}: {exc}"}, indent=2) + "\n"
+                )
+            raise
     remaining = args.pytest_args
     if remaining[:1] == ["--"]:
         remaining = remaining[1:]

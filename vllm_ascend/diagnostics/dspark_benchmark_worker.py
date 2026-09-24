@@ -276,6 +276,20 @@ class DSparkBenchmarkWorkerExtension:
             result["cost_profile"] = profiler.snapshot()
         return result
 
+    def dspark_benchmark_profile_snapshot_file(self, transfer: str, point: str | None) -> dict:
+        """Quiescent formal-profile export; bulk evidence never enters response MQ."""
+        from vllm_ascend.diagnostics.dspark_snapshot_transport import persist
+
+        runner = self.model_runner
+        adaptive = runner.speculator.confidence_verification
+        if adaptive is None or not adaptive.options.get("profile"):
+            raise ValueError("File snapshots require isolated cost profiling")
+        root = runner.vllm_config.additional_config["dspark_profile_failure_dir"]
+        profiler = getattr(runner, "_dspark_cost_profiler", None)
+        if (profiler.point if profiler is not None else None) != point:
+            raise ValueError("Snapshot point differs from the active profiler")
+        return persist(root, transfer, point, _host_count(self.rank), self.dspark_benchmark_replay_snapshot)
+
     def dspark_benchmark_capacity(self) -> dict:
         """Quiescent host descriptors only; no device values or tensor reductions."""
         runner = self.model_runner

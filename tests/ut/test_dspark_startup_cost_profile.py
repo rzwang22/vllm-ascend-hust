@@ -5,6 +5,7 @@
 import copy
 import json
 import runpy
+import sys
 from pathlib import Path
 from types import SimpleNamespace as NS
 
@@ -153,7 +154,12 @@ def test_incompatible_profiles_rejected(problem):
         CostTable.load_startup(data, identity)
 
 
-def test_same_engine_drains_points_and_always_shuts_down(tmp_path):
+@pytest.mark.parametrize("file_transport", [False, True])
+def test_same_engine_drains_points_and_always_shuts_down(tmp_path, monkeypatch, file_transport):
+    from tools.dspark.snapshot_transport_check import files
+
+    monkeypatch.setitem(sys.modules, "vllm_ascend.diagnostics.dspark_snapshot_transport", files)
+    root_for_engine = tmp_path
     _, points = profile.grid(2, [6, 12], [16], 64)
     points = points[:3]
     created = []
@@ -161,6 +167,7 @@ def test_same_engine_drains_points_and_always_shuts_down(tmp_path):
     class Engine:
         def __init__(self):
             created.append(self)
+            self.root = root_for_engine
             self.current = None
             self.active = False
             self.ids = set()
@@ -177,13 +184,23 @@ def test_same_engine_drains_points_and_always_shuts_down(tmp_path):
                 assert set(kwargs) == {"point", "lengths"}
                 self.current = next(p for p in points if p["id"] == kwargs["point"])
                 return [{"rank": i, **kwargs} for i in range(2)]
-            assert method == "dspark_benchmark_replay_snapshot" and kwargs is None
+            assert method == (
+                "dspark_benchmark_profile_snapshot_file" if file_transport else "dspark_benchmark_replay_snapshot"
+            )
             result = snapshots(self.current) if self.current else []
+            if file_transport and self.current is None:
+                result = [dict(rank=r, cost_profile=dict(measurements=[])) for r in range(2)]
             for row in result:
                 for measurement in row["cost_profile"]["measurements"]:
                     measurement["request_ids"] = [
                         r["internal_id"] for r in self.last_batch["request_id_mapping"]["mappings"]
                     ]
+            if file_transport:
+                return [
+                    files.persist(self.root, kwargs["transfer"], kwargs["point"], r["rank"], lambda r=r: r)
+                    for r in result
+                ]
+            assert kwargs is None
             return result
 
         def generate(self, prompts, sampling, use_tqdm, *, profile_point):
@@ -211,14 +228,17 @@ def test_same_engine_drains_points_and_always_shuts_down(tmp_path):
         def shutdown(self):
             self.closed = True
 
-    records, _ = profile.collect(Engine, points, None, tmp_path, warmup=2, samples=5, ranks=2)
+    records, _ = profile.collect(
+        Engine, points, None, tmp_path, warmup=2, samples=5, ranks=2, snapshot_files=file_transport
+    )
     assert len(created) == 1 and created[0].calls == 3 and created[0].closed
     assert len(records) == 3
     assert json.loads((tmp_path / "lifecycle.json").read_text())["engine_initializations"] == 1
     failing = tmp_path / "failed"
     failing.mkdir()
+    root_for_engine = failing
     with pytest.raises(ValueError):
-        profile.collect(Engine, points, None, failing, warmup=2, samples=50, ranks=2)
+        profile.collect(Engine, points, None, failing, warmup=2, samples=50, ranks=2, snapshot_files=file_transport)
     assert created[-1].closed and (failing / f"{points[0]['id']}.json").is_file()
     assert (failing / "profile-failure.json").is_file()
 
