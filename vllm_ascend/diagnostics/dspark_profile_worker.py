@@ -136,9 +136,13 @@ class ProfileNPUWorker(NPUWorker):
         config = kwargs["vllm_config"]
         options = config.additional_config
         profile = options.get("dspark_confidence_verification", {})
-        from tools.dspark.shutdown_policy import confidence_acceptance_enabled, stack_signals_enabled
+        from tools.dspark.shutdown_policy import (
+            confidence_acceptance_enabled,
+            performance_enabled,
+            stack_signals_enabled,
+        )
 
-        if not confidence_acceptance_enabled(options) and (
+        if not (confidence_acceptance_enabled(options) or performance_enabled(options)) and (
             not options.get("dspark_profile_worker_exit")
             or not profile.get("profile")
             or profile.get("mode") != "specified_lengths"

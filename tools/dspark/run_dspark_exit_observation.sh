@@ -8,6 +8,7 @@ coverage=false
 formal_cost=false
 confidence=false
 expansion=false
+performance=false
 coverage_phase=''
 logged() {
     local label=$1; shift
@@ -22,6 +23,7 @@ main() {
     local sha=$1 manifest=$2 remote=$3 mode=--exit-observation
     if test "$#" -eq 4; then
         case "$4" in
+            --performance-comparison) mode=$4; formal=true; performance=true ;;
             --batch-expansion) mode=$4; formal=true; expansion=true ;;
             --confidence-acceptance) mode=$4; formal=true; confidence=true ;;
             --formal-cost=b64-confidence-cost-v1) mode=$4; formal=true; formal_cost=true ;;
@@ -39,6 +41,7 @@ main() {
     if test "$formal_cost" = true; then prefix=dspark-formal-cost; fi
     if test "$confidence" = true; then prefix=dspark-confidence-acceptance; fi
     if test "$expansion" = true; then prefix=dspark-batch-expansion; fi
+    if test "$performance" = true; then prefix=dspark-performance-comparison; fi
     out=$(mktemp -d "/workspace/dspark-results/$prefix.XXXXXXXX") || return 1
     printf 'EXIT_OBSERVATION_DIR=%s\n' "$out"
     cd /workspace/vllm-ascend-hust || return 1
@@ -58,6 +61,9 @@ if test -n "$out"; then
     fi
     if test "$formal_cost" = true; then
         printf 'MAIN_RC=%s\nCOST_PLAN=b64-confidence-cost-v1\nCOST_TABLE_USABLE=SEE_COST_PUBLICATION\nPERFORMANCE_ELIGIBLE=false\n' "$rc" > "$out/status.txt"
+    fi
+    if test "$performance" = true; then
+        printf 'MAIN_RC=%s\nRESULT=SEE_PERFORMANCE_SUMMARY\nCOST_TABLES=FROZEN_UNMODIFIED\nORIGINAL_5S_BUDGET=NOT_EVALUATED\n' "$rc" > "$out/status.txt"
     fi
     if test "$expansion" = true; then printf 'BATCH_ORDER=128,256\nRESULT=SEE_EXPANSION_REPORT\nPERFORMANCE_ELIGIBLE=false\n' >> "$out/status.txt"; fi
     if test "$confidence" = true; then printf 'CONFIDENCE_CLOSED_LOOP=SEE_CONFIDENCE_REPORT\nPERFORMANCE_ELIGIBLE=false\n' >> "$out/status.txt"; fi

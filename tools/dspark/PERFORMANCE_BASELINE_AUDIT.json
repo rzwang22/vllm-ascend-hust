@@ -1,0 +1,538 @@
+{
+  "core": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+  "core_source": {
+    "actual_head": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+    "expected_head": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+    "fetched_head": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+    "head_before": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+    "origin_url_before": "https://github.com/vLLM-HUST/vllm-hust.git",
+    "remote_url": "https://github.com/rzwang22/vllm-hust.git",
+    "selected_remote": "rzwang",
+    "source_transport": "network_remote",
+    "status": "verified",
+    "verification_scope": "Exact HEAD through selected remote URL; remote name alone does not verify GitHub provenance"
+  },
+  "expansion_report": {
+    "first_error": null,
+    "overall_pass": true,
+    "performance_eligible": false
+  },
+  "model_sha256": "98e744afa4b921d2a1bfc19456e37fe93856f6f78974bde5fb6472266a57fff3",
+  "outer_sha256": "702e9ab73c4032fddd7bde50a2921875291f4e1062788b72013b9e2247a64d09",
+  "pipestatus_files": 22,
+  "plugin": "94328d6020d1988a45afe64f8894bb6324bf5bcd",
+  "scope": "CPU reconstruction of archived results; no NPU execution",
+  "tiers": [
+    {
+      "batch": 128,
+      "confidence": {
+        "actual_request_count_histogram": {
+          "1": 7,
+          "2": 8,
+          "3": 1,
+          "4": 1,
+          "5": 3,
+          "6": 2,
+          "11": 1,
+          "14": 1,
+          "16": 1,
+          "19": 1,
+          "21": 1,
+          "23": 1,
+          "25": 1,
+          "26": 1,
+          "28": 1,
+          "32": 1,
+          "35": 1,
+          "37": 1,
+          "38": 1,
+          "40": 1,
+          "42": 1,
+          "46": 1,
+          "49": 1,
+          "50": 1,
+          "53": 1,
+          "55": 1,
+          "59": 1,
+          "63": 1,
+          "66": 1,
+          "70": 1,
+          "75": 3,
+          "80": 1,
+          "82": 1,
+          "87": 1,
+          "90": 1,
+          "92": 1,
+          "98": 1,
+          "104": 1,
+          "105": 1,
+          "110": 1,
+          "113": 1,
+          "116": 1,
+          "120": 1,
+          "122": 1,
+          "124": 1,
+          "126": 1,
+          "128": 18
+        },
+        "calibration": "uncalibrated",
+        "capacity_coverage": [
+          {
+            "execution": 5,
+            "graph_capacity": 768,
+            "requests": 128,
+            "target_query_tokens": 768
+          },
+          {
+            "execution": 6,
+            "graph_capacity": 768,
+            "requests": 128,
+            "target_query_tokens": 768
+          },
+          {
+            "execution": 7,
+            "graph_capacity": 768,
+            "requests": 128,
+            "target_query_tokens": 768
+          },
+          {
+            "execution": 8,
+            "graph_capacity": 768,
+            "requests": 128,
+            "target_query_tokens": 768
+          },
+          {
+            "execution": 9,
+            "graph_capacity": 768,
+            "requests": 128,
+            "target_query_tokens": 768
+          },
+          {
+            "execution": 10,
+            "graph_capacity": 768,
+            "requests": 128,
+            "target_query_tokens": 768
+          },
+          {
+            "execution": 11,
+            "graph_capacity": 768,
+            "requests": 128,
+            "target_query_tokens": 768
+          },
+          {
+            "execution": 12,
+            "graph_capacity": 768,
+            "requests": 128,
+            "target_query_tokens": 768
+          },
+          {
+            "execution": 13,
+            "graph_capacity": 768,
+            "requests": 128,
+            "target_query_tokens": 768
+          },
+          {
+            "execution": 14,
+            "graph_capacity": 768,
+            "requests": 128,
+            "target_query_tokens": 768
+          },
+          {
+            "execution": 15,
+            "graph_capacity": 768,
+            "requests": 128,
+            "target_query_tokens": 768
+          },
+          {
+            "execution": 16,
+            "graph_capacity": 768,
+            "requests": 128,
+            "target_query_tokens": 768
+          },
+          {
+            "execution": 17,
+            "graph_capacity": 768,
+            "requests": 128,
+            "target_query_tokens": 768
+          },
+          {
+            "execution": 18,
+            "graph_capacity": 768,
+            "requests": 128,
+            "target_query_tokens": 768
+          },
+          {
+            "execution": 19,
+            "graph_capacity": 768,
+            "requests": 128,
+            "target_query_tokens": 768
+          },
+          {
+            "execution": 20,
+            "graph_capacity": 768,
+            "requests": 128,
+            "target_query_tokens": 768
+          },
+          {
+            "execution": 21,
+            "graph_capacity": 768,
+            "requests": 128,
+            "target_query_tokens": 768
+          }
+        ],
+        "confidence_length_histogram": {
+          "0": 33,
+          "1": 63,
+          "2": 123,
+          "3": 121,
+          "4": 94,
+          "5": 4386
+        },
+        "distinct_questions": 64,
+        "length_histogram": {
+          "0": 33,
+          "1": 63,
+          "2": 123,
+          "3": 121,
+          "4": 94,
+          "5": 4510
+        },
+        "logical_confidence_calls": 78,
+        "numerical": "built-in Markov/confidence/owner contracts and strict log scan; no all-layer finiteness claim",
+        "prefill_or_admission_calls": 4,
+        "request_instances": 128,
+        "status": "PASSED_THIS_RUN"
+      },
+      "cost_points": 48,
+      "cost_requests": 2258,
+      "cost_sha256": "d60fb91e3dd89548566f717b1144e11578d1138d80fba6adcc7e857a16c7b50b",
+      "samples": 3840,
+      "worker_exitcodes": [
+        [
+          [
+            0,
+            0
+          ],
+          [
+            1,
+            0
+          ],
+          [
+            2,
+            0
+          ],
+          [
+            3,
+            0
+          ],
+          [
+            4,
+            0
+          ],
+          [
+            5,
+            0
+          ],
+          [
+            6,
+            0
+          ],
+          [
+            7,
+            0
+          ]
+        ],
+        [
+          [
+            0,
+            0
+          ],
+          [
+            1,
+            0
+          ],
+          [
+            2,
+            0
+          ],
+          [
+            3,
+            0
+          ],
+          [
+            4,
+            0
+          ],
+          [
+            5,
+            0
+          ],
+          [
+            6,
+            0
+          ],
+          [
+            7,
+            0
+          ]
+        ]
+      ]
+    },
+    {
+      "batch": 256,
+      "confidence": {
+        "actual_request_count_histogram": {
+          "1": 3,
+          "2": 4,
+          "3": 1,
+          "4": 1,
+          "5": 3,
+          "6": 1,
+          "8": 1,
+          "10": 1,
+          "11": 1,
+          "14": 1,
+          "19": 1,
+          "23": 1,
+          "26": 1,
+          "31": 1,
+          "37": 1,
+          "45": 1,
+          "52": 1,
+          "56": 1,
+          "59": 1,
+          "64": 1,
+          "67": 1,
+          "72": 1,
+          "77": 1,
+          "81": 1,
+          "82": 1,
+          "84": 1,
+          "88": 1,
+          "95": 1,
+          "98": 1,
+          "102": 1,
+          "113": 2,
+          "121": 1,
+          "127": 1,
+          "130": 1,
+          "134": 1,
+          "139": 1,
+          "146": 1,
+          "156": 1,
+          "166": 1,
+          "173": 1,
+          "178": 1,
+          "185": 1,
+          "192": 1,
+          "199": 1,
+          "204": 1,
+          "210": 1,
+          "218": 2,
+          "223": 1,
+          "232": 1,
+          "240": 1,
+          "244": 1,
+          "247": 1,
+          "253": 1,
+          "256": 17
+        },
+        "calibration": "uncalibrated",
+        "capacity_coverage": [
+          {
+            "execution": 6,
+            "graph_capacity": 1536,
+            "requests": 256,
+            "target_query_tokens": 1536
+          },
+          {
+            "execution": 7,
+            "graph_capacity": 1536,
+            "requests": 256,
+            "target_query_tokens": 1536
+          },
+          {
+            "execution": 8,
+            "graph_capacity": 1536,
+            "requests": 256,
+            "target_query_tokens": 1536
+          },
+          {
+            "execution": 9,
+            "graph_capacity": 1536,
+            "requests": 256,
+            "target_query_tokens": 1536
+          },
+          {
+            "execution": 10,
+            "graph_capacity": 1536,
+            "requests": 256,
+            "target_query_tokens": 1536
+          },
+          {
+            "execution": 11,
+            "graph_capacity": 1536,
+            "requests": 256,
+            "target_query_tokens": 1536
+          },
+          {
+            "execution": 12,
+            "graph_capacity": 1536,
+            "requests": 256,
+            "target_query_tokens": 1536
+          },
+          {
+            "execution": 13,
+            "graph_capacity": 1536,
+            "requests": 256,
+            "target_query_tokens": 1536
+          },
+          {
+            "execution": 14,
+            "graph_capacity": 1536,
+            "requests": 256,
+            "target_query_tokens": 1536
+          },
+          {
+            "execution": 15,
+            "graph_capacity": 1536,
+            "requests": 256,
+            "target_query_tokens": 1536
+          },
+          {
+            "execution": 16,
+            "graph_capacity": 1536,
+            "requests": 256,
+            "target_query_tokens": 1536
+          },
+          {
+            "execution": 17,
+            "graph_capacity": 1536,
+            "requests": 256,
+            "target_query_tokens": 1536
+          },
+          {
+            "execution": 18,
+            "graph_capacity": 1536,
+            "requests": 256,
+            "target_query_tokens": 1536
+          },
+          {
+            "execution": 19,
+            "graph_capacity": 1536,
+            "requests": 256,
+            "target_query_tokens": 1536
+          },
+          {
+            "execution": 20,
+            "graph_capacity": 1536,
+            "requests": 256,
+            "target_query_tokens": 1536
+          },
+          {
+            "execution": 21,
+            "graph_capacity": 1536,
+            "requests": 256,
+            "target_query_tokens": 1536
+          }
+        ],
+        "confidence_length_histogram": {
+          "0": 133,
+          "1": 194,
+          "2": 283,
+          "3": 268,
+          "4": 282,
+          "5": 8503
+        },
+        "distinct_questions": 64,
+        "length_histogram": {
+          "0": 133,
+          "1": 194,
+          "2": 283,
+          "3": 268,
+          "4": 282,
+          "5": 8835
+        },
+        "logical_confidence_calls": 74,
+        "numerical": "built-in Markov/confidence/owner contracts and strict log scan; no all-layer finiteness claim",
+        "prefill_or_admission_calls": 5,
+        "request_instances": 256,
+        "status": "PASSED_THIS_RUN"
+      },
+      "cost_points": 56,
+      "cost_requests": 4562,
+      "cost_sha256": "94cb6f920a1ab387b5fc1b7173ad3089c5c79d9f7469046174db4ccfa3ee161b",
+      "samples": 4480,
+      "worker_exitcodes": [
+        [
+          [
+            0,
+            0
+          ],
+          [
+            1,
+            0
+          ],
+          [
+            2,
+            0
+          ],
+          [
+            3,
+            0
+          ],
+          [
+            4,
+            0
+          ],
+          [
+            5,
+            0
+          ],
+          [
+            6,
+            0
+          ],
+          [
+            7,
+            0
+          ]
+        ],
+        [
+          [
+            0,
+            0
+          ],
+          [
+            1,
+            0
+          ],
+          [
+            2,
+            0
+          ],
+          [
+            3,
+            0
+          ],
+          [
+            4,
+            0
+          ],
+          [
+            5,
+            0
+          ],
+          [
+            6,
+            0
+          ],
+          [
+            7,
+            0
+          ]
+        ]
+      ]
+    }
+  ]
+}

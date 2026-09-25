@@ -1,0 +1,21 @@
+{
+  "core": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
+  "scope": "Exact file hashes for consumer-only benchmark RPC, observation, export and passive cleanup differences. Model, confidence math, scheduling/trim, attention, SWA/Core and csrc unchanged. Cost bytes and runtime identity remain exact. Main E2E includes light common CPU histograms; no diagnostic timings become costs.",
+  "producers": {
+    "89cfb54d53b1443cb7df0b4c800196435b21e5ad": {
+      "vllm_ascend/diagnostics/dspark_benchmark_worker.py": "11e94518c7a95b8f2ee5fea5f6f953ad9989dddfd94501b57ab8e678f135b996",
+      "vllm_ascend/diagnostics/dspark_confidence_receipts.py": "4f3527b9a36d9547b7654058d2ad6ca77be957b726866dcc2772fbfe2854f28d",
+      "vllm_ascend/diagnostics/dspark_performance.py": "a46d0650d5606aacc4b823e70f48c6a6a351e64231f819957ae786a16db27d7e",
+      "vllm_ascend/diagnostics/dspark_profile_executor.py": "e4383c3e210733093a329ad9b23399a8efca9730d32aea91c83abfc69038af80",
+      "vllm_ascend/diagnostics/dspark_profile_worker.py": "be30d62a35a98d108e03a6ae1d1657ac71d5dd1e860ced23ce99df340fbe8e93",
+      "vllm_ascend/diagnostics/dspark_snapshot_transport.py": "b77005b075a1576eeebf41b98a084c98540f0fc6ec26025e1b7a1ead966539f3",
+      "vllm_ascend/diagnostics/dspark_worker_exit.py": "36295d54cb0728f3c371f1d8bfc91bdcdf5a6e13c7feb6ce7e2e899572b0a1f0"
+    },
+    "94328d6020d1988a45afe64f8894bb6324bf5bcd": {
+      "vllm_ascend/diagnostics/dspark_benchmark_worker.py": "11e94518c7a95b8f2ee5fea5f6f953ad9989dddfd94501b57ab8e678f135b996",
+      "vllm_ascend/diagnostics/dspark_performance.py": "a46d0650d5606aacc4b823e70f48c6a6a351e64231f819957ae786a16db27d7e",
+      "vllm_ascend/diagnostics/dspark_profile_executor.py": "e4383c3e210733093a329ad9b23399a8efca9730d32aea91c83abfc69038af80",
+      "vllm_ascend/diagnostics/dspark_profile_worker.py": "be30d62a35a98d108e03a6ae1d1657ac71d5dd1e860ced23ce99df340fbe8e93"
+    }
+  }
+}

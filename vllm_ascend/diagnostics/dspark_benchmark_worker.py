@@ -187,17 +187,20 @@ class _FullReplayObserver:
                         raise ValueError("FULL replay descriptor disagrees with the completed input batch.")
                     shape = (unpadded, padded)
                     self.shapes[shape] = self.shapes.get(shape, 0) + 1
-                    adaptive = getattr(getattr(self.runner, "speculator", None), "confidence_verification", None)
-                    if adaptive is not None:
-                        lengths = tuple(int(value) for value in batch.num_scheduled_tokens)
-                        layout = (padded, lengths)
-                        self.query_layouts[layout] = self.query_layouts.get(layout, 0) + 1
+                    self.record_layout(batch, padded)
                 except (AttributeError, TypeError, ValueError) as error:
                     # Retain output/timing even if the evidence ABI is unavailable.
                     self.error = str(error)
             return result
         finally:
             self.pending = previous
+
+    def record_layout(self, batch, padded):
+        adaptive = getattr(getattr(self.runner, "speculator", None), "confidence_verification", None)
+        if adaptive is not None:
+            lengths = tuple(int(value) for value in batch.num_scheduled_tokens)
+            layout = (padded, lengths)
+            self.query_layouts[layout] = self.query_layouts.get(layout, 0) + 1
 
     def run_fullgraph(self, desc: Any) -> Any:
         result = self.original_fullgraph(desc)
@@ -260,6 +263,12 @@ class DSparkBenchmarkWorkerExtension:
                 from vllm_ascend.diagnostics.dspark_confidence_receipts import ConfidenceReceipts
 
                 observer = ConfidenceReceipts(runner)
+            elif (getattr(getattr(runner, "vllm_config", None), "additional_config", None) or {}).get(
+                "dspark_performance_comparison"
+            ):
+                from vllm_ascend.diagnostics.dspark_performance import PerformanceReplayObserver
+
+                observer = PerformanceReplayObserver(runner)
             else:
                 observer = _FullReplayObserver(runner)
             runner._dspark_benchmark_replay_observer = observer
@@ -275,6 +284,36 @@ class DSparkBenchmarkWorkerExtension:
         if profiler is not None:
             result["cost_profile"] = profiler.snapshot()
         return result
+
+    def dspark_benchmark_performance_identity(self):
+        # Phase-boundary only. No head computation in fixed-K execution.
+        import torch
+
+        from tools.dspark.operator_replay import runtime_identity as binary_identity
+        from vllm_ascend.worker.v2.spec_decode.dspark.verification_runtime import runtime_identity
+
+        runner = self.model_runner
+        receipt = runner.speculator.model.confidence_weight_receipt
+        return {
+            "rank": _host_count(self.rank),
+            "identity": runtime_identity(
+                runner.vllm_config, torch.npu.get_device_name(runner.device), receipt["weights_sha256"]
+            ),
+            "binaries": binary_identity(),
+        }
+
+    def dspark_benchmark_performance_reset(self):
+        from tools.dspark.shutdown_policy import performance_enabled
+        from vllm_ascend.diagnostics.dspark_performance import PerformanceReplayObserver
+
+        if not performance_enabled(self.model_runner.vllm_config.additional_config):
+            raise ValueError("Not a passive performance consumer")
+        self.dspark_benchmark_replay_snapshot()
+        observer = self.model_runner._dspark_benchmark_replay_observer
+        if not isinstance(observer, PerformanceReplayObserver):
+            raise ValueError("Heavy or replaced performance observer")
+        observer.reset()
+        return self.dspark_benchmark_replay_snapshot()
 
     def dspark_benchmark_profile_snapshot_file(self, transfer: str, point: str | None) -> dict:
         """Quiescent formal-profile export; bulk evidence never enters response MQ."""

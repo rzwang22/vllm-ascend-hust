@@ -45,11 +45,12 @@ def process_status(handle):
 class ProfileMultiprocExecutor(MultiprocExecutor):
     def __init__(self, vllm_config, monitor_workers=True):
         options = vllm_config.additional_config.get("dspark_confidence_verification", {})
-        from tools.dspark.shutdown_policy import confidence_acceptance_enabled
+        from tools.dspark.shutdown_policy import confidence_acceptance_enabled, performance_enabled
 
-        if not confidence_acceptance_enabled(vllm_config.additional_config) and (
-            not options.get("profile") or options.get("mode") != "specified_lengths"
-        ):
+        if not (
+            confidence_acceptance_enabled(vllm_config.additional_config)
+            or performance_enabled(vllm_config.additional_config)
+        ) and (not options.get("profile") or options.get("mode") != "specified_lengths"):
             raise ValueError("Exit receipts require an isolated specified-length profile")
         self._profile_directory = Path(vllm_config.additional_config["dspark_profile_failure_dir"])
         self._profile_directory.mkdir(parents=True, exist_ok=True)

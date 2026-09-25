@@ -78,3 +78,18 @@ def confidence_acceptance_enabled(additional):
         and options.get("mode") == "confidence"
         and options.get("profile") is False
     )
+
+
+def performance_enabled(additional):
+    """Six-case consumer only: passive exit receipts without profile probes."""
+    options = additional.get("dspark_confidence_verification")
+    return (
+        additional.get("dspark_performance_comparison") is True
+        and additional.get("dspark_profile_worker_exit") is True
+        and additional.get("dspark_profile_shutdown_policy") == POLICY_NAME
+        and additional.get("dspark_profile_stack_signals") is False
+        and additional.get("dspark_profile_exit_debugger") is False
+        and not additional.get("dspark_profile_exit_observation")
+        and not additional.get("dspark_confidence_acceptance")
+        and (options is None or (options.get("mode") == "confidence" and options.get("profile") is False))
+    )
