@@ -47,7 +47,7 @@ def save(path, data):
 class WorkerExitTrace:
     """One per worker. Wrappers only run at exit (busy-loop wrapper runs once)."""
 
-    def __init__(self, directory, rank, *, arm=True):
+    def __init__(self, directory, rank, *, arm=True, stack_signals=False):
         self.directory = Path(directory)
         self.directory.mkdir(parents=True, exist_ok=True)
         self.rank = rank
@@ -61,6 +61,7 @@ class WorkerExitTrace:
         self.fd = os.open(self.directory / f"{self.prefix}-steps.jsonl", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         self.stack_file = None
         self.armed = False
+        self.stack_signals = stack_signals
         if arm:
             self.arm_stacks()
 
@@ -71,11 +72,9 @@ class WorkerExitTrace:
         registered = False
         error = None
         try:
-            if signal.getsignal(STACK_SIGNAL) != signal.SIG_DFL:
-                raise RuntimeError("Stack signal already has a handler; no signal will be sent")
-            self.stack_file = (self.directory / f"{self.prefix}-stacks.txt").open("xb", buffering=0)
-            faulthandler.register(STACK_SIGNAL, file=self.stack_file, all_threads=True, chain=False)
-            registered = True
+            if self.stack_signals:
+                self._register_stacks()
+                registered = True
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
         save(
@@ -86,14 +85,21 @@ class WorkerExitTrace:
                 "rank": self.rank,
                 "pid": self.pid,
                 "instance": self.instance,
+                "stack_signals_enabled": self.stack_signals,
                 "signal_registered": registered,
                 "signal": int(STACK_SIGNAL),
-                "stack_file": f"{self.prefix}-stacks.txt",
+                "stack_file": f"{self.prefix}-stacks.txt" if registered else None,
                 "error": error,
                 "started_utc": utc(),
                 "termination_handlers": termination_handlers(),
             },
         )
+
+    def _register_stacks(self):
+        if signal.getsignal(STACK_SIGNAL) != signal.SIG_DFL:
+            raise RuntimeError("Stack signal already has a handler; no signal will be sent")
+        self.stack_file = (self.directory / f"{self.prefix}-stacks.txt").open("xb", buffering=0)
+        faulthandler.register(STACK_SIGNAL, file=self.stack_file, all_threads=True, chain=False)
 
     def record(self, stage, event, **fields):
         # Single unbuffered append per event; no fsync/device wait. An I/O error
@@ -219,12 +225,14 @@ def process_snapshot(pid, proc_root=Path("/proc"), *, detailed=True):
 
 
 class ExitWatch:
-    """Two pre-escalation stack requests, only while the original shutdown runs."""
+    """Passive checkpoints by default; signal requests require explicit diagnosis."""
 
-    def __init__(self, directory, workers, point, grace):
+    def __init__(self, directory, workers, point, grace, *, stack_signals=False):
         self.directory = Path(directory)
         self.directory.mkdir(parents=True, exist_ok=True)
         self.workers = tuple(workers)
+        self.stack_signals = stack_signals
+        self.signal_events = []
         self.request = uuid.uuid4().hex
         self.stop = threading.Event()
         self.started = time.monotonic()
@@ -238,12 +246,18 @@ class ExitWatch:
                 "started_utc": utc(),
                 "performance_eligible": False,
                 "checkpoints_seconds": self.checkpoints,
+                "stack_signals_enabled": self.stack_signals,
             },
         )
         self.thread = threading.Thread(target=self.run, name="ProfileExitWatch", daemon=True)
 
     def snapshot(self, label, *, request_stacks=False):
+        # No liveness/registration check can close the race with handler teardown.
+        # Even direct or escalation callers cannot enable signals on a passive watch.
+        request_stacks = request_stacks and self.stack_signals
         data = {
+            "stack_signals_enabled": self.stack_signals,
+            "stack_request_enabled": request_stacks,
             "request": self.request,
             "label": label,
             "utc": utc(),
@@ -260,8 +274,11 @@ class ExitWatch:
                 ready = json.loads((self.directory / f"rank-{handle.rank}-ready.json").read_text())
                 if ready["pid"] != proc.pid or ready["rank"] != handle.rank:
                     raise ValueError("worker registration PID/rank mismatch")
-                stack = self.directory / ready["stack_file"]
-                row["stack_bytes_available_now"] = stack.stat().st_size
+                if ready.get("stack_file") is not None:
+                    stack = self.directory / ready["stack_file"]
+                    row["stack_bytes_available_now"] = stack.stat().st_size
+                else:
+                    row["stack_unavailable"] = "disabled by configuration"
             except (OSError, ValueError, KeyError) as exc:
                 row["stack_unavailable"] = str(exc)
                 ready = None
@@ -278,9 +295,11 @@ class ExitWatch:
                             "file": ready["stack_file"],
                             "utc": utc(),
                         }
+                        self.signal_events.append({"rank": handle.rank, "pid": proc.pid, **row["stack_request"]})
                     except (OSError, ValueError, KeyError) as exc:
                         row["stack_unavailable"] = str(exc)
             data["workers"].append(row)
+        data["diagnostic_signals_sent"] = list(self.signal_events)
         save(self.directory / f"parent-{label}.json", data)
 
     def run(self):

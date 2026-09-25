@@ -347,7 +347,11 @@ def test_actual_benchmark_configuration_no_profile_no_heavy_probes(tmp_path, mon
         "dspark_profile_failure_dir",
         "dspark_profile_worker_exit",
         "dspark_profile_shutdown_policy",
+        "dspark_profile_stack_signals",
+        "dspark_profile_exit_debugger",
     }
+    assert options["dspark_profile_stack_signals"] is False
+    assert options["dspark_profile_exit_debugger"] is False
 
 
 @pytest.mark.parametrize("mutation", ["profile", "mode", "worker", "policy", "observation", "flag"])

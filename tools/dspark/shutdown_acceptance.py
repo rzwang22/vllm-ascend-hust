@@ -7,6 +7,37 @@ import json
 from tools.dspark.shutdown_policy import budget
 
 
+def require_passive(root):
+    """New expanded runs need actual passive receipts; never reinterpret old runs."""
+    workers = json.loads((root / "worker-cleanup.json").read_text())
+    if (
+        workers.get("stack_signals_enabled") is not False
+        or workers.get("diagnostic_signals_sent") != []
+        or workers.get("debugger_enabled") is not False
+    ):
+        raise ValueError("Passive exit observation unavailable or active signals recorded")
+    folder = root / "worker-exit"
+    for rank in range(8):
+        ready = json.loads((folder / f"rank-{rank}-ready.json").read_text())
+        worker = next(w for w in workers["workers"] if w["rank"] == rank)
+        if (
+            ready.get("pid") != worker["pid"]
+            or ready.get("rank") != rank
+            or ready.get("stack_signals_enabled") is not False
+            or ready.get("signal_registered") is not False
+            or ready.get("error") is not None
+        ):
+            raise ValueError("Passive worker registration missing/mismatched")
+    for path in folder.glob("parent-*.json"):
+        checkpoint = json.loads(path.read_text())
+        if (
+            checkpoint.get("stack_signals_enabled") is not False
+            or checkpoint.get("diagnostic_signals_sent") != []
+            or any("stack_request" in row for row in checkpoint.get("workers", []))
+        ):
+            raise ValueError("Active or unavailable checkpoint receipt")
+
+
 def check(root, name):
     expected = budget(name)
     failures = []

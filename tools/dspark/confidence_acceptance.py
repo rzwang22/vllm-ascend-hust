@@ -394,6 +394,8 @@ def engine_config(args, root):
         dspark_profile_failure_dir=str(root.resolve()),
         dspark_profile_worker_exit=True,
         dspark_profile_shutdown_policy=shutdown_policy.POLICY_NAME,
+        dspark_profile_stack_signals=False,
+        dspark_profile_exit_debugger=False,
     )
     kwargs["worker_cls"] = "vllm_ascend.diagnostics.dspark_profile_worker.ProfileNPUWorker"
     kwargs["distributed_executor_backend"] = "vllm_ascend.diagnostics.dspark_profile_executor.ProfileMultiprocExecutor"
@@ -531,6 +533,9 @@ def supervise(args):
         write(root.parent / f"b{batch}-residual.json", residual)
     report["shutdown"] = shutdown_acceptance.check(root, shutdown_policy.POLICY_NAME)
     try:
+        if batch > 64:
+            shutdown_acceptance.require_passive(root)
+            report["passive_exit_observation"] = "VERIFIED"
         result = read(root / "generation-result.json")
         report["generation"] = result
         workers, cleanup = read(root / "worker-cleanup.json"), read(root / "cleanup.json")

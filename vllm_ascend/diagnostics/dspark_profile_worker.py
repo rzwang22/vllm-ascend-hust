@@ -136,7 +136,7 @@ class ProfileNPUWorker(NPUWorker):
         config = kwargs["vllm_config"]
         options = config.additional_config
         profile = options.get("dspark_confidence_verification", {})
-        from tools.dspark.shutdown_policy import confidence_acceptance_enabled
+        from tools.dspark.shutdown_policy import confidence_acceptance_enabled, stack_signals_enabled
 
         if not confidence_acceptance_enabled(options) and (
             not options.get("dspark_profile_worker_exit")
@@ -145,7 +145,10 @@ class ProfileNPUWorker(NPUWorker):
         ):
             raise ValueError("Worker exit tracing requires explicit isolated profile configuration")
         self._exit_trace = WorkerExitTrace(
-            Path(options["dspark_profile_failure_dir"]) / "worker-exit", kwargs["rank"], arm=False
+            Path(options["dspark_profile_failure_dir"]) / "worker-exit",
+            kwargs["rank"],
+            arm=False,
+            stack_signals=stack_signals_enabled(options),
         )
         install_proc_exit_trace(self._exit_trace, multiproc_executor.WorkerProc)
         super().__init__(*args, **kwargs)

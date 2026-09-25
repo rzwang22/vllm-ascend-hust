@@ -314,6 +314,7 @@ def publish(root, raw_rc, plugin_sha, batch=64):
         if batch > 64:
             from tools.dspark.batch_expansion import capacity_check
 
+            shutdown_acceptance.require_passive(root)
             capacity_check(read(root / "capacity.json"), batch)
         saved_plan = read(root / "plan.json")
         if (

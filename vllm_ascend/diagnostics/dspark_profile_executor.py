@@ -17,7 +17,7 @@ from pathlib import Path
 
 from vllm.v1.executor.multiproc_executor import MultiprocExecutor
 
-from tools.dspark.shutdown_policy import installed_budget
+from tools.dspark.shutdown_policy import installed_budget, stack_signals_enabled
 from vllm_ascend.diagnostics.dspark_cleanup import EXECUTOR_FORCE_MESSAGES, ShutdownForceObserver
 from vllm_ascend.diagnostics.dspark_profile_teardown import reap_workers
 
@@ -64,6 +64,7 @@ class ProfileMultiprocExecutor(MultiprocExecutor):
             worker_exit=self._profile_worker_exit,
         )
         self._profile_exit_debugger = vllm_config.additional_config.get("dspark_profile_exit_debugger", True)
+        self._profile_stack_signals = stack_signals_enabled(vllm_config.additional_config)
         if self._profile_exit_observation and not self._profile_worker_exit:
             raise ValueError("Extended exit observation requires the profile exit worker")
         if self._profile_exit_observation:
@@ -178,6 +179,7 @@ class ProfileMultiprocExecutor(MultiprocExecutor):
                     workers,
                     self._profile_point,
                     envs.VLLM_WORKER_SHUTDOWN_TIMEOUT_SECONDS,
+                    stack_signals=self._profile_stack_signals,
                 )
                 watch.thread.start()
             except Exception as error:
@@ -185,6 +187,9 @@ class ProfileMultiprocExecutor(MultiprocExecutor):
         state = {
             "performance_eligible": False,
             "exit_observation": getattr(self, "_profile_exit_observation", False),
+            "stack_signals_enabled": self._profile_stack_signals,
+            "diagnostic_signals_sent": [],
+            "debugger_enabled": self._profile_exit_observation and self._profile_exit_debugger,
             **(
                 {"shutdown_budget": self._profile_shutdown_budget}
                 if getattr(self, "_profile_shutdown_budget", None)
@@ -232,6 +237,7 @@ class ProfileMultiprocExecutor(MultiprocExecutor):
         finally:
             if watch is not None:
                 watch.close()
+                state["diagnostic_signals_sent"] = list(watch.signal_events)
             logger.removeHandler(observer)
             if getattr(self, "_profile_native_error", None):
                 state["exit_observation_error"] = self._profile_native_error

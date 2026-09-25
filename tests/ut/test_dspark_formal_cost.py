@@ -168,6 +168,8 @@ def test_actual_engine_kwargs_reuse_exit_without_numeric_observers(monkeypatch, 
     assert kwargs["distributed_executor_backend"].endswith("ProfileMultiprocExecutor")
     assert kwargs["worker_cls"].endswith("ProfileNPUWorker")
     config = kwargs["additional_config"]
+    assert config["dspark_profile_stack_signals"] is False
+    assert config["dspark_profile_exit_debugger"] is False
     assert "dspark_profile_observation" not in config and "dspark_profile_nan_diagnostic_dir" not in config
     assert config["dspark_profile_failure_dir"] == str(tmp_path.resolve())
     with pytest.raises(ValueError):

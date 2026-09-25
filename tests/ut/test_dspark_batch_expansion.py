@@ -199,6 +199,9 @@ def test_real_publication_rebuild_and_same_commit_tier_load(tmp_path, monkeypatc
     new = root.with_name(f"b{batch}")
     root.rename(new)
     root = new
+    from tests.ut.test_dspark_passive_exit import passive_receipts
+
+    passive_receipts(root)
     for suffix in ("supervisor", "command", "residual"):
         (root.parent / f"b64-{suffix}.json").rename(root.parent / f"b{batch}-{suffix}.json")
     update(root / "capacity.json", unused=True)

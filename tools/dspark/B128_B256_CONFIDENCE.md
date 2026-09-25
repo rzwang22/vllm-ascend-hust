@@ -314,3 +314,12 @@ command now includes a no-weight eight-worker communication precheck using
 (which must remain available), plus read-only system evidence. Expanded formal
 profiles use verified rank files and small RPC receipts. Core, model execution,
 point plans, deadlines, B64 status and natural-exit gates are unchanged.
+
+## IF4hUVja: passive exit observation
+
+The subsequent run completed all 48 B128 cost points but rank 5 exited on the
+observer's SIGUSR1. See `B128_PASSIVE_EXIT.md` and `B128_IF4hUVja_AUDIT.json` for
+independent sample/transfer verification and the stale-registration timeline.
+No table was published. The new entry runs real passive-exit subprocess checks
+before weights and explicitly disables both stack signals and gdb. It retains
+all natural-exit/publication gates and the same B128-to-B256 order and budgets.

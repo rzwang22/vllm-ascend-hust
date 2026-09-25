@@ -46,7 +46,7 @@ def trace(tmp_path, monkeypatch, trace_module):
     # subprocess. Never change pytest's process-wide signal handlers.
     monkeypatch.setattr(trace_module.faulthandler, "register", lambda *a, **kw: None)
     monkeypatch.setattr(trace_module.signal, "getsignal", lambda *a: signal.SIG_DFL)
-    t = trace_module.WorkerExitTrace(tmp_path, 3)
+    t = trace_module.WorkerExitTrace(tmp_path, 3, stack_signals=True)
     yield t
     os.close(t.fd)
     if t.stack_file:
@@ -284,7 +284,7 @@ def test_real_pre_escalation_stack_request_and_unknown_exitcode(tmp_path, trace_
 import importlib.util,sys,time,threading
 from pathlib import Path
 s=importlib.util.spec_from_file_location('trace',sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
-t=m.WorkerExitTrace(sys.argv[2],0)
+t=m.WorkerExitTrace(sys.argv[2],0,stack_signals=True)
 while not (Path(sys.argv[2])/'request.json').exists(): time.sleep(.005)
 def blocked_device_release(): threading.Event().wait(20)
 t.call('simulated.device_release',blocked_device_release)
@@ -305,7 +305,9 @@ t.call('simulated.device_release',blocked_device_release)
             time.sleep(0.01)
         ready = json.loads((tmp_path / "rank-0-ready.json").read_text())
         assert ready["signal_registered"]
-        watch = trace_module.ExitWatch(tmp_path, [SimpleNamespace(proc=Process(), rank=0)], "last", grace=0.3)
+        watch = trace_module.ExitWatch(
+            tmp_path, [SimpleNamespace(proc=Process(), rank=0)], "last", grace=0.3, stack_signals=True
+        )
         watch.thread.start()
         end = time.monotonic() + 3
         stacks = tmp_path / ready["stack_file"]
@@ -331,7 +333,7 @@ def test_watch_refuses_mismatched_registration_and_bounds_procfs(tmp_path, trace
     monkeypatch.setattr(os, "kill", lambda *a: calls.append(a))
     trace_module.save(tmp_path / "rank-0-ready.json", {"pid": 999, "rank": 0, "signal_registered": True})
     watch = trace_module.ExitWatch(
-        tmp_path, [SimpleNamespace(proc=SimpleNamespace(pid=123, exitcode=None), rank=0)], "p", 5
+        tmp_path, [SimpleNamespace(proc=SimpleNamespace(pid=123, exitcode=None), rank=0)], "p", 5, stack_signals=True
     )
     watch.snapshot("test", request_stacks=True)
     assert calls == []
@@ -353,7 +355,9 @@ def test_executor_watch_is_exit_only_and_keeps_original_error(tmp_path, trace_mo
     calls = []
 
     class Watch:
-        def __init__(self, *args):
+        def __init__(self, *args, stack_signals=False):
+            assert not stack_signals
+            self.signal_events = []
             calls.append("watch.init")
             self.thread = SimpleNamespace(start=lambda: calls.append("watch.start"))
 

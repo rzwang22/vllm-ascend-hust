@@ -548,6 +548,10 @@ def profile_engine_kwargs(
             "vllm_ascend.diagnostics.dspark_profile_executor.ProfileMultiprocExecutor"
         )
         kwargs["additional_config"]["dspark_profile_failure_dir"] = str(directory.parent.resolve())
+        if kwargs["additional_config"].get("dspark_profile_stack_signals"):
+            raise ValueError("Formal costs prohibit active exit stack signals")
+        kwargs["additional_config"]["dspark_profile_stack_signals"] = False
+        kwargs["additional_config"]["dspark_profile_exit_debugger"] = False
     if operator_capture is not None and operator_capture.get("write_timeline"):
         kwargs["scheduler_cls"] = "vllm_ascend.diagnostics.dspark_write_scheduler.WriteTimelineScheduler"
     if worker_exit:

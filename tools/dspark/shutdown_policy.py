@@ -10,6 +10,21 @@ ENGINE_SECONDS = 36
 SUPERVISOR_SECONDS = 48
 
 
+def stack_signals_enabled(additional):
+    """Active stack signals are diagnosis only, independent of gdb and receipts."""
+    enabled = additional.get("dspark_profile_stack_signals", False)
+    if type(enabled) is not bool:
+        raise ValueError("dspark_profile_stack_signals must be boolean")
+    if enabled and (
+        not additional.get("dspark_profile_exit_observation")
+        or not additional.get("dspark_profile_worker_exit")
+        or additional.get("dspark_profile_shutdown_policy")
+        or additional.get("dspark_confidence_acceptance")
+    ):
+        raise ValueError("Stack signals require explicit exit diagnosis, not formal acceptance")
+    return enabled
+
+
 def budget(name, *, exit_observation=False, worker_exit=True):
     if name is None:
         return None

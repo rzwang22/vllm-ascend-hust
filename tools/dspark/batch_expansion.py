@@ -311,6 +311,7 @@ def run(args):
                 "-ra",
                 "tests/ut/test_dspark_batch_expansion.py",
                 "tests/ut/test_dspark_snapshot_transport.py",
+                "tests/ut/test_dspark_passive_exit.py",
                 "tests/ut/test_dspark_confidence_acceptance.py",
                 "tests/ut/test_dspark_formal_cost.py",
                 "--junitxml",
