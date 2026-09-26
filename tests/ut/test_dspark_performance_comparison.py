@@ -91,7 +91,7 @@ def test_passive_gate_rejects_active_diagnostics(bad):
 def runner_fixture():
     class Runner:
         def __init__(self):
-            self.speculator = NS(confidence_verification=None)
+            self.speculator = NS(confidence_verification=None, num_speculative_steps=5)
             self.vllm_config = NS(additional_config={})
             self.cudagraph_manager = NS(run_fullgraph=lambda desc: desc)
             self.epoch = 71

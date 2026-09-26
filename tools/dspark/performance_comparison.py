@@ -14,6 +14,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from tools.dspark import confidence_acceptance as acceptance
+from tools.dspark import fixed_k_comparison as fixed_k
 from tools.dspark import formal_cost as formal
 from tools.dspark import shutdown_acceptance, shutdown_policy
 from tools.dspark.audit_formal_cost import require
@@ -82,6 +83,18 @@ def plan():
     }
 
 
+def experiment_plan(args):
+    return fixed_k.plan(plan()) if getattr(args, "fixed_k_comparison", False) else plan()
+
+
+def case_name(args):
+    return (
+        f"b{args.batch}-{args.mode}-k{args.draft_k}"
+        if getattr(args, "fixed_k_comparison", False)
+        else f"b{args.batch}-{args.mode}"
+    )
+
+
 def verify_code(plugin):
     contract = read(COMPATIBILITY)
     for producer in (acceptance.PRODUCER, PRODUCER):
@@ -104,13 +117,18 @@ def table_at(path, batch):
 
 def prepare(args):
     suite.source_gate(args)
-    compatibility = verify_code(args.plugin)
+    k_experiment = getattr(args, "fixed_k_comparison", False)
+    compatibility = (
+        {"cost_runtime_compatibility": "NOT_CLAIMED; fixed K experiment"} if k_experiment else verify_code(args.plugin)
+    )
     require(formal.real_text_contract(args.manifest) == formal.workload_contract(), "Frozen GSM8K identity changed")
     weights = formal.weight_identity(args.model)  # complete bytes, once before any model
     acceptance.copy_manifest_assets(args.manifest, args.output_dir / "input")
     _, inputs, _ = acceptance.read_manifest(args.manifest, 64)
     assets = args.output_dir / "assets"
     for batch, (_, _, source) in COSTS.items():
+        if k_experiment and batch != 256:
+            continue
         table, proof = table_at(source, batch)
         require(table["weight_provenance"] == weights, "Weights differ from cost producer")
         destination = assets / f"b{batch}"
@@ -146,29 +164,32 @@ def prepare(args):
             "weights": weights,
             "code_compatibility": compatibility,
             "input_contract": formal.workload_contract(),
-            "inputs_sha256": {str(b): formal.sha(assets / f"b{b}.jsonl") for b in COSTS},
-            "plan": plan(),
+            "inputs_sha256": {str(b): formal.sha(assets / f"b{b}.jsonl") for b in ([256] if k_experiment else COSTS)},
+            "plan": experiment_plan(args),
         },
     )
 
 
 def case_config(args, root):
     config = root / "verification.json"
-    write(
-        config,
-        {
-            "mode": "confidence",
-            "profile": False,
-            "cost_profile": str((args.output_dir / f"assets/b{args.batch}/cost-profile.json").resolve()),
-        },
-    )
+    if args.mode == "confidence":
+        write(
+            config,
+            {
+                "mode": "confidence",
+                "profile": False,
+                "cost_profile": str((args.output_dir / f"assets/b{args.batch}/cost-profile.json").resolve()),
+            },
+        )
     local = argparse.Namespace(
         **{
             **vars(args),
             "max_num_seqs": [args.batch],
             "repeats": 1,
             "modes": ["dspark_graph" if args.mode == "fixed" else "dspark_confidence_graph"],
-            "capture_dspark": formal.captures(args.batch),
+            "capture_dspark": fixed_k.captures(args.draft_k)
+            if getattr(args, "fixed_k_comparison", False)
+            else formal.captures(args.batch),
             "capture_target": None,
             "confidence_verification": config if args.mode == "confidence" else None,
             "num_prompts": args.batch,
@@ -192,6 +213,10 @@ def case_config(args, root):
         dspark_profile_stack_signals=False,
         dspark_profile_exit_debugger=False,
     )
+    if getattr(args, "fixed_k_comparison", False):
+        require(args.batch == 256 and args.mode == "fixed" and args.draft_k in (5, 8), "Invalid fixed K experiment")
+        additional["dspark_fixed_k8_experiment"] = args.draft_k == 8
+        additional["dspark_fixed_k_comparison"] = True
     require(shutdown_policy.performance_enabled(additional), "Invalid performance configuration")
     require(
         ("dspark_confidence_verification" in additional) == (args.mode == "confidence"), "Baseline has adaptive policy"
@@ -204,7 +229,7 @@ def case_config(args, root):
             "execution": execution,
             "exit_observation": False,
             "shutdown_policy": shutdown_policy.POLICY_NAME,
-            "contract": plan(),
+            "contract": experiment_plan(args),
         },
     )
     write(root / "engine-config.json", kwargs)
@@ -328,7 +353,7 @@ def validate_replays(before, after, table, mode):
     }
 
 
-def acceptance_metrics(delta, mode):
+def acceptance_metrics(delta, mode, k=5):
     totals = delta["totals"]
     if mode == "confidence" and totals["vllm:spec_decode_num_draft_tokens"] == 0:
         require(
@@ -337,11 +362,13 @@ def acceptance_metrics(delta, mode):
             "Accepted tokens without verified candidates",
         )
         return {"accepted_per_verified": None, "reason": "No verified candidates in this interval", "totals": totals}
-    return benchmark.acceptance_from_delta(delta, 5)
+    return benchmark.acceptance_from_delta(delta, k)
 
 
 def run_rounds(engine, parsed, args, records, root, table):
     rounds = []
+    k = getattr(args, "draft_k", 5)
+    k_experiment = getattr(args, "fixed_k_comparison", False)
     for number in range(ROUNDS + 1):
         name = "warmup" if number == 0 else f"round-{number}"
         require(
@@ -358,6 +385,8 @@ def run_rounds(engine, parsed, args, records, root, table):
                 "frozen_instance_ids": [r["request_id"] for r in formal.workload_contract(args.batch)["records"]],
             },
         )
+        if k_experiment:
+            memory_before = engine.collective_rpc("dspark_benchmark_performance_memory", kwargs={"reset_peak": True})
         engine.generate(
             [{"prompt_token_ids": r["prompt_token_ids"]} for r in records],
             benchmark._sampling_params(parsed),
@@ -376,8 +405,15 @@ def run_rounds(engine, parsed, args, records, root, table):
             "name": name,
         }
         metrics_after = benchmark.capture_spec_metrics(engine.get_metrics())
-        metric_delta = benchmark.metric_snapshot_delta(metrics_before, metrics_after, 5)
-        metrics["acceptance"] = acceptance_metrics(metric_delta, args.mode)
+        metric_delta = benchmark.metric_snapshot_delta(metrics_before, metrics_after, k)
+        metrics["acceptance"] = acceptance_metrics(metric_delta, args.mode, k)
+        if k_experiment:
+            metrics["draft_k"] = k
+            fixed_k.validate_full(metrics["execution"], k)
+            metrics["progress"] = fixed_k.progress(stream["scheduler"], metric_delta, metrics["execution"])
+            memory_after = engine.collective_rpc("dspark_benchmark_performance_memory")
+            require(sorted(r["rank"] for r in memory_after) == list(range(8)), "Missing memory ranks")
+            metrics["memory"] = {"before_reset": memory_before, "after": memory_after}
         write(
             root / f"{name}-spec-metrics.json",
             {"before": metrics_before, "after": metrics_after, "delta": metric_delta},
@@ -402,13 +438,13 @@ def validate_binaries(ranks, preflight):
 
 def model_run(args):
     suite.source_gate(args)
-    root = args.output_dir / "runs" / f"b{args.batch}-{args.mode}"
+    root = args.output_dir / "runs" / case_name(args)
     root.mkdir(parents=True, exist_ok=False)
     preflight = read(args.output_dir / "preflight.json")
     path = args.output_dir / f"assets/b{args.batch}.jsonl"
     require(
         preflight["plugin_sha"] == args.plugin_sha
-        and preflight["plan"] == plan()
+        and preflight["plan"] == experiment_plan(args)
         and formal.sha(path) == preflight["inputs_sha256"][str(args.batch)],
         "Preflight changed",
     )
@@ -427,7 +463,14 @@ def model_run(args):
         write(root / "runtime-environment.json", environment)
         require(sorted(r["rank"] for r in environment) == list(range(8)), "Missing runtime identity ranks")
         for row in environment:
-            require(row["identity"] == table["identity"], "Actual model runtime differs from frozen costs")
+            expected = (
+                fixed_k.runtime_expected(table["identity"], args.draft_k)
+                if getattr(args, "fixed_k_comparison", False)
+                else table["identity"]
+            )
+            require(row["identity"] == expected, "Actual model runtime differs from frozen experiment identity")
+            if args.mode == "fixed":
+                require(row["confidence_head_used"] is False, "Confidence runtime active in fixed mode")
         binary = validate_binaries(environment, read(args.output_dir / "runtime-environment.json"))
         reference = args.output_dir / "measurement-binaries.json"
         if reference.exists():
@@ -437,7 +480,10 @@ def model_run(args):
         write(root / "capture.json", benchmark._collect_worker_graph_runtime(engine, parsed))
         capacity = engine.collective_rpc("dspark_benchmark_capacity")
         write(root / "capacity.json", capacity)
-        capacity_check(capacity, args.batch)
+        if getattr(args, "fixed_k_comparison", False):
+            fixed_k.capacity_check(capacity, args.draft_k)
+        else:
+            capacity_check(capacity, args.batch)
         result["rounds"] = run_rounds(engine, parsed, args, records, root, table)
         result["status"] = "MEASURED"
     except BaseException as error:
@@ -490,6 +536,8 @@ def supervise(args, case):
         "--mode",
         case["mode"],
     ]
+    if getattr(args, "fixed_k_comparison", False):
+        command += ["--fixed-k-comparison", "--draft-k", str(case["draft_k"])]
     guarded = [
         sys.executable,
         "-m",
@@ -540,7 +588,7 @@ def supervise(args, case):
             "Incomplete measurements",
         )
         require(
-            report["error"] is None and report["shutdown"]["shutdown_policy_evidence_valid"],
+            report["error"] is None and report["shutdown"]["shutdown_policy_evidence_valid"] and residual["success"],
             "Exit/log/resource checks failed",
         )
         report.update(valid=True, performance_eligible=True, generation=result)
@@ -602,7 +650,7 @@ def summarize(root, cases):
 
 
 def run(args):
-    contract = plan()
+    contract = experiment_plan(args)
     print(json.dumps(contract, indent=2), flush=True)
     write(args.output_dir / "performance-plan.json", contract)
     stages = []
@@ -620,7 +668,18 @@ def run(args):
                     "--noconftest",
                     "-q",
                     "-ra",
-                    "tests/ut/test_dspark_performance_comparison.py",
+                    "tests/ut/test_dspark_fixed_k.py"
+                    if getattr(args, "fixed_k_comparison", False)
+                    else "tests/ut/test_dspark_performance_comparison.py",
+                    *(
+                        [
+                            "tests/ut/spec_decode/test_dspark_v2_markov_sampling.py::test_fixed_k8_installed_proposal_and_recurrence",
+                            "tests/ut/spec_decode/test_dspark_v2_model_loading.py::test_modelslim_loader_fixed_k8_opt_in_preserves_checkpoint_contract",
+                            "tests/ut/spec_decode/test_dspark_v2_model_loading.py::test_fixed_k8_real_vllm_config_keeps_runtime_and_checkpoint_distinct",
+                        ]
+                        if getattr(args, "fixed_k_comparison", False)
+                        else []
+                    ),
                     "--junitxml",
                     str(args.output_dir / "host.xml"),
                 ],
@@ -651,13 +710,20 @@ def run(args):
         error = f"{type(exc).__name__}: {exc}"
     finally:
         try:
-            summary = summarize(args.output_dir, reports)
+            summary = (
+                fixed_k.summarize(args.output_dir, reports, distribution)
+                if getattr(args, "fixed_k_comparison", False)
+                else summarize(args.output_dir, reports)
+            )
         except Exception as exc:
             summary = {"all_six_valid": False, "cases": reports, "summary_error": str(exc)}
             error = error or f"Summary failed: {exc}"
         result = {**summary, "stages": stages, "error": error}
         write(args.output_dir / "performance-summary.json", result)
-    return int(error is not None or not result["all_six_valid"])
+    return int(
+        error is not None
+        or not result.get("all_two_valid" if getattr(args, "fixed_k_comparison", False) else "all_six_valid", False)
+    )
 
 
 def main():
@@ -671,7 +737,11 @@ def main():
     parser.add_argument("--model", type=Path, default=Path("/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8"))
     parser.add_argument("--batch", type=int, choices=(64, 128, 256))
     parser.add_argument("--mode", choices=("fixed", "confidence"))
+    parser.add_argument("--fixed-k-comparison", action="store_true")
+    parser.add_argument("--draft-k", type=int, choices=(5, 8), default=5)
     args = parser.parse_args()
+    if args.draft_k != 5 and not args.fixed_k_comparison:
+        parser.error("K8 is only available in the explicit fixed-K experiment")
     if args.action == "prepare":
         prepare(args)
         return 0

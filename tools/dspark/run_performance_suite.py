@@ -26,10 +26,10 @@ MODEL_REVISION = "9e8679a9db7eec11efed9925f7efb96549077545"
 MODES = ("target_graph", "dspark_graph", "target_eager", "dspark_eager", "dspark_confidence_graph")
 
 
-def capture_sizes(mode, concurrency, budget, explicit=None):
+def capture_sizes(mode, concurrency, budget, explicit=None, draft_k=5):
     if mode not in MODES or concurrency < 1 or budget < 1:
         raise ValueError("Invalid mode, concurrency or token budget")
-    q = 6 if mode.startswith("dspark") else 1
+    q = draft_k + 1 if mode.startswith("dspark") else 1
     if concurrency * q > budget:
         raise ValueError("Decode token budget cannot hold max_num_seqs * query length")
     if mode.endswith("eager"):
@@ -69,6 +69,7 @@ def create_plan(args, records_file, root):
                     concurrency,
                     args.max_num_batched_tokens,
                     args.capture_dspark if dspark else args.capture_target,
+                    draft_k=getattr(args, "draft_k", 5),
                 )
                 directory = f"s{concurrency}-{mode}-r{repeat + 1}"
                 command = [
@@ -81,7 +82,7 @@ def create_plan(args, records_file, root):
                     "--mode",
                     "dspark" if dspark else "target_only",
                     "--num-spec-tokens",
-                    "5",
+                    str(getattr(args, "draft_k", 5)),
                     "--measurement-protocol",
                     "async_stream",
                     "--dataset-name",
@@ -143,7 +144,7 @@ def create_plan(args, records_file, root):
                         "mode": mode,
                         "repeat": repeat + 1,
                         "max_num_seqs": concurrency,
-                        "query_length": 6 if dspark else 1,
+                        "query_length": getattr(args, "draft_k", 5) + 1 if dspark else 1,
                         "capture_sizes": sizes,
                         "command": command,
                     }

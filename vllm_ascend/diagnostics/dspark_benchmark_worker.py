@@ -294,13 +294,39 @@ class DSparkBenchmarkWorkerExtension:
 
         runner = self.model_runner
         receipt = runner.speculator.model.confidence_weight_receipt
+        identity = runtime_identity(
+            runner.vllm_config, torch.npu.get_device_name(runner.device), receipt["weights_sha256"]
+        )
+        # Actual runtime, not a claim that the K5 cost contract covers K8.
+        identity["K"] = runner.speculator.num_speculative_steps
         return {
             "rank": _host_count(self.rank),
-            "identity": runtime_identity(
-                runner.vllm_config, torch.npu.get_device_name(runner.device), receipt["weights_sha256"]
-            ),
+            "identity": identity,
+            "confidence_head_used": runner.speculator.confidence_verification is not None,
             "binaries": binary_identity(),
         }
+
+    def dspark_benchmark_performance_memory(self, reset_peak=False):
+        """Allocator counters at quiescent phase boundaries; never synchronize steps."""
+        import torch
+
+        from tools.dspark.shutdown_policy import performance_enabled
+
+        runner = self.model_runner
+        if not performance_enabled(runner.vllm_config.additional_config):
+            raise ValueError("Not a passive performance consumer")
+        device = runner.device
+        result = {
+            "rank": _host_count(self.rank),
+            "allocated_bytes": torch.npu.memory_allocated(device),
+            "reserved_bytes": torch.npu.memory_reserved(device),
+            "peak_allocated_bytes": torch.npu.max_memory_allocated(device),
+            "peak_reserved_bytes": torch.npu.max_memory_reserved(device),
+            "scope": "torch_npu allocator; excludes external CANN/HCCL allocations; no added synchronization",
+        }
+        if reset_peak:
+            torch.npu.reset_peak_memory_stats(device)
+        return result
 
     def dspark_benchmark_performance_reset(self):
         from tools.dspark.shutdown_policy import performance_enabled

@@ -9,6 +9,7 @@ formal_cost=false
 confidence=false
 expansion=false
 performance=false
+fixed_k=false
 coverage_phase=''
 logged() {
     local label=$1; shift
@@ -23,6 +24,7 @@ main() {
     local sha=$1 manifest=$2 remote=$3 mode=--exit-observation
     if test "$#" -eq 4; then
         case "$4" in
+            --fixed-k-comparison) mode=$4; formal=true; performance=true; fixed_k=true ;;
             --performance-comparison) mode=$4; formal=true; performance=true ;;
             --batch-expansion) mode=$4; formal=true; expansion=true ;;
             --confidence-acceptance) mode=$4; formal=true; confidence=true ;;
@@ -42,6 +44,7 @@ main() {
     if test "$confidence" = true; then prefix=dspark-confidence-acceptance; fi
     if test "$expansion" = true; then prefix=dspark-batch-expansion; fi
     if test "$performance" = true; then prefix=dspark-performance-comparison; fi
+    if test "$fixed_k" = true; then prefix=dspark-fixed-k-comparison; fi
     out=$(mktemp -d "/workspace/dspark-results/$prefix.XXXXXXXX") || return 1
     printf 'EXIT_OBSERVATION_DIR=%s\n' "$out"
     cd /workspace/vllm-ascend-hust || return 1

@@ -15,6 +15,8 @@ from vllm.model_executor.model_loader import get_model
 from vllm.v1.attention.backends.registry import AttentionBackendEnum
 from vllm.v1.worker.gpu.spec_decode.eagle.utils import _should_share
 
+from vllm_ascend.spec_decode.dspark_fixed_k import validate_draft_length
+
 _DSPARK_BLOCK_SIZE = 5
 _DSPARK_NUM_MTP_LAYERS = 3
 _DSPARK_TARGET_LAYER_IDS = (40, 41, 42)
@@ -307,10 +309,7 @@ def _validate_w8a8_runtime_contract(
     speculative_config = vllm_config.speculative_config
     assert speculative_config is not None
     draft_hf_config = draft_model_config.hf_config
-    if speculative_config.num_speculative_tokens != _DSPARK_BLOCK_SIZE:
-        raise ValueError(
-            f"The initial Ascend DSpark W8A8 contract requires num_speculative_tokens={_DSPARK_BLOCK_SIZE}."
-        )
+    validate_draft_length(speculative_config.num_speculative_tokens, getattr(vllm_config, "additional_config", None))
     if int(draft_hf_config.dspark_block_size) != _DSPARK_BLOCK_SIZE:
         raise ValueError(f"The initial Ascend DSpark W8A8 contract requires dspark_block_size={_DSPARK_BLOCK_SIZE}.")
     if tuple(draft_hf_config.dspark_target_layer_ids) != _DSPARK_TARGET_LAYER_IDS:

@@ -39,6 +39,7 @@ from vllm.v1.worker.gpu.spec_decode.utils import (
 from vllm_ascend.ascend_forward_context import build_ascend_forward_context
 from vllm_ascend.attention.attention_v1 import AscendAttentionState
 from vllm_ascend.spec_decode import dspark_runtime_not_wired
+from vllm_ascend.spec_decode.dspark_fixed_k import validate_draft_length
 from vllm_ascend.worker.v2.attn_utils import build_attn_metadata
 from vllm_ascend.worker.v2.spec_decode.dspark.proposal_inputs import (
     AscendDSparkDraftExecution,
@@ -48,7 +49,6 @@ from vllm_ascend.worker.v2.spec_decode.dspark.proposal_inputs import (
     AscendDSparkProposalLifecycle,
 )
 
-_DSPARK_MARKOV_FIXED_K = 5
 _DSPARK_CONTINUE_AFTER_VERIFICATION = "dspark_continue_after_verification"
 _DSPARK_PROFILE_PRESERVED_STATE = (
     "_proposal_step_epoch",
@@ -1472,10 +1472,10 @@ class AscendDSparkSpeculator(BaseSpeculator):
 
         num_reqs = proposal_inputs.num_reqs
         num_speculative_tokens = proposal_inputs.num_speculative_tokens
-        if num_speculative_tokens != _DSPARK_MARKOV_FIXED_K:
-            raise NotImplementedError(
-                f"Ascend DSpark Markov sampling currently requires fixed K=5, got K={num_speculative_tokens}."
-            )
+        try:
+            validate_draft_length(num_speculative_tokens, self.vllm_config.additional_config)
+        except ValueError as error:
+            raise NotImplementedError(str(error)) from error
         expected_tokens = num_reqs * num_speculative_tokens
         if proposal_inputs.num_query_tokens != expected_tokens:
             raise ValueError("Ascend DSpark Markov sampling requires B*K draft tokens.")

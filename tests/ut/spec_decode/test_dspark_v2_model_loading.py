@@ -204,6 +204,7 @@ def _real_dspark_vllm_config(
     monkeypatch: pytest.MonkeyPatch,
     *,
     target_eager: bool = True,
+    draft_k: int = 5,
 ) -> VllmConfig:
     checkpoint = tmp_path / "dspark-w8a8"
     checkpoint.mkdir()
@@ -302,17 +303,18 @@ def _real_dspark_vllm_config(
         enforce_eager=True,
         target_model_config=target_model_config,
         target_parallel_config=parallel_config,
-        num_speculative_tokens=5,
+        num_speculative_tokens=draft_k,
         attention_backend="CUSTOM",
     )
     return VllmConfig(
+        additional_config={"dspark_fixed_k8_experiment": True} if draft_k == 8 else {},
         model_config=target_model_config,
         parallel_config=parallel_config,
         speculative_config=speculative_config,
         quant_config=AscendModelSlimConfig(descriptor),
         compilation_config=CompilationConfig(
             cudagraph_mode=CUDAGraphMode.NONE if target_eager else CUDAGraphMode.FULL_DECODE_ONLY,
-            cudagraph_capture_sizes=[] if target_eager else [6],
+            cudagraph_capture_sizes=[] if target_eager else [draft_k + 1],
         ),
     )
 
@@ -1691,3 +1693,42 @@ def test_checkpoint_mapping_uses_parameter_scheme_for_w8a8_expert_scales(
     assert loaded == {"model.layers.10.mlp.experts.routed_experts.w13_weight_scale"}
     assert expert_loader_calls == [0, 1]
     assert torch.equal(expert_scale, torch.ones(1))
+
+
+def test_modelslim_loader_fixed_k8_opt_in_preserves_checkpoint_contract() -> None:
+    from vllm_ascend.worker.v2.spec_decode.dspark.model_loader import (
+        _build_draft_quant_config,
+        _validate_w8a8_runtime_contract,
+    )
+
+    config = _modelslim_loader_config()
+    draft = config.speculative_config.draft_model_config
+    quant = _build_draft_quant_config(config, draft)
+    config.speculative_config.num_speculative_tokens = 8
+    with pytest.raises(ValueError, match="explicit opt-in"):
+        _validate_w8a8_runtime_contract(config, draft, quant)
+    config.additional_config = {
+        **(getattr(config, "additional_config", None) or {}),
+        "dspark_fixed_k8_experiment": True,
+    }
+    _validate_w8a8_runtime_contract(config, draft, quant)
+    assert draft.hf_config.dspark_block_size == 5
+    draft.hf_config.dspark_block_size = 8
+    with pytest.raises(ValueError, match="dspark_block_size=5"):
+        _validate_w8a8_runtime_contract(config, draft, quant)
+
+
+def test_fixed_k8_real_vllm_config_keeps_runtime_and_checkpoint_distinct(tmp_path, monkeypatch):
+    from vllm_ascend.worker.v2.spec_decode.dspark.model_loader import (
+        _build_draft_quant_config,
+        _build_draft_vllm_config,
+    )
+
+    config = _real_dspark_vllm_config(tmp_path, monkeypatch, target_eager=False, draft_k=8)
+    quant = _build_draft_quant_config(config, config.speculative_config.draft_model_config)
+    draft = _build_draft_vllm_config(config, quant)
+    assert config.speculative_config.num_speculative_tokens == draft.speculative_config.num_speculative_tokens == 8
+    assert draft.speculative_config.draft_model_config.hf_config.dspark_block_size == 5
+    assert draft.additional_config["dspark_fixed_k8_experiment"] is True
+    assert draft.compilation_config.cudagraph_mode == CUDAGraphMode.NONE
+    assert config.compilation_config.cudagraph_mode == CUDAGraphMode.FULL_DECODE_ONLY

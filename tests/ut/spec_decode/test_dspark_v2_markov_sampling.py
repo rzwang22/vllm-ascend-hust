@@ -101,10 +101,15 @@ def _ready_markov_step(
     *,
     seeds: torch.Tensor | None = None,
     continue_after_verification: bool = False,
+    draft_k: int = 5,
 ) -> tuple[object, object, _MarkovDraftModel, torch.Tensor]:
     speculator = _ready_speculator(
         continue_after_verification=continue_after_verification,
     )
+    speculator.num_speculative_steps = draft_k
+    speculator.vllm_config.speculative_config.num_speculative_tokens = draft_k
+    if draft_k == 8:
+        speculator.vllm_config.additional_config["dspark_fixed_k8_experiment"] = True
     speculator.draft_model_config.hf_config.vocab_size = 256
     model = _MarkovDraftModel()
     speculator._model = model
@@ -377,3 +382,15 @@ def test_execute_draft_publishes_completed_markov_candidates(monkeypatch) -> Non
     assert speculator._markov_step_epoch == proposal.step_epoch
     assert speculator._published_candidate_tokens is published
     assert speculator._proposal_publication_count == 1
+
+
+def test_fixed_k8_installed_proposal_and_recurrence() -> None:
+    """Installed real class/prepare/slot/Markov path, tiny CPU heads, no model weights."""
+    speculator, proposal, model, hidden = _ready_markov_step(draft_k=8)
+    assert proposal.num_query_tokens == 16
+    assert proposal.draft_query_start_loc.tolist() == [0, 8, 16]
+    assert proposal.draft_positions.reshape(2, 8).diff(dim=1).eq(1).all()
+    result = speculator._execute_sequential_markov_sampling(proposal, hidden)
+    assert result.candidate_tokens.tolist() == [list(range(203, 211)), list(range(102, 110))]
+    assert len(result.steps) == model.bias_calls == 8
+    assert not result.confidence_head_used and model.confidence_calls == 0

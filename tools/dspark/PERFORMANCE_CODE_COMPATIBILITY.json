@@ -1,21 +1,27 @@
 {
   "core": "71d2c1c436eba894a8e9eeb2c5af17e05cb42970",
-  "scope": "Exact file hashes for consumer-only benchmark RPC, observation, export and passive cleanup differences. Model, confidence math, scheduling/trim, attention, SWA/Core and csrc unchanged. Cost bytes and runtime identity remain exact. Main E2E includes light common CPU histograms; no diagnostic timings become costs.",
+  "scope": "Exact audited consumer hashes. K5 cost execution and model/kernel math unchanged. New fixed K8 opt-in changes only runtime guards; checkpoint block size stays 5. K8 never consumes costs and has no compatibility claim. Additional publication/memory telemetry is confined to the explicit fixed-K experiment. Existing K5 runtime identities remain exact; passive cleanup/Core/SWA unchanged.",
   "producers": {
     "89cfb54d53b1443cb7df0b4c800196435b21e5ad": {
-      "vllm_ascend/diagnostics/dspark_benchmark_worker.py": "11e94518c7a95b8f2ee5fea5f6f953ad9989dddfd94501b57ab8e678f135b996",
+      "vllm_ascend/diagnostics/dspark_benchmark_worker.py": "238c45fb87f98eb9c4eb6250c17ffced6de4e785d866595f11534333089473b6",
       "vllm_ascend/diagnostics/dspark_confidence_receipts.py": "4f3527b9a36d9547b7654058d2ad6ca77be957b726866dcc2772fbfe2854f28d",
-      "vllm_ascend/diagnostics/dspark_performance.py": "a46d0650d5606aacc4b823e70f48c6a6a351e64231f819957ae786a16db27d7e",
+      "vllm_ascend/diagnostics/dspark_performance.py": "c592464701cde88a434ba72adf1059295df4531cc9f520e2c6f9f0ac67b20ab1",
       "vllm_ascend/diagnostics/dspark_profile_executor.py": "e4383c3e210733093a329ad9b23399a8efca9730d32aea91c83abfc69038af80",
       "vllm_ascend/diagnostics/dspark_profile_worker.py": "be30d62a35a98d108e03a6ae1d1657ac71d5dd1e860ced23ce99df340fbe8e93",
       "vllm_ascend/diagnostics/dspark_snapshot_transport.py": "b77005b075a1576eeebf41b98a084c98540f0fc6ec26025e1b7a1ead966539f3",
-      "vllm_ascend/diagnostics/dspark_worker_exit.py": "36295d54cb0728f3c371f1d8bfc91bdcdf5a6e13c7feb6ce7e2e899572b0a1f0"
+      "vllm_ascend/diagnostics/dspark_worker_exit.py": "36295d54cb0728f3c371f1d8bfc91bdcdf5a6e13c7feb6ce7e2e899572b0a1f0",
+      "vllm_ascend/spec_decode/dspark_fixed_k.py": "0f7a7a4e9047fcb7e7395723627aaa26b5eb048c890264ec8e48fc625756ecc5",
+      "vllm_ascend/worker/v2/spec_decode/dspark/model_loader.py": "82271b65cba30f4b477f76f70e9203eab3629d9480754abd005f6f4d3b3fd7b5",
+      "vllm_ascend/worker/v2/spec_decode/dspark/speculator.py": "ad4bd71058a6b0c11c3c29094ae1da8dd062e9a38ba3b2090e46275a0da77d74"
     },
     "94328d6020d1988a45afe64f8894bb6324bf5bcd": {
-      "vllm_ascend/diagnostics/dspark_benchmark_worker.py": "11e94518c7a95b8f2ee5fea5f6f953ad9989dddfd94501b57ab8e678f135b996",
-      "vllm_ascend/diagnostics/dspark_performance.py": "a46d0650d5606aacc4b823e70f48c6a6a351e64231f819957ae786a16db27d7e",
+      "vllm_ascend/diagnostics/dspark_benchmark_worker.py": "238c45fb87f98eb9c4eb6250c17ffced6de4e785d866595f11534333089473b6",
+      "vllm_ascend/diagnostics/dspark_performance.py": "c592464701cde88a434ba72adf1059295df4531cc9f520e2c6f9f0ac67b20ab1",
       "vllm_ascend/diagnostics/dspark_profile_executor.py": "e4383c3e210733093a329ad9b23399a8efca9730d32aea91c83abfc69038af80",
-      "vllm_ascend/diagnostics/dspark_profile_worker.py": "be30d62a35a98d108e03a6ae1d1657ac71d5dd1e860ced23ce99df340fbe8e93"
+      "vllm_ascend/diagnostics/dspark_profile_worker.py": "be30d62a35a98d108e03a6ae1d1657ac71d5dd1e860ced23ce99df340fbe8e93",
+      "vllm_ascend/spec_decode/dspark_fixed_k.py": "0f7a7a4e9047fcb7e7395723627aaa26b5eb048c890264ec8e48fc625756ecc5",
+      "vllm_ascend/worker/v2/spec_decode/dspark/model_loader.py": "82271b65cba30f4b477f76f70e9203eab3629d9480754abd005f6f4d3b3fd7b5",
+      "vllm_ascend/worker/v2/spec_decode/dspark/speculator.py": "ad4bd71058a6b0c11c3c29094ae1da8dd062e9a38ba3b2090e46275a0da77d74"
     }
   }
 }

@@ -27,8 +27,9 @@ main() {
         esac
     done
     set -- "${forwarded[@]}"
-    local model=/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8 previous='' argument experiment='' writer=false exit_observation=false no_debugger=false shutdown_policy='' coverage_phase='' formal_cost='' confidence_acceptance=false expansion=false performance=false
+    local model=/workspace/models/Eco-Tech/DeepSeek-V4-Flash-0731-w8a8 previous='' argument experiment='' writer=false exit_observation=false no_debugger=false shutdown_policy='' coverage_phase='' formal_cost='' confidence_acceptance=false expansion=false performance=false fixed_k=false
     for argument in "$@"; do
+        if test "$argument" = --fixed-k-comparison; then fixed_k=true; fi
         if test "$argument" = --performance-comparison; then performance=true; fi
         if test "$argument" = --batch-expansion; then expansion=true; fi
         if test "$argument" = --confidence-acceptance; then confidence_acceptance=true; fi
@@ -69,6 +70,12 @@ main() {
     unset RANK LOCAL_RANK WORLD_SIZE GROUP_RANK ROLE_RANK LOCAL_WORLD_SIZE MASTER_ADDR MASTER_PORT
     cd "$plugin" || return 1
     logged source python tools/dspark/p08_r8_checks.py source "$plugin" "$core" || return "$?"
+    if test "$fixed_k" = true; then
+        test "$#" -eq 1 || return 1
+        logged fixed-k-comparison timeout --signal=TERM --kill-after=65s 10000s python -m tools.dspark.performance_comparison run \
+            --fixed-k-comparison --plugin-sha "$sha" --manifest "$manifest" --output-dir "$CONF_OUT"
+        return "$?"
+    fi
     if test "$performance" = true; then
         test "$#" -eq 1 || return 1
         logged performance-comparison timeout --signal=TERM --kill-after=65s 25000s python -m tools.dspark.performance_comparison run \

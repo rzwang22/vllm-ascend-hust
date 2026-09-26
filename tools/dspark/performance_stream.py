@@ -20,6 +20,8 @@ from tools.dspark.profile_attention_validity import AttentionValidity
 from tools.dspark.profile_failure import CANCEL_TIMEOUT_SECONDS, RPC_TIMEOUT_SECONDS, ProfileFailureGuard, write_json
 from tools.dspark.profile_request_ids import RequestIdObserver
 
+MAX_VERIFICATION_OBSERVATIONS = 65536
+
 
 def request_latency(record):
     first = record["first_output_monotonic"]
@@ -147,8 +149,9 @@ class SchedulerCollector:
     The frozen output_handler calls record before completing a chunk's waiters.
     """
 
-    def __init__(self, k):
+    def __init__(self, k, record_verifications=False):
         self.k = k
+        self.record_verifications = record_verifications
         self.totals = [0, 0, 0]
         self.positions = [0] * k
         self.preemptions = 0
@@ -156,6 +159,7 @@ class SchedulerCollector:
         self.committed = 0
         self.corrupted = 0
         self.rows = []
+        self.verification_steps = []
 
     def record(self, scheduler_stats, iteration_stats, mm_cache_stats=None, engine_idx=0):
         if engine_idx != 0:
@@ -180,6 +184,19 @@ class SchedulerCollector:
                 self.positions = [a + int(b) for a, b in zip(self.positions, spec.num_accepted_tokens_per_pos)]
                 self.forwards += spec.num_forwards
                 self.committed += spec.num_committed_tokens
+                if self.record_verifications and spec.num_drafts:
+                    if len(self.verification_steps) >= MAX_VERIFICATION_OBSERVATIONS:
+                        raise ValueError("Verification step telemetry capacity exceeded")
+                    self.verification_steps.append(
+                        {
+                            "requests": int(spec.num_drafts),
+                            "candidates": int(spec.num_draft_tokens),
+                            "accepted": int(spec.num_accepted_tokens),
+                            "sampler_progress_before_eos": int(spec.num_drafts + spec.num_accepted_tokens),
+                            "frontend_output_tokens": getattr(iteration_stats, "num_generation_tokens", None),
+                            "scope": "one Core stats delivery; frontend output may also include prefill requests",
+                        }
+                    )
 
     def metrics(self):
         result = [
@@ -209,7 +226,9 @@ class StreamingEngine:
         from vllm.v1.engine.async_llm import AsyncLLM
 
         self.loop = asyncio.new_event_loop()
-        self.collector = SchedulerCollector(args.num_spec_tokens)
+        self.collector = SchedulerCollector(
+            args.num_spec_tokens, kwargs.get("additional_config", {}).get("dspark_fixed_k_comparison") is True
+        )
         self.args = args
         observation = kwargs.get("additional_config", {}).get("dspark_profile_observation", {})
         self.write_timeline_point = (
@@ -304,6 +323,7 @@ class StreamingEngine:
             self.collector.committed,
             self.collector.corrupted,
             self.collector.totals[0],
+            len(self.collector.verification_steps),
         )
         batch_id = f"batch{self.batch_number}"
         if profile_point is None:
@@ -349,7 +369,10 @@ class StreamingEngine:
             "proposal_publication_steps": self.collector.forwards - before[2],
             "committed_tokens_on_proposal_publication_steps": self.collector.committed - before[3],
             "request_verifications": self.collector.totals[0] - before[5],
-            "verification_batch_count": None,
+            "verification_batch_count": len(self.collector.verification_steps) - before[6]
+            if self.collector.record_verifications
+            else None,
+            "verification_steps": self.collector.verification_steps[before[6] :],
             "spec_count_note": (
                 "Frozen MRV2 num_forwards counts successful proposal publication, not all target forwards"
             ),
